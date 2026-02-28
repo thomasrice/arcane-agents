@@ -1,0 +1,69 @@
+# Overworld example config
+
+projects:
+  personal-assistant:
+    path: ~/code/personal-assistant
+    shortName: pa
+  labyrinth:
+    path: ~/minotaur/labyrinth
+    shortName: lab
+  taurient:
+    path: ~/minotaur/taurient
+    shortName: taur
+  obsidian:
+    path: ~/ObsidianVault
+    shortName: obs
+
+runtimes:
+  claude:
+    command: ["claude"]
+    label: Claude Code
+  opencode:
+    command: ["opencode"]
+    label: OpenCode
+  shell:
+    command: ["bash"]
+    label: Shell
+
+shortcuts:
+  - label: PA
+    project: personal-assistant
+    runtime: opencode
+    icon: shield
+  - label: Lab
+    project: labyrinth
+    runtime: claude
+    icon: scroll
+  - label: Taur
+    project: taurient
+    runtime: claude
+    icon: sword
+  - label: Obs
+    project: obsidian
+    runtime: claude
+    icon: book
+
+profiles:
+  kairos:
+    project: taurient
+    runtime: shell
+    command: ["poetry", "run", "python", "chat.py", "-a", "kairos"]
+    label: Chat with Kairos
+    avatar: mage
+
+discovery:
+  - name: code-projects
+    type: directories
+    path: ~/code
+    match: ".git"
+    exclude: ["node_modules", ".cache"]
+    maxDepth: 1
+
+backend:
+  tmux:
+    sessionName: overworld
+    pollIntervalMs: 2500
+
+server:
+  host: 127.0.0.1
+  port: 7600
