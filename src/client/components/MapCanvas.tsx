@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from "react";
-import type { Worker, WorkerPosition, WorkerStatus } from "../../shared/types";
+import type { Worker, WorkerPosition } from "../../shared/types";
+import { cornerKey, useOutpostMap, type LoadedOutpostMap } from "../map/tileMapLoader";
 import {
   getSpriteFrame,
   type CharacterSpriteSet,
@@ -28,33 +29,22 @@ interface HoverInfo {
   screenY: number;
 }
 
-interface DragState {
-  workerId: string;
-  pointerId: number;
-  startScreenX: number;
-  startScreenY: number;
-  moved: boolean;
-}
-
-interface Decoration {
-  trees: Array<{ x: number; y: number; size: number }>;
-  stones: Array<{ x: number; y: number; size: number }>;
-}
-
 interface WorkerMotion {
   moving: boolean;
   facing: SpriteDirection;
 }
 
-const workerRadius = 13;
+interface SpriteBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
-const statusAuraColor: Record<WorkerStatus, string> = {
-  idle: "rgba(104, 189, 99, 0.45)",
-  working: "rgba(85, 160, 232, 0.45)",
-  attention: "rgba(246, 180, 77, 0.52)",
-  error: "rgba(229, 87, 73, 0.5)",
-  stopped: "rgba(131, 138, 152, 0.35)"
-};
+const workerRadius = 13;
+const spriteBaseSize = 72;
+const spriteAnchorYFactor = 0.82;
+const moveSpeedPerTick = 9;
 
 const avatarColor: Record<Worker["avatarType"], string> = {
   knight: "#8ca1c8",
@@ -77,11 +67,12 @@ export function MapCanvas({
 }: MapCanvasProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const dragRef = useRef<DragState | null>(null);
   const lastCenterRequestRef = useRef<number | undefined>(undefined);
   const previousWorkerPositionsRef = useRef<Record<string, WorkerPosition>>({});
   const workerMovingUntilRef = useRef<Record<string, number>>({});
   const workerFacingRef = useRef<Record<string, SpriteDirection>>({});
+  const moveOrdersRef = useRef<Record<string, WorkerPosition>>({});
+  const animatedPositionsRef = useRef<Record<string, WorkerPosition>>({});
 
   const [canvasSize, setCanvasSize] = useState({ width: 1000, height: 640 });
   const [viewport, setViewport] = useState<ViewportState>({
@@ -90,17 +81,27 @@ export function MapCanvas({
     offsetY: 25
   });
   const [hover, setHover] = useState<HoverInfo | null>(null);
-  const [localPositionOverrides, setLocalPositionOverrides] = useState<Record<string, WorkerPosition>>({});
+  const [animatedPositions, setAnimatedPositions] = useState<Record<string, WorkerPosition>>({});
   const [animationTick, setAnimationTick] = useState(0);
+  const [hasCenteredOnMap, setHasCenteredOnMap] = useState(false);
 
-  const decoration = useMemo<Decoration>(() => createDecoration(), []);
+  const { mapData, errorText: mapErrorText } = useOutpostMap();
+
   const workerPositionLookup = useMemo(
-    () => new Map<string, WorkerPosition>(workers.map((worker) => [worker.id, localPositionOverrides[worker.id] ?? worker.position])),
-    [workers, localPositionOverrides]
+    () => new Map<string, WorkerPosition>(workers.map((worker) => [worker.id, animatedPositions[worker.id] ?? worker.position])),
+    [animatedPositions, workers]
   );
 
   const spriteTypes = useMemo(() => Array.from(new Set(workers.map((worker) => worker.avatarType))), [workers]);
   const spriteLibrary = useCharacterSpriteLibrary(spriteTypes);
+  const fallbackSpriteSet = useMemo(
+    () => Object.values(spriteLibrary).find((spriteSet) => Boolean(spriteSet?.hasSprites)),
+    [spriteLibrary]
+  );
+
+  useEffect(() => {
+    animatedPositionsRef.current = animatedPositions;
+  }, [animatedPositions]);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -125,20 +126,21 @@ export function MapCanvas({
   }, []);
 
   useEffect(() => {
-    setLocalPositionOverrides((previous) => {
+    const activeWorkerIds = new Set(workers.map((worker) => worker.id));
+
+    for (const workerId of Object.keys(moveOrdersRef.current)) {
+      if (!activeWorkerIds.has(workerId)) {
+        delete moveOrdersRef.current[workerId];
+      }
+    }
+
+    setAnimatedPositions((previous) => {
       let changed = false;
       const next = { ...previous };
 
-      for (const worker of workers) {
-        const override = next[worker.id];
-        if (!override) {
-          continue;
-        }
-
-        const dx = Math.abs(override.x - worker.position.x);
-        const dy = Math.abs(override.y - worker.position.y);
-        if (dx < 0.5 && dy < 0.5) {
-          delete next[worker.id];
+      for (const workerId of Object.keys(next)) {
+        if (!activeWorkerIds.has(workerId)) {
+          delete next[workerId];
           changed = true;
         }
       }
@@ -150,12 +152,104 @@ export function MapCanvas({
   useEffect(() => {
     const animationInterval = window.setInterval(() => {
       setAnimationTick((current) => (current + 1) % 1000000);
+
+      const orders = moveOrdersRef.current;
+      if (Object.keys(orders).length === 0) {
+        return;
+      }
+
+      const workersById = new Map(workers.map((worker) => [worker.id, worker]));
+      const nextPositions = { ...animatedPositionsRef.current };
+      const commitQueue: Array<{ workerId: string; position: WorkerPosition }> = [];
+      let changed = false;
+
+      for (const [workerId, target] of Object.entries(orders)) {
+        const worker = workersById.get(workerId);
+        if (!worker) {
+          delete orders[workerId];
+          if (nextPositions[workerId]) {
+            delete nextPositions[workerId];
+            changed = true;
+          }
+          continue;
+        }
+
+        const currentPosition = nextPositions[workerId] ?? worker.position;
+        const dx = target.x - currentPosition.x;
+        const dy = target.y - currentPosition.y;
+        const distance = Math.hypot(dx, dy);
+
+        if (distance <= moveSpeedPerTick) {
+          const finalPosition = {
+            x: target.x,
+            y: target.y
+          };
+          nextPositions[workerId] = finalPosition;
+          delete orders[workerId];
+          commitQueue.push({
+            workerId,
+            position: finalPosition
+          });
+          changed = true;
+          continue;
+        }
+
+        nextPositions[workerId] = {
+          x: currentPosition.x + (dx / distance) * moveSpeedPerTick,
+          y: currentPosition.y + (dy / distance) * moveSpeedPerTick
+        };
+        changed = true;
+      }
+
+      for (const worker of workers) {
+        if (orders[worker.id]) {
+          continue;
+        }
+
+        const staged = nextPositions[worker.id];
+        if (!staged) {
+          continue;
+        }
+
+        if (Math.hypot(staged.x - worker.position.x, staged.y - worker.position.y) < 0.5) {
+          delete nextPositions[worker.id];
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        animatedPositionsRef.current = nextPositions;
+        setAnimatedPositions(nextPositions);
+      }
+
+      for (const commit of commitQueue) {
+        onPositionCommit(commit.workerId, {
+          x: Math.round(commit.position.x * 10) / 10,
+          y: Math.round(commit.position.y * 10) / 10
+        });
+      }
     }, 95);
 
     return () => {
       clearInterval(animationInterval);
     };
-  }, []);
+  }, [onPositionCommit, workers]);
+
+  useEffect(() => {
+    if (!mapData || hasCenteredOnMap) {
+      return;
+    }
+
+    const centerX = (mapData.width * mapData.tileSize) / 2;
+    const centerY = (mapData.height * mapData.tileSize) / 2;
+
+    setViewport((current) => ({
+      ...current,
+      offsetX: canvasSize.width / 2 - centerX * current.scale,
+      offsetY: canvasSize.height / 2 - centerY * current.scale
+    }));
+    setHasCenteredOnMap(true);
+  }, [canvasSize.height, canvasSize.width, hasCenteredOnMap, mapData]);
 
   useEffect(() => {
     if (!centerOnWorkerId || centerRequestKey === undefined) {
@@ -172,14 +266,14 @@ export function MapCanvas({
     }
 
     lastCenterRequestRef.current = centerRequestKey;
-    const position = localPositionOverrides[worker.id] ?? worker.position;
+    const position = animatedPositions[worker.id] ?? worker.position;
 
     setViewport((current) => ({
       ...current,
       offsetX: canvasSize.width / 2 - position.x * current.scale,
       offsetY: canvasSize.height / 2 - position.y * current.scale
     }));
-  }, [canvasSize.height, canvasSize.width, centerOnWorkerId, centerRequestKey, localPositionOverrides, workers]);
+  }, [animatedPositions, canvasSize.height, canvasSize.width, centerOnWorkerId, centerRequestKey, workers]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -214,21 +308,23 @@ export function MapCanvas({
       width: canvasSize.width,
       height: canvasSize.height,
       workers,
-      localPositions: localPositionOverrides,
+      displayedPositions: animatedPositions,
       workerMotion,
       selectedWorkerId,
       viewport,
-      decoration,
+      mapData,
       spriteLibrary,
+      fallbackSpriteSet,
       animationTick
     });
   }, [
+    animatedPositions,
     animationTick,
     canvasSize,
-    decoration,
-    localPositionOverrides,
+    mapData,
     selectedWorkerId,
     spriteLibrary,
+    fallbackSpriteSet,
     viewport,
     workerPositionLookup,
     workers
@@ -262,47 +358,43 @@ export function MapCanvas({
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     const point = readPointerOnCanvas(event);
-    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport);
+    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary, fallbackSpriteSet);
 
     if (hit) {
-      dragRef.current = {
-        workerId: hit.id,
-        pointerId: event.pointerId,
-        startScreenX: point.x,
-        startScreenY: point.y,
-        moved: false
-      };
-      event.currentTarget.setPointerCapture(event.pointerId);
+      onSelect(hit.id);
       return;
     }
 
-    dragRef.current = null;
+    if (selectedWorkerId) {
+      const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId);
+      if (selectedWorker) {
+        const target = clampWorldPosition(screenToWorld(point.x, point.y, viewport), mapData);
+        moveOrdersRef.current[selectedWorker.id] = {
+          x: Math.round(target.x * 10) / 10,
+          y: Math.round(target.y * 10) / 10
+        };
+
+        setAnimatedPositions((current) => {
+          if (current[selectedWorker.id]) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [selectedWorker.id]: selectedWorker.position
+          };
+        });
+      }
+      return;
+    }
+
     onSelect(undefined);
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
     const point = readPointerOnCanvas(event);
-    const drag = dragRef.current;
+    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary, fallbackSpriteSet);
 
-    if (drag && drag.pointerId === event.pointerId) {
-      const movedDistance = Math.hypot(point.x - drag.startScreenX, point.y - drag.startScreenY);
-      if (movedDistance > 3) {
-        drag.moved = true;
-      }
-
-      const worldPoint = screenToWorld(point.x, point.y, viewport);
-      setLocalPositionOverrides((current) => ({
-        ...current,
-        [drag.workerId]: {
-          x: Math.round(worldPoint.x * 10) / 10,
-          y: Math.round(worldPoint.y * 10) / 10
-        }
-      }));
-      setHover(null);
-      return;
-    }
-
-    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport);
     if (!hit) {
       setHover(null);
       return;
@@ -315,33 +407,8 @@ export function MapCanvas({
     });
   };
 
-  const handlePointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
-    const drag = dragRef.current;
-    const point = readPointerOnCanvas(event);
-
-    if (drag && drag.pointerId === event.pointerId) {
-      if (drag.moved) {
-        const position = localPositionOverrides[drag.workerId];
-        if (position) {
-          onPositionCommit(drag.workerId, position);
-        }
-      } else {
-        onSelect(drag.workerId);
-      }
-
-      dragRef.current = null;
-      event.currentTarget.releasePointerCapture(event.pointerId);
-      return;
-    }
-
-    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport);
-    onSelect(hit?.id);
-  };
-
   const handlePointerLeave = () => {
-    if (!dragRef.current) {
-      setHover(null);
-    }
+    setHover(null);
   };
 
   const handleWheel = (event: WheelEvent<HTMLCanvasElement>) => {
@@ -368,7 +435,6 @@ export function MapCanvas({
         className="map-canvas"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerLeave}
         onWheel={handleWheel}
       />
@@ -385,6 +451,12 @@ export function MapCanvas({
           {hover.worker.activityText ? <div>{hover.worker.activityText}</div> : null}
         </div>
       ) : null}
+
+      {mapErrorText ? (
+        <div className="map-tooltip" style={{ left: 14, top: 14 }}>
+          Map assets failed to load: {mapErrorText}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -394,12 +466,13 @@ interface DrawSceneInput {
   width: number;
   height: number;
   workers: Worker[];
-  localPositions: Record<string, WorkerPosition>;
+  displayedPositions: Record<string, WorkerPosition>;
   workerMotion: Record<string, WorkerMotion>;
   selectedWorkerId: string | undefined;
   viewport: ViewportState;
-  decoration: Decoration;
+  mapData: LoadedOutpostMap | undefined;
   spriteLibrary: Partial<Record<string, CharacterSpriteSet>>;
+  fallbackSpriteSet: CharacterSpriteSet | undefined;
   animationTick: number;
 }
 
@@ -408,84 +481,47 @@ function drawScene({
   width,
   height,
   workers,
-  localPositions,
+  displayedPositions,
   workerMotion,
   selectedWorkerId,
   viewport,
-  decoration,
+  mapData,
   spriteLibrary,
+  fallbackSpriteSet,
   animationTick
 }: DrawSceneInput): void {
   context.clearRect(0, 0, width, height);
 
-  const gradient = context.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, "#7fc08b");
-  gradient.addColorStop(1, "#4d9f60");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, width, height);
-
-  context.fillStyle = "rgba(72, 124, 76, 0.32)";
-  for (let y = 0; y < height; y += 24) {
-    for (let x = 0; x < width; x += 24) {
-      if ((x + y) % 48 === 0) {
-        context.fillRect(x, y, 2, 2);
-      }
-    }
-  }
-
-  context.strokeStyle = "rgba(198, 173, 107, 0.5)";
-  context.lineWidth = 28;
-  context.lineCap = "round";
-  context.beginPath();
-  context.moveTo(40, height * 0.7);
-  context.bezierCurveTo(width * 0.28, height * 0.55, width * 0.5, height * 0.78, width - 30, height * 0.48);
-  context.stroke();
-
-  for (const tree of decoration.trees) {
-    const screen = worldToScreen(tree.x, tree.y, viewport);
-    context.fillStyle = "#2f6e45";
-    context.beginPath();
-    context.arc(screen.x, screen.y, tree.size * viewport.scale, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = "#204936";
-    context.beginPath();
-    context.arc(screen.x + 3 * viewport.scale, screen.y + 2 * viewport.scale, tree.size * 0.4 * viewport.scale, 0, Math.PI * 2);
-    context.fill();
-  }
-
-  for (const stone of decoration.stones) {
-    const screen = worldToScreen(stone.x, stone.y, viewport);
-    context.fillStyle = "#9ba59b";
-    context.fillRect(
-      screen.x - stone.size * viewport.scale,
-      screen.y - stone.size * viewport.scale,
-      stone.size * 2 * viewport.scale,
-      stone.size * 1.2 * viewport.scale
-    );
+  if (mapData) {
+    drawOutpostTerrain(context, viewport, width, height, mapData);
+    drawOutpostObjects(context, viewport, width, height, mapData);
+  } else {
+    const gradient = context.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, "#7fc08b");
+    gradient.addColorStop(1, "#4d9f60");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, width, height);
   }
 
   context.textAlign = "center";
   context.imageSmoothingEnabled = false;
 
   for (const worker of workers) {
-    const worldPosition = localPositions[worker.id] ?? worker.position;
+    const worldPosition = displayedPositions[worker.id] ?? worker.position;
     const screen = worldToScreen(worldPosition.x, worldPosition.y, viewport);
     const radius = workerRadius * viewport.scale;
     const motion = workerMotion[worker.id] ?? { moving: false, facing: "south" as const };
 
-    context.fillStyle = statusAuraColor[worker.status];
-    context.beginPath();
-    context.arc(screen.x, screen.y, radius + 11 * viewport.scale, 0, Math.PI * 2);
-    context.fill();
-
-    const spriteFrame = getSpriteFrame(spriteLibrary[worker.avatarType], {
+    const spriteSet = spriteLibrary[worker.avatarType] ?? fallbackSpriteSet;
+    const spriteFrame = getSpriteFrame(spriteSet, {
       direction: motion.facing,
       moving: motion.moving,
       frameIndex: animationTick
     });
 
+    let spriteBounds: SpriteBounds | undefined;
     if (spriteFrame) {
-      drawSpriteCharacter(context, spriteFrame, screen.x, screen.y, viewport.scale, 72);
+      spriteBounds = drawSpriteCharacter(context, spriteFrame, screen.x, screen.y, viewport.scale, spriteBaseSize);
     } else {
       drawFallbackWorker(context, worker, screen.x, screen.y, radius, viewport.scale);
     }
@@ -494,7 +530,7 @@ function drawScene({
     if (activityBadge) {
       const badgeWidth = 42;
       const badgeHeight = 16;
-      const badgeY = screen.y - radius - 28 * viewport.scale;
+      const badgeY = spriteBounds ? spriteBounds.y - 20 * viewport.scale : screen.y - radius - 28 * viewport.scale;
 
       context.fillStyle = "rgba(14, 21, 18, 0.85)";
       context.fillRect(screen.x - badgeWidth / 2, badgeY, badgeWidth, badgeHeight);
@@ -508,8 +544,8 @@ function drawScene({
     }
 
     if (worker.status === "attention") {
-      const bubbleX = screen.x + radius + 9 * viewport.scale;
-      const bubbleY = screen.y - radius - 8 * viewport.scale;
+      const bubbleX = spriteBounds ? spriteBounds.x + spriteBounds.width + 7 * viewport.scale : screen.x + radius + 9 * viewport.scale;
+      const bubbleY = spriteBounds ? spriteBounds.y + 10 * viewport.scale : screen.y - radius - 8 * viewport.scale;
 
       context.fillStyle = "rgba(245, 185, 78, 0.95)";
       context.beginPath();
@@ -523,10 +559,20 @@ function drawScene({
 
     if (worker.id === selectedWorkerId) {
       context.strokeStyle = "#f1f2d4";
-      context.lineWidth = 2.4;
-      context.beginPath();
-      context.arc(screen.x, screen.y, radius + 6 * viewport.scale, 0, Math.PI * 2);
-      context.stroke();
+      context.lineWidth = 2;
+
+      if (spriteBounds) {
+        context.strokeRect(
+          spriteBounds.x - 2 * viewport.scale,
+          spriteBounds.y - 2 * viewport.scale,
+          spriteBounds.width + 4 * viewport.scale,
+          spriteBounds.height + 4 * viewport.scale
+        );
+      } else {
+        context.beginPath();
+        context.arc(screen.x, screen.y, radius + 6 * viewport.scale, 0, Math.PI * 2);
+        context.stroke();
+      }
     }
 
     context.fillStyle = "rgba(0, 0, 0, 0.54)";
@@ -545,11 +591,10 @@ function drawSpriteCharacter(
   groundY: number,
   scale: number,
   baseSize: number
-): void {
-  const drawSize = baseSize * scale;
-  const drawX = centerX - drawSize / 2;
-  const drawY = groundY - drawSize * 0.82;
-  context.drawImage(image, drawX, drawY, drawSize, drawSize);
+): SpriteBounds {
+  const bounds = spriteBoundsAtGround(centerX, groundY, scale, baseSize);
+  context.drawImage(image, bounds.x, bounds.y, bounds.width, bounds.height);
+  return bounds;
 }
 
 function drawFallbackWorker(
@@ -569,28 +614,150 @@ function drawFallbackWorker(
   context.fillRect(centerX - 4 * scale, centerY - 3 * scale, 8 * scale, 6 * scale);
 }
 
-function createDecoration(): Decoration {
-  const random = seededRandom(9241);
-  const trees = Array.from({ length: 48 }, () => ({
-    x: 140 + random() * 900,
-    y: 80 + random() * 580,
-    size: 12 + random() * 12
-  }));
+function drawOutpostTerrain(
+  context: CanvasRenderingContext2D,
+  viewport: ViewportState,
+  width: number,
+  height: number,
+  mapData: LoadedOutpostMap
+): void {
+  const tileSize = mapData.tileSize;
+  const worldMinX = (-viewport.offsetX / viewport.scale) - tileSize;
+  const worldMinY = (-viewport.offsetY / viewport.scale) - tileSize;
+  const worldMaxX = ((width - viewport.offsetX) / viewport.scale) + tileSize;
+  const worldMaxY = ((height - viewport.offsetY) / viewport.scale) + tileSize;
 
-  const stones = Array.from({ length: 26 }, () => ({
-    x: 120 + random() * 920,
-    y: 80 + random() * 600,
-    size: 2 + random() * 4
-  }));
+  const minTileX = clamp(Math.floor(worldMinX / tileSize), 0, mapData.width - 1);
+  const minTileY = clamp(Math.floor(worldMinY / tileSize), 0, mapData.height - 1);
+  const maxTileX = clamp(Math.ceil(worldMaxX / tileSize), 0, mapData.width - 1);
+  const maxTileY = clamp(Math.ceil(worldMaxY / tileSize), 0, mapData.height - 1);
 
-  return { trees, stones };
+  const baseTile = mapData.baseGrassTile;
+  for (let tileY = minTileY; tileY <= maxTileY; tileY += 1) {
+    for (let tileX = minTileX; tileX <= maxTileX; tileX += 1) {
+      const screen = worldToScreen(tileX * tileSize, tileY * tileSize, viewport);
+      const drawSize = tileSize * viewport.scale;
+
+      if (baseTile) {
+        context.drawImage(baseTile, screen.x, screen.y, drawSize, drawSize);
+      } else {
+        context.fillStyle = "#6eb574";
+        context.fillRect(screen.x, screen.y, drawSize, drawSize);
+      }
+
+      const terrainValue = mapData.terrain[tileY]?.[tileX] ?? 0;
+      if (terrainValue <= 0) {
+        continue;
+      }
+
+      const tileset = mapData.tilesetsByTerrain[terrainValue];
+      if (!tileset) {
+        continue;
+      }
+
+      const key = cornerKey(
+        cornerStateAtVertex(mapData, terrainValue, tileX, tileY),
+        cornerStateAtVertex(mapData, terrainValue, tileX + 1, tileY),
+        cornerStateAtVertex(mapData, terrainValue, tileX, tileY + 1),
+        cornerStateAtVertex(mapData, terrainValue, tileX + 1, tileY + 1)
+      );
+
+      const overlayTile = tileset.tilesByCornerKey[key] ?? tileset.fallbackTile;
+      if (overlayTile) {
+        context.drawImage(overlayTile, screen.x, screen.y, drawSize, drawSize);
+      }
+    }
+  }
 }
 
-function seededRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (1664525 * state + 1013904223) >>> 0;
-    return state / 0xffffffff;
+function drawOutpostObjects(
+  context: CanvasRenderingContext2D,
+  viewport: ViewportState,
+  width: number,
+  height: number,
+  mapData: LoadedOutpostMap
+): void {
+  const drawObjects = [...mapData.objects].sort((a, b) => a.y - b.y || a.x - b.x);
+  const worldMinX = (-viewport.offsetX / viewport.scale) - 128;
+  const worldMinY = (-viewport.offsetY / viewport.scale) - 128;
+  const worldMaxX = ((width - viewport.offsetX) / viewport.scale) + 128;
+  const worldMaxY = ((height - viewport.offsetY) / viewport.scale) + 128;
+
+  for (const placedObject of drawObjects) {
+    const definition = mapData.objectDefinitions[placedObject.type];
+    if (!definition) {
+      continue;
+    }
+
+    const worldX = placedObject.x * mapData.tileSize + mapData.tileSize / 2 - definition.width / 2;
+    const worldY = (placedObject.y + 1) * mapData.tileSize - definition.height;
+
+    if (
+      worldX > worldMaxX ||
+      worldY > worldMaxY ||
+      worldX + definition.width < worldMinX ||
+      worldY + definition.height < worldMinY
+    ) {
+      continue;
+    }
+
+    const screen = worldToScreen(worldX, worldY, viewport);
+    const drawWidth = definition.width * viewport.scale;
+    const drawHeight = definition.height * viewport.scale;
+
+    if (definition.image) {
+      context.drawImage(definition.image, screen.x, screen.y, drawWidth, drawHeight);
+      continue;
+    }
+
+    context.fillStyle = "rgba(32, 45, 35, 0.65)";
+    context.fillRect(screen.x, screen.y, drawWidth, drawHeight);
+  }
+}
+
+function cornerStateAtVertex(
+  mapData: LoadedOutpostMap,
+  terrainValue: number,
+  vertexTileX: number,
+  vertexTileY: number
+): "lower" | "upper" {
+  let matchCount = 0;
+
+  if (terrainAt(mapData, vertexTileX - 1, vertexTileY - 1) === terrainValue) {
+    matchCount += 1;
+  }
+  if (terrainAt(mapData, vertexTileX, vertexTileY - 1) === terrainValue) {
+    matchCount += 1;
+  }
+  if (terrainAt(mapData, vertexTileX - 1, vertexTileY) === terrainValue) {
+    matchCount += 1;
+  }
+  if (terrainAt(mapData, vertexTileX, vertexTileY) === terrainValue) {
+    matchCount += 1;
+  }
+
+  return matchCount >= 2 ? "upper" : "lower";
+}
+
+function terrainAt(mapData: LoadedOutpostMap, tileX: number, tileY: number): number {
+  if (tileX < 0 || tileY < 0 || tileX >= mapData.width || tileY >= mapData.height) {
+    return 0;
+  }
+
+  return mapData.terrain[tileY]?.[tileX] ?? 0;
+}
+
+function clampWorldPosition(position: WorkerPosition, mapData: LoadedOutpostMap | undefined): WorkerPosition {
+  if (!mapData) {
+    return position;
+  }
+
+  const worldWidth = mapData.width * mapData.tileSize;
+  const worldHeight = mapData.height * mapData.tileSize;
+
+  return {
+    x: clamp(position.x, 16, worldWidth - 16),
+    y: clamp(position.y, 16, worldHeight - 16)
   };
 }
 
@@ -613,15 +780,32 @@ function findWorkerAtScreenPoint(
   screenY: number,
   workers: Worker[],
   positions: Map<string, WorkerPosition>,
-  viewport: ViewportState
+  viewport: ViewportState,
+  spriteLibrary: Partial<Record<string, CharacterSpriteSet>>,
+  fallbackSpriteSet: CharacterSpriteSet | undefined
 ): Worker | undefined {
-  const radius = (workerRadius + 8) * viewport.scale;
-
   for (let index = workers.length - 1; index >= 0; index -= 1) {
     const worker = workers[index];
     const position = positions.get(worker.id) ?? worker.position;
     const screenPosition = worldToScreen(position.x, position.y, viewport);
-    if (Math.hypot(screenPosition.x - screenX, screenPosition.y - screenY) <= radius) {
+    const spriteSet = spriteLibrary[worker.avatarType] ?? fallbackSpriteSet;
+
+    if (spriteSet?.hasSprites) {
+      const bounds = spriteBoundsAtGround(screenPosition.x, screenPosition.y, viewport.scale, spriteBaseSize);
+      const padding = 5 * viewport.scale;
+      if (
+        screenX >= bounds.x - padding &&
+        screenX <= bounds.x + bounds.width + padding &&
+        screenY >= bounds.y - padding &&
+        screenY <= bounds.y + bounds.height + padding
+      ) {
+        return worker;
+      }
+      continue;
+    }
+
+    const fallbackRadius = (workerRadius + 8) * viewport.scale;
+    if (Math.hypot(screenPosition.x - screenX, screenPosition.y - screenY) <= fallbackRadius) {
       return worker;
     }
   }
@@ -658,7 +842,7 @@ function deriveWorkerMotion(
       const dy = position.y - previous.y;
       const distance = Math.hypot(dx, dy);
       if (distance > 0.3) {
-        movingUntil[worker.id] = nowMs + 420;
+        movingUntil[worker.id] = nowMs + 450;
         facing = directionFromVector(dx, dy, facing);
       }
     }
@@ -722,6 +906,16 @@ function getActivityBadge(worker: Worker): string | undefined {
       }
       return undefined;
   }
+}
+
+function spriteBoundsAtGround(centerX: number, groundY: number, scale: number, baseSize: number): SpriteBounds {
+  const drawSize = baseSize * scale;
+  return {
+    x: centerX - drawSize / 2,
+    y: groundY - drawSize * spriteAnchorYFactor,
+    width: drawSize,
+    height: drawSize
+  };
 }
 
 function readPointerOnCanvas(event: PointerEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>): {

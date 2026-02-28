@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import fs from "node:fs";
 import path from "node:path";
 import type {
   AvatarType,
@@ -22,7 +23,19 @@ interface SpawnPlan {
   avatar?: AvatarType;
 }
 
-const avatarPool: AvatarType[] = [
+interface SpawnAreaSpec {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+interface OutpostMapSpec {
+  tileSize: number;
+  spawnArea?: SpawnAreaSpec;
+}
+
+const allWorkerAvatars: AvatarType[] = [
   "knight",
   "mage",
   "ranger",
@@ -33,8 +46,10 @@ const avatarPool: AvatarType[] = [
   "dwarf"
 ];
 
+const outpostSpawnSpec = loadOutpostSpawnSpec();
+
 export class OrchestratorService {
-  private avatarCursor = 0;
+  private readonly spawnAvatarPool: AvatarType[];
   private readonly configuredProjects: Record<string, ProjectConfig>;
   private discoveredProjects: Record<string, ProjectConfig> = {};
   private config: ResolvedConfig;
@@ -45,8 +60,8 @@ export class OrchestratorService {
     private readonly tmux: TmuxAdapter
   ) {
     this.config = initialConfig;
+    this.spawnAvatarPool = resolveSpawnAvatarPool();
     this.configuredProjects = { ...initialConfig.projects };
-    this.avatarCursor = this.workers.listWorkers().length % avatarPool.length;
   }
 
   getConfig(): ResolvedConfig {
@@ -447,18 +462,33 @@ export class OrchestratorService {
   }
 
   private nextAvatar(preferred?: AvatarType): AvatarType {
-    if (preferred) {
+    if (preferred && this.spawnAvatarPool.includes(preferred)) {
       return preferred;
     }
 
-    const avatar = avatarPool[this.avatarCursor % avatarPool.length];
-    this.avatarCursor += 1;
-    return avatar;
+    const pool = this.spawnAvatarPool.length > 0 ? this.spawnAvatarPool : allWorkerAvatars;
+    return pool[Math.floor(Math.random() * pool.length)] ?? "knight";
   }
 
   private nextSpawnPosition(): WorkerPosition {
     const activeWorkers = this.workers.listWorkers().filter((worker) => worker.status !== "stopped");
     const index = activeWorkers.length;
+
+    if (outpostSpawnSpec?.spawnArea) {
+      const { tileSize, spawnArea } = outpostSpawnSpec;
+      const areaWidth = Math.max(1, spawnArea.x2 - spawnArea.x1 + 1);
+      const areaHeight = Math.max(1, spawnArea.y2 - spawnArea.y1 + 1);
+      const tileOffsetX = index % areaWidth;
+      const tileOffsetY = Math.floor(index / areaWidth) % areaHeight;
+      const tileX = spawnArea.x1 + tileOffsetX;
+      const tileY = spawnArea.y1 + tileOffsetY;
+
+      return {
+        x: (tileX + 0.5) * tileSize,
+        y: (tileY + 0.5) * tileSize
+      };
+    }
+
     const ringSize = 6;
     const ring = Math.floor(index / ringSize);
     const angle = (index % ringSize) * ((Math.PI * 2) / ringSize);
@@ -478,6 +508,35 @@ export class OrchestratorService {
         ...this.discoveredProjects
       }
     };
+  }
+}
+
+function resolveSpawnAvatarPool(): AvatarType[] {
+  const assetsRoot = path.resolve(process.cwd(), "assets/characters");
+  return allWorkerAvatars.filter((avatarType) => {
+    return fs.existsSync(path.join(assetsRoot, avatarType, "rotations", "south.png"));
+  });
+}
+
+function loadOutpostSpawnSpec(): OutpostMapSpec | undefined {
+  const mapPath = path.resolve(process.cwd(), "assets/maps/outpost.json");
+  if (!fs.existsSync(mapPath)) {
+    return undefined;
+  }
+
+  try {
+    const raw = fs.readFileSync(mapPath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<OutpostMapSpec>;
+    if (typeof parsed.tileSize !== "number") {
+      return undefined;
+    }
+
+    return {
+      tileSize: parsed.tileSize,
+      spawnArea: parsed.spawnArea
+    };
+  } catch {
+    return undefined;
   }
 }
 
