@@ -59,6 +59,11 @@ async function bootstrap(): Promise<void> {
   const app = express();
   app.use(express.json());
 
+  const assetsDir = path.resolve(process.cwd(), "assets");
+  if (fs.existsSync(assetsDir)) {
+    app.use("/api/assets", express.static(assetsDir));
+  }
+
   app.get("/api/health", (_req, res) => {
     res.json({
       ok: true,

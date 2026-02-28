@@ -593,11 +593,15 @@ Discovered projects are ephemeral (not written to config) but appear in the cust
 
 ### Phase 4 — Character art + visual polish
 
+- [x] Define sprite asset format and loader conventions for PixelLab per-frame exports.
+- [x] Implement sprite loader for `assets/characters/<type>/...` rotation + walk frame directories.
+- [x] Replace placeholder character circles with sprite rendering plus fallback shapes when missing.
+- [x] Add Minotaur overseer character behavior on the map (follow selected worker, idle at center).
 - [ ] Generate fantasy character sprite sheets (PixelLab or similar).
 - [ ] Create outdoor tileset for overworld map (grass, paths, trees, water, camps).
 - [ ] Add working poses (character sitting at campfire/workbench).
 - [ ] Polish animations (spawn effect, status transitions, walk cycles).
-- [ ] Add character name labels and status text rendering.
+- [x] Add character name labels and status text rendering.
 
 ### Phase 5 — OSS release prep
 
