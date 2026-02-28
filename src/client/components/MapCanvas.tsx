@@ -22,18 +22,11 @@ interface ViewportState {
   offsetY: number;
 }
 
-type HoverInfo =
-  | {
-      kind: "worker";
-      worker: Worker;
-      screenX: number;
-      screenY: number;
-    }
-  | {
-      kind: "minotaur";
-      screenX: number;
-      screenY: number;
-    };
+interface HoverInfo {
+  worker: Worker;
+  screenX: number;
+  screenY: number;
+}
 
 interface DragState {
   workerId: string;
@@ -53,15 +46,7 @@ interface WorkerMotion {
   facing: SpriteDirection;
 }
 
-interface MinotaurState {
-  position: WorkerPosition;
-  facing: SpriteDirection;
-  moving: boolean;
-}
-
 const workerRadius = 13;
-const minotaurRadius = 16;
-const minotaurHomePosition: WorkerPosition = { x: 520, y: 310 };
 
 const statusAuraColor: Record<WorkerStatus, string> = {
   idle: "rgba(104, 189, 99, 0.45)",
@@ -97,7 +82,6 @@ export function MapCanvas({
   const previousWorkerPositionsRef = useRef<Record<string, WorkerPosition>>({});
   const workerMovingUntilRef = useRef<Record<string, number>>({});
   const workerFacingRef = useRef<Record<string, SpriteDirection>>({});
-  const selectedTargetRef = useRef<WorkerPosition>(minotaurHomePosition);
 
   const [canvasSize, setCanvasSize] = useState({ width: 1000, height: 640 });
   const [viewport, setViewport] = useState<ViewportState>({
@@ -108,11 +92,6 @@ export function MapCanvas({
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [localPositionOverrides, setLocalPositionOverrides] = useState<Record<string, WorkerPosition>>({});
   const [animationTick, setAnimationTick] = useState(0);
-  const [minotaur, setMinotaur] = useState<MinotaurState>({
-    position: minotaurHomePosition,
-    facing: "south",
-    moving: false
-  });
 
   const decoration = useMemo<Decoration>(() => createDecoration(), []);
   const workerPositionLookup = useMemo(
@@ -120,15 +99,7 @@ export function MapCanvas({
     [workers, localPositionOverrides]
   );
 
-  const selectedWorker = useMemo(
-    () => workers.find((worker) => worker.id === selectedWorkerId),
-    [workers, selectedWorkerId]
-  );
-
-  const spriteTypes = useMemo(
-    () => Array.from(new Set([...workers.map((worker) => worker.avatarType), "minotaur"])),
-    [workers]
-  );
+  const spriteTypes = useMemo(() => Array.from(new Set(workers.map((worker) => worker.avatarType))), [workers]);
   const spriteLibrary = useCharacterSpriteLibrary(spriteTypes);
 
   useEffect(() => {
@@ -177,18 +148,8 @@ export function MapCanvas({
   }, [workers]);
 
   useEffect(() => {
-    if (selectedWorker) {
-      selectedTargetRef.current = localPositionOverrides[selectedWorker.id] ?? selectedWorker.position;
-      return;
-    }
-
-    selectedTargetRef.current = minotaurHomePosition;
-  }, [localPositionOverrides, selectedWorker]);
-
-  useEffect(() => {
     const animationInterval = window.setInterval(() => {
       setAnimationTick((current) => (current + 1) % 1000000);
-      setMinotaur((current) => stepMinotaur(current, selectedTargetRef.current));
     }, 95);
 
     return () => {
@@ -255,7 +216,6 @@ export function MapCanvas({
       workers,
       localPositions: localPositionOverrides,
       workerMotion,
-      minotaur,
       selectedWorkerId,
       viewport,
       decoration,
@@ -267,7 +227,6 @@ export function MapCanvas({
     canvasSize,
     decoration,
     localPositionOverrides,
-    minotaur,
     selectedWorkerId,
     spriteLibrary,
     viewport,
@@ -303,19 +262,8 @@ export function MapCanvas({
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     const point = readPointerOnCanvas(event);
-
-    if (isMinotaurAtScreenPoint(point.x, point.y, minotaur, viewport)) {
-      dragRef.current = null;
-      onSelect(undefined);
-      setHover({
-        kind: "minotaur",
-        screenX: point.x,
-        screenY: point.y
-      });
-      return;
-    }
-
     const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport);
+
     if (hit) {
       dragRef.current = {
         workerId: hit.id,
@@ -354,15 +302,6 @@ export function MapCanvas({
       return;
     }
 
-    if (isMinotaurAtScreenPoint(point.x, point.y, minotaur, viewport)) {
-      setHover({
-        kind: "minotaur",
-        screenX: point.x,
-        screenY: point.y
-      });
-      return;
-    }
-
     const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport);
     if (!hit) {
       setHover(null);
@@ -370,7 +309,6 @@ export function MapCanvas({
     }
 
     setHover({
-      kind: "worker",
       worker: hit,
       screenX: point.x,
       screenY: point.y
@@ -393,11 +331,6 @@ export function MapCanvas({
 
       dragRef.current = null;
       event.currentTarget.releasePointerCapture(event.pointerId);
-      return;
-    }
-
-    if (isMinotaurAtScreenPoint(point.x, point.y, minotaur, viewport)) {
-      onSelect(undefined);
       return;
     }
 
@@ -442,23 +375,14 @@ export function MapCanvas({
 
       {hover ? (
         <div className="map-tooltip" style={{ left: hover.screenX + 16, top: hover.screenY + 18 }}>
-          {hover.kind === "worker" ? (
-            <>
-              <div className="map-tooltip-title">{hover.worker.name}</div>
-              <div>
-                {hover.worker.projectId} · {hover.worker.runtimeId}
-              </div>
-              <div>Status: {hover.worker.status}</div>
-              {hover.worker.activityTool ? <div>Tool: {hover.worker.activityTool}</div> : null}
-              {hover.worker.activityPath ? <div>Path: {hover.worker.activityPath}</div> : null}
-              {hover.worker.activityText ? <div>{hover.worker.activityText}</div> : null}
-            </>
-          ) : (
-            <>
-              <div className="map-tooltip-title">Minotaur Overseer</div>
-              <div>Click to clear current selection</div>
-            </>
-          )}
+          <div className="map-tooltip-title">{hover.worker.name}</div>
+          <div>
+            {hover.worker.projectId} · {hover.worker.runtimeId}
+          </div>
+          <div>Status: {hover.worker.status}</div>
+          {hover.worker.activityTool ? <div>Tool: {hover.worker.activityTool}</div> : null}
+          {hover.worker.activityPath ? <div>Path: {hover.worker.activityPath}</div> : null}
+          {hover.worker.activityText ? <div>{hover.worker.activityText}</div> : null}
         </div>
       ) : null}
     </div>
@@ -472,7 +396,6 @@ interface DrawSceneInput {
   workers: Worker[];
   localPositions: Record<string, WorkerPosition>;
   workerMotion: Record<string, WorkerMotion>;
-  minotaur: MinotaurState;
   selectedWorkerId: string | undefined;
   viewport: ViewportState;
   decoration: Decoration;
@@ -487,7 +410,6 @@ function drawScene({
   workers,
   localPositions,
   workerMotion,
-  minotaur,
   selectedWorkerId,
   viewport,
   decoration,
@@ -614,25 +536,6 @@ function drawScene({
     context.font = "12px 'Trebuchet MS', sans-serif";
     context.fillText(worker.name, screen.x, screen.y + 33 * viewport.scale);
   }
-
-  const minotaurScreen = worldToScreen(minotaur.position.x, minotaur.position.y, viewport);
-  const minotaurSprite = getSpriteFrame(spriteLibrary.minotaur, {
-    direction: minotaur.facing,
-    moving: minotaur.moving,
-    frameIndex: animationTick
-  });
-
-  if (minotaurSprite) {
-    drawSpriteCharacter(context, minotaurSprite, minotaurScreen.x, minotaurScreen.y, viewport.scale, 82);
-  } else {
-    drawFallbackMinotaur(context, minotaurScreen.x, minotaurScreen.y, viewport.scale);
-  }
-
-  context.fillStyle = "rgba(0, 0, 0, 0.56)";
-  context.fillRect(minotaurScreen.x - 56, minotaurScreen.y + 24 * viewport.scale, 112, 18);
-  context.fillStyle = "#f8f7e5";
-  context.font = "12px 'Trebuchet MS', sans-serif";
-  context.fillText("Overseer", minotaurScreen.x, minotaurScreen.y + 37 * viewport.scale);
 }
 
 function drawSpriteCharacter(
@@ -664,28 +567,6 @@ function drawFallbackWorker(
 
   context.fillStyle = "rgba(15, 24, 19, 0.45)";
   context.fillRect(centerX - 4 * scale, centerY - 3 * scale, 8 * scale, 6 * scale);
-}
-
-function drawFallbackMinotaur(context: CanvasRenderingContext2D, centerX: number, centerY: number, scale: number): void {
-  const radius = minotaurRadius * scale;
-
-  context.fillStyle = "rgba(97, 59, 42, 0.95)";
-  context.beginPath();
-  context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-  context.fill();
-
-  context.fillStyle = "rgba(214, 187, 132, 0.95)";
-  context.beginPath();
-  context.moveTo(centerX - radius * 0.55, centerY - radius * 0.2);
-  context.lineTo(centerX - radius * 1.05, centerY - radius * 0.95);
-  context.lineTo(centerX - radius * 0.2, centerY - radius * 0.65);
-  context.fill();
-
-  context.beginPath();
-  context.moveTo(centerX + radius * 0.55, centerY - radius * 0.2);
-  context.lineTo(centerX + radius * 1.05, centerY - radius * 0.95);
-  context.lineTo(centerX + radius * 0.2, centerY - radius * 0.65);
-  context.fill();
 }
 
 function createDecoration(): Decoration {
@@ -748,12 +629,6 @@ function findWorkerAtScreenPoint(
   return undefined;
 }
 
-function isMinotaurAtScreenPoint(screenX: number, screenY: number, minotaur: MinotaurState, viewport: ViewportState): boolean {
-  const screenPosition = worldToScreen(minotaur.position.x, minotaur.position.y, viewport);
-  const radius = (minotaurRadius + 10) * viewport.scale;
-  return Math.hypot(screenPosition.x - screenX, screenPosition.y - screenY) <= radius;
-}
-
 function deriveWorkerMotion(
   workers: Worker[],
   positions: Map<string, WorkerPosition>,
@@ -790,7 +665,6 @@ function deriveWorkerMotion(
 
     previousPositions[worker.id] = { ...position };
     facingByWorker[worker.id] = facing;
-
     motion[worker.id] = {
       moving: (movingUntil[worker.id] ?? 0) > nowMs,
       facing
@@ -813,58 +687,6 @@ function directionFromVector(dx: number, dy: number, fallback: SpriteDirection):
   }
 
   return dy >= 0 ? "south" : "north";
-}
-
-function stepMinotaur(current: MinotaurState, target: WorkerPosition): MinotaurState {
-  const dx = target.x - current.position.x;
-  const dy = target.y - current.position.y;
-  const distance = Math.hypot(dx, dy);
-
-  if (distance < 0.01) {
-    if (current.moving) {
-      return {
-        ...current,
-        moving: false
-      };
-    }
-    return current;
-  }
-
-  const facing = directionFromVector(dx, dy, current.facing);
-
-  if (distance < 1) {
-    const snappedPosition = {
-      x: target.x,
-      y: target.y
-    };
-
-    if (
-      nearlyEqual(current.position.x, snappedPosition.x) &&
-      nearlyEqual(current.position.y, snappedPosition.y) &&
-      current.facing === facing &&
-      current.moving === false
-    ) {
-      return current;
-    }
-
-    return {
-      position: snappedPosition,
-      facing,
-      moving: false
-    };
-  }
-
-  const stepSize = Math.min(8, distance);
-  const nextPosition = {
-    x: current.position.x + (dx / distance) * stepSize,
-    y: current.position.y + (dy / distance) * stepSize
-  };
-
-  return {
-    position: nextPosition,
-    facing,
-    moving: true
-  };
 }
 
 function getActivityBadge(worker: Worker): string | undefined {
@@ -924,8 +746,4 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
   const tagName = target.tagName.toLowerCase();
   return tagName === "input" || tagName === "textarea" || target.isContentEditable;
-}
-
-function nearlyEqual(a: number, b: number): boolean {
-  return Math.abs(a - b) < 0.001;
 }

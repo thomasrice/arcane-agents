@@ -596,7 +596,7 @@ Discovered projects are ephemeral (not written to config) but appear in the cust
 - [x] Define sprite asset format and loader conventions for PixelLab per-frame exports.
 - [x] Implement sprite loader for `assets/characters/<type>/...` rotation + walk frame directories.
 - [x] Replace placeholder character circles with sprite rendering plus fallback shapes when missing.
-- [x] Add Minotaur overseer character behavior on the map (follow selected worker, idle at center).
+- [x] Document expected sprite asset directory structure for drop-in PixelLab exports.
 - [ ] Generate fantasy character sprite sheets (PixelLab or similar).
 - [ ] Create outdoor tileset for overworld map (grass, paths, trees, water, camps).
 - [ ] Add working poses (character sitting at campfire/workbench).
