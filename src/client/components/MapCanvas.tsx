@@ -287,6 +287,8 @@ export function MapCanvas({ workers, selectedWorkerId, onSelect, onPositionCommi
             {hover.worker.projectId} · {hover.worker.runtimeId}
           </div>
           <div>Status: {hover.worker.status}</div>
+          {hover.worker.activityTool ? <div>Tool: {hover.worker.activityTool}</div> : null}
+          {hover.worker.activityPath ? <div>Path: {hover.worker.activityPath}</div> : null}
           {hover.worker.activityText ? <div>{hover.worker.activityText}</div> : null}
         </div>
       ) : null}
@@ -373,6 +375,37 @@ function drawScene(
     context.fillStyle = "rgba(15, 24, 19, 0.45)";
     context.fillRect(screen.x - 4 * viewport.scale, screen.y - 3 * viewport.scale, 8 * viewport.scale, 6 * viewport.scale);
 
+    const activityBadge = getActivityBadge(worker);
+    if (activityBadge) {
+      const badgeWidth = 34;
+      const badgeHeight = 16;
+      const badgeY = screen.y - radius - 24 * viewport.scale;
+
+      context.fillStyle = "rgba(14, 21, 18, 0.85)";
+      context.fillRect(screen.x - badgeWidth / 2, badgeY, badgeWidth, badgeHeight);
+      context.strokeStyle = "rgba(237, 244, 210, 0.5)";
+      context.lineWidth = 1;
+      context.strokeRect(screen.x - badgeWidth / 2, badgeY, badgeWidth, badgeHeight);
+
+      context.fillStyle = "#eff3d8";
+      context.font = "10px 'Trebuchet MS', sans-serif";
+      context.fillText(activityBadge, screen.x, badgeY + 11);
+    }
+
+    if (worker.status === "attention") {
+      const bubbleX = screen.x + radius + 9 * viewport.scale;
+      const bubbleY = screen.y - radius - 8 * viewport.scale;
+
+      context.fillStyle = "rgba(245, 185, 78, 0.95)";
+      context.beginPath();
+      context.arc(bubbleX, bubbleY, 8 * viewport.scale, 0, Math.PI * 2);
+      context.fill();
+
+      context.fillStyle = "#35220d";
+      context.font = "11px 'Trebuchet MS', sans-serif";
+      context.fillText("!", bubbleX, bubbleY + 4 * viewport.scale);
+    }
+
     if (worker.id === selectedWorkerId) {
       context.strokeStyle = "#f1f2d4";
       context.lineWidth = 2.4;
@@ -385,6 +418,7 @@ function drawScene(
     context.fillRect(screen.x - 52, screen.y + 18 * viewport.scale, 104, 18);
 
     context.fillStyle = "#f8f7e5";
+    context.font = "12px 'Trebuchet MS', sans-serif";
     context.fillText(worker.name, screen.x, screen.y + 31 * viewport.scale);
   }
 }
@@ -447,6 +481,41 @@ function findWorkerAtScreenPoint(
   }
 
   return undefined;
+}
+
+function getActivityBadge(worker: Worker): string | undefined {
+  switch (worker.activityTool) {
+    case "read":
+      return "READ";
+    case "edit":
+      return "EDIT";
+    case "write":
+      return "WRITE";
+    case "bash":
+      return "RUN";
+    case "grep":
+      return "SEARCH";
+    case "glob":
+      return "SCAN";
+    case "task":
+      return "TASK";
+    case "todo":
+      return "TODO";
+    case "web":
+      return "WEB";
+    case "terminal":
+      return "TTY";
+    case "unknown":
+      return "...";
+    default:
+      if (worker.status === "error") {
+        return "ERR";
+      }
+      if (worker.status === "working") {
+        return "RUN";
+      }
+      return undefined;
+  }
 }
 
 function readPointerOnCanvas(event: PointerEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>): {

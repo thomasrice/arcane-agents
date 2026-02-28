@@ -4,6 +4,7 @@ import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { WebSocketServer } from "ws";
 import type { WorkerSpawnInput, WsServerEvent } from "../shared/types";
+import { DiscoveryService } from "./config/discovery";
 import { getOverworldPaths, loadResolvedConfig } from "./config/loadConfig";
 import { OrchestratorService } from "./orchestrator/orchestratorService";
 import { WorkerRepository } from "./persistence/workerRepository";
@@ -18,19 +19,28 @@ async function bootstrap(): Promise<void> {
   fs.mkdirSync(paths.stateDir, { recursive: true });
   fs.mkdirSync(paths.cacheDir, { recursive: true });
 
-  const config = loadResolvedConfig(paths);
+  const baseConfig = loadResolvedConfig(paths);
+  const discoveryService = new DiscoveryService();
+  const initialDiscovery = await discoveryService.discover(baseConfig);
+  for (const warning of initialDiscovery.warnings) {
+    // eslint-disable-next-line no-console
+    console.warn(`[overworld] ${warning}`);
+  }
+
   const workers = new WorkerRepository(paths.dbPath);
-  const tmux = new TmuxAdapter(config.backend.tmux.sessionName);
-  const orchestrator = new OrchestratorService(config, workers, tmux);
+  const tmux = new TmuxAdapter(baseConfig.backend.tmux.sessionName);
+  const orchestrator = new OrchestratorService(baseConfig, workers, tmux);
+  orchestrator.setDiscoveredProjects(initialDiscovery.projects);
+
   const hub = new RealtimeHub();
   const terminalBridge = new TerminalBridge(workers);
 
-  await orchestrator.reconcileStoppedWorkers();
+  await orchestrator.reconcileWithTmux();
 
   const statusMonitor = new StatusMonitor(
     workers,
     tmux,
-    config.backend.tmux.pollIntervalMs,
+    baseConfig.backend.tmux.pollIntervalMs,
     (worker) => {
       hub.broadcast({
         type: "worker-updated",
@@ -64,10 +74,19 @@ async function bootstrap(): Promise<void> {
     });
   });
 
-  app.post("/api/config/rediscover", (_req, res) => {
-    res.json({
-      discovered: []
-    });
+  app.post("/api/config/rediscover", async (_req, res) => {
+    try {
+      const discovery = await discoveryService.discover(baseConfig);
+      const config = orchestrator.setDiscoveredProjects(discovery.projects);
+      res.json({
+        discovered: Object.entries(config.projects)
+          .filter(([, project]) => project.source === "discovered")
+          .map(([id, project]) => ({ id, ...project })),
+        warnings: discovery.warnings
+      });
+    } catch (error) {
+      handleRequestError(res, error);
+    }
   });
 
   app.get("/api/workers", (_req, res) => {
@@ -138,6 +157,15 @@ async function bootstrap(): Promise<void> {
     }
   });
 
+  app.post("/api/workers/:workerId/open-terminal", async (req, res) => {
+    try {
+      await orchestrator.openInExternalTerminal(req.params.workerId);
+      res.json({ ok: true });
+    } catch (error) {
+      handleRequestError(res, error);
+    }
+  });
+
   const clientDistPath = path.resolve(process.cwd(), "dist/client");
   if (process.env.NODE_ENV === "production" && fs.existsSync(clientDistPath)) {
     app.use(express.static(clientDistPath));
@@ -193,8 +221,8 @@ async function bootstrap(): Promise<void> {
     socket.destroy();
   });
 
-  const host = process.env.OVERWORLD_API_HOST ?? config.server.host;
-  const port = Number(process.env.OVERWORLD_API_PORT ?? config.server.port);
+  const host = process.env.OVERWORLD_API_HOST ?? baseConfig.server.host;
+  const port = Number(process.env.OVERWORLD_API_PORT ?? baseConfig.server.port);
 
   server.listen(port, host, () => {
     // eslint-disable-next-line no-console

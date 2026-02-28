@@ -1,5 +1,18 @@
 export type WorkerStatus = "idle" | "working" | "attention" | "error" | "stopped";
 
+export type ActivityTool =
+  | "read"
+  | "edit"
+  | "write"
+  | "bash"
+  | "grep"
+  | "glob"
+  | "task"
+  | "todo"
+  | "web"
+  | "terminal"
+  | "unknown";
+
 export type AvatarType =
   | "knight"
   | "mage"
@@ -87,6 +100,8 @@ export interface Worker {
   profileId?: string;
   status: WorkerStatus;
   activityText?: string;
+  activityTool?: ActivityTool;
+  activityPath?: string;
   avatarType: AvatarType;
   position: WorkerPosition;
   tmuxRef: TmuxRef;

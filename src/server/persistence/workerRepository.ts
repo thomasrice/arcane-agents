@@ -3,6 +3,13 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { Worker, WorkerPosition, WorkerStatus } from "../../shared/types";
 
+interface WorkerStatusUpdate {
+  status: WorkerStatus;
+  activityText?: string;
+  activityTool?: Worker["activityTool"];
+  activityPath?: string;
+}
+
 interface WorkerRow {
   id: string;
   name: string;
@@ -14,6 +21,8 @@ interface WorkerRow {
   profile_id: string | null;
   status: WorkerStatus;
   activity_text: string | null;
+  activity_tool: Worker["activityTool"] | null;
+  activity_path: string | null;
   avatar_type: Worker["avatarType"];
   position_x: number;
   position_y: number;
@@ -53,12 +62,12 @@ export class WorkerRepository {
         `
         INSERT INTO workers (
           id, name, project_id, project_path, runtime_id, runtime_label,
-          command_json, profile_id, status, activity_text, avatar_type,
+          command_json, profile_id, status, activity_text, activity_tool, activity_path, avatar_type,
           position_x, position_y, tmux_session, tmux_window, tmux_pane,
           created_at, updated_at
         ) VALUES (
           @id, @name, @project_id, @project_path, @runtime_id, @runtime_label,
-          @command_json, @profile_id, @status, @activity_text, @avatar_type,
+          @command_json, @profile_id, @status, @activity_text, @activity_tool, @activity_path, @avatar_type,
           @position_x, @position_y, @tmux_session, @tmux_window, @tmux_pane,
           @created_at, @updated_at
         )
@@ -72,6 +81,8 @@ export class WorkerRepository {
           profile_id = excluded.profile_id,
           status = excluded.status,
           activity_text = excluded.activity_text,
+          activity_tool = excluded.activity_tool,
+          activity_path = excluded.activity_path,
           avatar_type = excluded.avatar_type,
           position_x = excluded.position_x,
           position_y = excluded.position_y,
@@ -84,7 +95,7 @@ export class WorkerRepository {
       .run(this.toRow(worker));
   }
 
-  updateStatus(workerId: string, status: WorkerStatus, activityText: string | undefined): Worker | undefined {
+  updateStatus(workerId: string, update: WorkerStatusUpdate): Worker | undefined {
     const worker = this.getWorker(workerId);
     if (!worker) {
       return undefined;
@@ -92,8 +103,10 @@ export class WorkerRepository {
 
     const updated: Worker = {
       ...worker,
-      status,
-      activityText,
+      status: update.status,
+      activityText: update.activityText,
+      activityTool: update.activityTool,
+      activityPath: update.activityPath,
       updatedAt: new Date().toISOString()
     };
 
@@ -139,6 +152,8 @@ export class WorkerRepository {
         profile_id TEXT,
         status TEXT NOT NULL,
         activity_text TEXT,
+        activity_tool TEXT,
+        activity_path TEXT,
         avatar_type TEXT NOT NULL,
         position_x REAL NOT NULL,
         position_y REAL NOT NULL,
@@ -152,6 +167,9 @@ export class WorkerRepository {
       CREATE INDEX IF NOT EXISTS idx_workers_status ON workers(status);
       CREATE INDEX IF NOT EXISTS idx_workers_tmux ON workers(tmux_session, tmux_window);
     `);
+
+    this.ensureColumn("workers", "activity_tool", "TEXT");
+    this.ensureColumn("workers", "activity_path", "TEXT");
   }
 
   private fromRow(row: WorkerRow): Worker {
@@ -166,6 +184,8 @@ export class WorkerRepository {
       profileId: row.profile_id ?? undefined,
       status: row.status,
       activityText: row.activity_text ?? undefined,
+      activityTool: row.activity_tool ?? undefined,
+      activityPath: row.activity_path ?? undefined,
       avatarType: row.avatar_type,
       position: {
         x: row.position_x,
@@ -193,6 +213,8 @@ export class WorkerRepository {
       profile_id: worker.profileId ?? null,
       status: worker.status,
       activity_text: worker.activityText ?? null,
+      activity_tool: worker.activityTool ?? null,
+      activity_path: worker.activityPath ?? null,
       avatar_type: worker.avatarType,
       position_x: worker.position.x,
       position_y: worker.position.y,
@@ -202,5 +224,13 @@ export class WorkerRepository {
       created_at: worker.createdAt,
       updated_at: worker.updatedAt
     };
+  }
+
+  private ensureColumn(tableName: string, columnName: string, type: string): void {
+    try {
+      this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${type}`);
+    } catch {
+      // column already exists
+    }
   }
 }

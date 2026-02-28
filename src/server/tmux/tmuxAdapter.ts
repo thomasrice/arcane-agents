@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { TmuxRef } from "../../shared/types";
 
@@ -9,6 +9,9 @@ interface SpawnTmuxInput {
   windowName: string;
   projectPath: string;
   command: string[];
+  projectId: string;
+  runtimeId: string;
+  runtimeLabel: string;
 }
 
 interface PaneState {
@@ -19,6 +22,16 @@ interface PaneState {
 interface WindowSummary {
   name: string;
   id: string;
+}
+
+export interface ManagedWindow {
+  window: string;
+  pane: string;
+  workerId?: string;
+  projectId?: string;
+  runtimeId?: string;
+  runtimeLabel?: string;
+  projectPath?: string;
 }
 
 export class TmuxAdapter {
@@ -59,6 +72,18 @@ export class TmuxAdapter {
       ]);
     }
 
+    await this.setWindowMetadata(target, {
+      "@overworld_managed": "1",
+      "@overworld_worker_id": input.workerId,
+      "@overworld_project_id": input.projectId,
+      "@overworld_runtime_id": input.runtimeId,
+      "@overworld_runtime_label": input.runtimeLabel,
+      "@overworld_project_path": input.projectPath
+    });
+
+    await this.runTmux(["set-option", "-w", "-t", target, "automatic-rename", "off"]);
+    await this.runTmux(["set-option", "-w", "-t", target, "allow-rename", "off"]);
+
     const paneOutput = await this.runTmux(["list-panes", "-t", target, "-F", "#{pane_id}"]);
     const pane = firstLine(paneOutput);
     if (!pane) {
@@ -75,7 +100,17 @@ export class TmuxAdapter {
   async stop(ref: TmuxRef): Promise<void> {
     const target = this.target(ref);
     await this.runTmux(["send-keys", "-t", target, "C-c"]).catch(() => undefined);
-    await delay(500);
+
+    const maxGraceMs = 5000;
+    const start = Date.now();
+    while (Date.now() - start < maxGraceMs) {
+      const stillLive = await this.windowExists(ref);
+      if (!stillLive) {
+        return;
+      }
+      await delay(250);
+    }
+
     await this.runTmux(["kill-window", "-t", target]).catch(() => undefined);
   }
 
@@ -112,6 +147,82 @@ export class TmuxAdapter {
     } catch {
       return false;
     }
+  }
+
+  async listManagedWindows(): Promise<ManagedWindow[]> {
+    if (!(await this.hasSession())) {
+      return [];
+    }
+
+    const output = await this.runTmux([
+      "list-panes",
+      "-a",
+      "-t",
+      this.sessionName,
+      "-F",
+      "#{window_name}\t#{pane_id}\t#{@overworld_managed}\t#{@overworld_worker_id}\t#{@overworld_project_id}\t#{@overworld_runtime_id}\t#{@overworld_runtime_label}\t#{@overworld_project_path}"
+    ]);
+
+    const seenWindows = new Set<string>();
+    const windows: ManagedWindow[] = [];
+
+    for (const line of output.split("\n")) {
+      if (!line.trim()) {
+        continue;
+      }
+
+      const [window, pane, managedFlag, workerId, projectId, runtimeId, runtimeLabel, projectPath] = line.split("\t");
+      if (managedFlag !== "1") {
+        continue;
+      }
+
+      if (seenWindows.has(window)) {
+        continue;
+      }
+
+      seenWindows.add(window);
+      windows.push({
+        window,
+        pane,
+        workerId: normalizeOption(workerId),
+        projectId: normalizeOption(projectId),
+        runtimeId: normalizeOption(runtimeId),
+        runtimeLabel: normalizeOption(runtimeLabel),
+        projectPath: normalizeOption(projectPath)
+      });
+    }
+
+    return windows;
+  }
+
+  async openInExternalTerminal(ref: TmuxRef): Promise<void> {
+    const target = this.target(ref);
+    const live = await this.windowExists(ref);
+    if (!live) {
+      throw new Error(`Cannot open terminal: tmux target '${target}' is not available.`);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const guardCommand = `tmux has-session -t ${shellQuote(target)} >/dev/null 2>&1 || exit 0; exec tmux attach-session -t ${shellQuote(target)}`;
+      const child = spawn(
+        "xdg-terminal-exec",
+        ["sh", "-lc", guardCommand],
+        {
+          detached: true,
+          stdio: "ignore"
+        }
+      );
+
+      child.once("error", (error) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        reject(new Error(`Failed to launch external terminal via xdg-terminal-exec: ${reason}`));
+      });
+
+      child.once("spawn", () => {
+        child.unref();
+        resolve();
+      });
+    });
   }
 
   async capturePane(ref: TmuxRef, lines = 30): Promise<string> {
@@ -157,6 +268,12 @@ export class TmuxAdapter {
     });
     return stdout.trimEnd();
   }
+
+  private async setWindowMetadata(target: string, metadata: Record<string, string>): Promise<void> {
+    for (const [key, value] of Object.entries(metadata)) {
+      await this.runTmux(["set-option", "-w", "-t", target, key, value]);
+    }
+  }
 }
 
 function firstLine(input: string): string {
@@ -175,4 +292,11 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function normalizeOption(value: string | undefined): string | undefined {
+  if (!value || value.trim().length === 0) {
+    return undefined;
+  }
+  return value;
 }

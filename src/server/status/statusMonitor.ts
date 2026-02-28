@@ -1,8 +1,7 @@
-import type { Worker, WorkerStatus } from "../../shared/types";
+import type { Worker } from "../../shared/types";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { TmuxAdapter } from "../tmux/tmuxAdapter";
-
-const shellCommands = new Set(["bash", "zsh", "fish", "sh"]);
+import { parseActivity } from "./activityParser";
 
 export class StatusMonitor {
   private intervalId: NodeJS.Timeout | undefined;
@@ -56,82 +55,62 @@ export class StatusMonitor {
   private async updateWorkerStatus(worker: Worker): Promise<void> {
     const live = await this.tmux.windowExists(worker.tmuxRef);
     if (!live) {
-      const stopped = this.workers.updateStatus(worker.id, "stopped", undefined);
+      const stopped = this.workers.updateStatus(worker.id, {
+        status: "stopped",
+        activityText: undefined,
+        activityTool: undefined,
+        activityPath: undefined
+      });
       if (stopped) {
         this.onWorkerUpdated(stopped);
       }
       return;
     }
 
-    let derivedStatus: WorkerStatus = worker.status;
-    let derivedActivity = worker.activityText;
+    let derivedStatus = worker.status;
+    let derivedActivityText = worker.activityText;
+    let derivedActivityTool = worker.activityTool;
+    let derivedActivityPath = worker.activityPath;
 
     try {
       const paneState = await this.tmux.getPaneState(worker.tmuxRef);
       const output = await this.tmux.capturePane(worker.tmuxRef, 35);
-      derivedStatus = deriveStatus(paneState.currentCommand, paneState.isDead, output);
-      derivedActivity = deriveActivity(output);
+      if (paneState.isDead) {
+        derivedStatus = "stopped";
+        derivedActivityText = undefined;
+        derivedActivityTool = undefined;
+        derivedActivityPath = undefined;
+      } else {
+        const parsed = parseActivity(paneState.currentCommand, output);
+        derivedStatus = parsed.status;
+        derivedActivityText = parsed.activity.text;
+        derivedActivityTool = parsed.activity.tool;
+        derivedActivityPath = parsed.activity.filePath;
+      }
     } catch {
       derivedStatus = "error";
-      derivedActivity = "Status check failed";
+      derivedActivityText = "Status check failed";
+      derivedActivityTool = "unknown";
+      derivedActivityPath = undefined;
     }
 
-    if (derivedStatus === worker.status && derivedActivity === worker.activityText) {
+    if (
+      derivedStatus === worker.status &&
+      derivedActivityText === worker.activityText &&
+      derivedActivityTool === worker.activityTool &&
+      derivedActivityPath === worker.activityPath
+    ) {
       return;
     }
 
-    const updated = this.workers.updateStatus(worker.id, derivedStatus, derivedActivity);
+    const updated = this.workers.updateStatus(worker.id, {
+      status: derivedStatus,
+      activityText: derivedActivityText,
+      activityTool: derivedActivityTool,
+      activityPath: derivedActivityPath
+    });
     if (updated) {
       this.onWorkerUpdated(updated);
     }
   }
-}
-
-function deriveStatus(currentCommand: string, paneDead: boolean, output: string): WorkerStatus {
-  if (paneDead) {
-    return "stopped";
-  }
-
-  if (/(\[Y\/n\]|allow\?|permission|continue\?|approve)/i.test(output)) {
-    return "attention";
-  }
-
-  if (/(traceback|exception|error|sigterm|command not found)/i.test(output)) {
-    return "error";
-  }
-
-  if (shellCommands.has(currentCommand.toLowerCase())) {
-    return "idle";
-  }
-
-  return "working";
-}
-
-function deriveActivity(output: string): string | undefined {
-  const lines = output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  if (lines.length === 0) {
-    return undefined;
-  }
-
-  const recentToolLine = [...lines].reverse().find((line) => /(Read|Edit|Write|Bash|Grep|Glob|Task|TodoWrite|WebFetch)/.test(line));
-  if (recentToolLine) {
-    const match = recentToolLine.match(/(Read|Edit|Write|Bash|Grep|Glob|Task|TodoWrite|WebFetch)/);
-    if (match) {
-      return `Using ${match[1]}`;
-    }
-  }
-
-  const fileLine = [...lines].reverse().find((line) => /[\w./-]+\.[A-Za-z0-9]+/.test(line));
-  if (fileLine) {
-    const fileMatch = fileLine.match(/([\w./-]+\.[A-Za-z0-9]+)/);
-    if (fileMatch) {
-      return `Working on ${fileMatch[1]}`;
-    }
-  }
-
-  return lines[lines.length - 1];
 }

@@ -557,39 +557,39 @@ Discovered projects are ephemeral (not written to config) but appear in the cust
 
 - [x] Create repo and git init.
 - [x] Write plan.md.
-- [ ] Scaffold project structure (src/server, src/client, src/shared).
-- [ ] Set up Vite + TypeScript + Express.
-- [ ] Add config loader with YAML parsing and schema validation.
-- [ ] Add `config.example.yaml`.
-- [ ] Basic health endpoint and static file serving.
+- [x] Scaffold project structure (src/server, src/client, src/shared).
+- [x] Set up Vite + TypeScript + Express.
+- [x] Add config loader with YAML parsing and schema validation.
+- [x] Add `config.example.yaml`.
+- [x] Basic health endpoint and static file serving.
 
 ### Phase 1 — tmux adapter + orchestrator API
 
-- [ ] Implement tmux adapter (spawn, stop, list, reconcile, capturePane).
-- [ ] Add SQLite schema and persistence layer.
-- [ ] Add orchestrator API routes (spawn, stop, list, restart, position).
-- [ ] Add status monitor (tmux polling loop with state derivation).
-- [ ] Add WebSocket endpoint for real-time status pushes.
-- [ ] Add PTY bridge (node-pty + WebSocket) for terminal streaming.
+- [x] Implement tmux adapter (spawn, stop, list, reconcile, capturePane).
+- [x] Add SQLite schema and persistence layer.
+- [x] Add orchestrator API routes (spawn, stop, list, restart, position).
+- [x] Add status monitor (tmux polling loop with state derivation).
+- [x] Add WebSocket endpoint for real-time status pushes.
+- [x] Add PTY bridge (node-pty + WebSocket) for terminal streaming.
 
 ### Phase 2 — UI: map + terminal + controls
 
-- [ ] Build Canvas2D map renderer (outdoor tile map, character sprites).
-- [ ] Add character rendering with status aura and name labels.
-- [ ] Wire xterm.js terminal panel (right side, auto-connect on select).
-- [ ] Build bottom bar: shortcut buttons (from config), contextual toolbar.
-- [ ] Build custom spawn dialog ("+") with project list and runtime picker.
-- [ ] Build command palette ("/") with fuzzy search.
-- [ ] Add click-to-select, drag-to-reposition.
-- [ ] Add hover tooltips.
+- [x] Build Canvas2D map renderer (outdoor tile map, character sprites).
+- [x] Add character rendering with status aura and name labels.
+- [x] Wire xterm.js terminal panel (right side, auto-connect on select).
+- [x] Build bottom bar: shortcut buttons (from config), contextual toolbar.
+- [x] Build custom spawn dialog ("+") with project list and runtime picker.
+- [x] Build command palette ("/") with fuzzy search.
+- [x] Add click-to-select, drag-to-reposition.
+- [x] Add hover tooltips.
 
 ### Phase 3 — Activity parsing + polish
 
-- [ ] Implement terminal output parser for activity text extraction.
-- [ ] Add overhead icons and speech bubbles based on parsed activity.
-- [ ] Implement discovery system (worktree scanner, directory scanner).
-- [ ] Add persistence and startup reconciliation.
-- [ ] Handle edge cases (tmux server restart, stale workers, etc).
+- [x] Implement terminal output parser for activity text extraction.
+- [x] Add overhead icons and speech bubbles based on parsed activity.
+- [x] Implement discovery system (worktree scanner, directory scanner).
+- [x] Add persistence and startup reconciliation.
+- [x] Handle edge cases (tmux server restart, stale workers, etc).
 
 ### Phase 4 — Character art + visual polish
 

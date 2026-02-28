@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchConfig, fetchWorkers, removeWorker, restartWorker, spawnWorker, stopWorker, updateWorkerPosition } from "./api";
+import {
+  fetchConfig,
+  fetchWorkers,
+  openWorkerInTerminal,
+  removeWorker,
+  restartWorker,
+  spawnWorker,
+  stopWorker,
+  updateWorkerPosition
+} from "./api";
 import { BottomBar } from "./components/BottomBar";
 import { CommandPalette } from "./components/CommandPalette";
 import { MapCanvas } from "./components/MapCanvas";
@@ -11,6 +20,7 @@ export default function App(): JSX.Element {
   const [config, setConfig] = useState<ResolvedConfig | null>(null);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | undefined>(undefined);
+  const [terminalFocusToken, setTerminalFocusToken] = useState(0);
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [errorText, setErrorText] = useState<string | undefined>(undefined);
@@ -53,7 +63,7 @@ export default function App(): JSX.Element {
       socket = new WebSocket(`${protocol}://${window.location.host}/api/ws`);
 
       socket.addEventListener("open", () => {
-        setErrorText(null);
+        setErrorText(undefined);
       });
 
       socket.addEventListener("message", (event) => {
@@ -131,12 +141,20 @@ export default function App(): JSX.Element {
     setErrorText(error instanceof Error ? error.message : "Unknown request failure");
   }, []);
 
+  const onSelectWorker = useCallback((workerId: string | undefined) => {
+    setSelectedWorkerId(workerId);
+    if (workerId) {
+      setTerminalFocusToken((current) => current + 1);
+    }
+  }, []);
+
   const runSpawn = useCallback(
     async (input: WorkerSpawnInput) => {
       try {
         const worker = await spawnWorker(input);
         setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
         setSelectedWorkerId(worker.id);
+        setTerminalFocusToken((current) => current + 1);
         setSpawnDialogOpen(false);
         setPaletteOpen(false);
       } catch (error) {
@@ -186,6 +204,18 @@ export default function App(): JSX.Element {
     }
   }, [selectedWorkerId, showError]);
 
+  const onOpenSelectedInTerminal = useCallback(async () => {
+    if (!selectedWorkerId) {
+      return;
+    }
+
+    try {
+      await openWorkerInTerminal(selectedWorkerId);
+    } catch (error) {
+      showError(error);
+    }
+  }, [selectedWorkerId, showError]);
+
   const onPositionCommit = useCallback(
     (workerId: string, position: { x: number; y: number }) => {
       void updateWorkerPosition(workerId, position.x, position.y)
@@ -205,7 +235,7 @@ export default function App(): JSX.Element {
         <MapCanvas
           workers={workers}
           selectedWorkerId={selectedWorkerId}
-          onSelect={setSelectedWorkerId}
+          onSelect={onSelectWorker}
           onPositionCommit={onPositionCommit}
         />
         <BottomBar
@@ -222,7 +252,10 @@ export default function App(): JSX.Element {
             setPaletteOpen(true);
             setSpawnDialogOpen(false);
           }}
-          onDeselect={() => setSelectedWorkerId(undefined)}
+          onDeselect={() => onSelectWorker(undefined)}
+          onOpenSelectedInTerminal={() => {
+            void onOpenSelectedInTerminal();
+          }}
           onStopSelected={() => {
             void onStopSelected();
           }}
@@ -239,7 +272,11 @@ export default function App(): JSX.Element {
         <div className="terminal-header">
           {selectedWorker ? `${selectedWorker.name} (${selectedWorker.status})` : "Select a worker"}
         </div>
-        <TerminalPanel workerId={selectedWorker?.id} workerName={selectedWorker?.name} />
+        <TerminalPanel
+          workerId={selectedWorker?.id}
+          workerName={selectedWorker?.name}
+          focusRequestKey={terminalFocusToken}
+        />
       </div>
 
       {config ? (

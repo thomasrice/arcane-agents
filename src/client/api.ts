@@ -63,3 +63,24 @@ export function removeWorker(workerId: string): Promise<void> {
     method: "DELETE"
   });
 }
+
+export function openWorkerInTerminal(workerId: string): Promise<{ ok: true }> {
+  return requestJson<{ ok: true }>(`/api/workers/${workerId}/open-terminal`, {
+    method: "POST"
+  });
+}
+
+export function rediscoverProjects(): Promise<{
+  discovered: Array<{
+    id: string;
+    path: string;
+    shortName: string;
+    source?: "config" | "discovered";
+    label?: string;
+  }>;
+  warnings: string[];
+}> {
+  return requestJson("/api/config/rediscover", {
+    method: "POST"
+  });
+}

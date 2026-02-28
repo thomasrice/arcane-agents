@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import path from "node:path";
 import type {
   AvatarType,
   ProjectConfig,
@@ -9,7 +10,7 @@ import type {
   WorkerSpawnInput
 } from "../../shared/types";
 import { WorkerRepository } from "../persistence/workerRepository";
-import { TmuxAdapter } from "../tmux/tmuxAdapter";
+import { TmuxAdapter, type ManagedWindow } from "../tmux/tmuxAdapter";
 
 interface SpawnPlan {
   projectId: string;
@@ -34,17 +35,32 @@ const avatarPool: AvatarType[] = [
 
 export class OrchestratorService {
   private avatarCursor = 0;
+  private readonly configuredProjects: Record<string, ProjectConfig>;
+  private discoveredProjects: Record<string, ProjectConfig> = {};
+  private config: ResolvedConfig;
 
   constructor(
-    private readonly config: ResolvedConfig,
+    initialConfig: ResolvedConfig,
     private readonly workers: WorkerRepository,
     private readonly tmux: TmuxAdapter
   ) {
+    this.config = initialConfig;
+    this.configuredProjects = { ...initialConfig.projects };
     this.avatarCursor = this.workers.listWorkers().length % avatarPool.length;
   }
 
   getConfig(): ResolvedConfig {
     return this.config;
+  }
+
+  setDiscoveredProjects(nextDiscovered: Record<string, ProjectConfig>): ResolvedConfig {
+    this.discoveredProjects = { ...nextDiscovered };
+    this.refreshConfigProjects();
+    return this.config;
+  }
+
+  getDiscoveredProjects(): Record<string, ProjectConfig> {
+    return { ...this.discoveredProjects };
   }
 
   listWorkers(): Worker[] {
@@ -64,7 +80,10 @@ export class OrchestratorService {
       workerId,
       windowName,
       projectPath: plan.project.path,
-      command: plan.command
+      command: plan.command,
+      projectId: plan.projectId,
+      runtimeId: plan.runtimeId,
+      runtimeLabel: plan.runtime.label
     });
 
     const now = new Date().toISOString();
@@ -127,7 +146,10 @@ export class OrchestratorService {
       workerId: worker.id,
       windowName,
       projectPath: project.path,
-      command: worker.command
+      command: worker.command,
+      projectId: worker.projectId,
+      runtimeId: worker.runtimeId,
+      runtimeLabel: runtime.label
     });
 
     const updated: Worker = {
@@ -166,31 +188,135 @@ export class OrchestratorService {
     return this.workers.deleteWorker(workerId);
   }
 
-  async reconcileStoppedWorkers(): Promise<Worker[]> {
+  async openInExternalTerminal(workerId: string): Promise<void> {
+    const worker = this.requireWorker(workerId);
+    await this.tmux.openInExternalTerminal(worker.tmuxRef);
+  }
+
+  async reconcileWithTmux(): Promise<{ updatedWorkers: Worker[]; adoptedWorkers: Worker[] }> {
     const currentWorkers = this.workers.listWorkers();
-    const updated: Worker[] = [];
+    const updatedWorkers: Worker[] = [];
+    const adoptedWorkers: Worker[] = [];
 
-    for (const worker of currentWorkers) {
-      if (worker.status === "stopped") {
-        continue;
+    const liveManagedWindows = await this.tmux.listManagedWindows();
+    const liveByWorkerId = new Map<string, ManagedWindow>();
+    const liveByWindow = new Map<string, ManagedWindow>();
+    const consumedWindows = new Set<string>();
+
+    for (const liveWindow of liveManagedWindows) {
+      liveByWindow.set(liveWindow.window, liveWindow);
+      if (liveWindow.workerId) {
+        liveByWorkerId.set(liveWindow.workerId, liveWindow);
       }
-
-      const isLive = await this.tmux.windowExists(worker.tmuxRef);
-      if (isLive) {
-        continue;
-      }
-
-      const stopped: Worker = {
-        ...worker,
-        status: "stopped",
-        activityText: undefined,
-        updatedAt: new Date().toISOString()
-      };
-      this.workers.saveWorker(stopped);
-      updated.push(stopped);
     }
 
-    return updated;
+    for (const worker of currentWorkers) {
+      const liveMatch = liveByWorkerId.get(worker.id) ?? liveByWindow.get(worker.tmuxRef.window);
+      if (!liveMatch) {
+        const directLive = await this.tmux.windowExists(worker.tmuxRef);
+        if (directLive) {
+          if (worker.status === "stopped") {
+            const resumed: Worker = {
+              ...worker,
+              status: "working",
+              updatedAt: new Date().toISOString()
+            };
+            this.workers.saveWorker(resumed);
+            updatedWorkers.push(resumed);
+          }
+          continue;
+        }
+
+        if (worker.status === "stopped") {
+          continue;
+        }
+
+        const stopped: Worker = {
+          ...worker,
+          status: "stopped",
+          activityText: undefined,
+          activityTool: undefined,
+          activityPath: undefined,
+          updatedAt: new Date().toISOString()
+        };
+        this.workers.saveWorker(stopped);
+        updatedWorkers.push(stopped);
+        continue;
+      }
+
+      consumedWindows.add(liveMatch.window);
+
+      const projectId = this.resolveProjectId(liveMatch, worker);
+      const runtimeId = this.resolveRuntimeId(liveMatch.runtimeId, worker.runtimeId);
+      const runtimeConfig = this.config.runtimes[runtimeId];
+
+      const reconciled: Worker = {
+        ...worker,
+        name: liveMatch.window,
+        projectId,
+        projectPath: this.resolveProjectPath(liveMatch, projectId, worker.projectPath),
+        runtimeId,
+        runtimeLabel: liveMatch.runtimeLabel ?? runtimeConfig?.label ?? worker.runtimeLabel,
+        command: worker.command,
+        status: worker.status === "stopped" ? "working" : worker.status,
+        tmuxRef: {
+          session: this.config.backend.tmux.sessionName,
+          window: liveMatch.window,
+          pane: liveMatch.pane
+        },
+        updatedAt: new Date().toISOString()
+      };
+
+      if (!isSameWorkerRecord(worker, reconciled)) {
+        this.workers.saveWorker(reconciled);
+        updatedWorkers.push(reconciled);
+      }
+    }
+
+    for (const liveWindow of liveManagedWindows) {
+      if (consumedWindows.has(liveWindow.window)) {
+        continue;
+      }
+
+      const workerId = liveWindow.workerId ?? nanoid(8).toLowerCase();
+      if (this.workers.getWorker(workerId)) {
+        continue;
+      }
+
+      const projectId = this.resolveProjectId(liveWindow);
+      const runtimeId = this.resolveRuntimeId(liveWindow.runtimeId);
+      const runtimeConfig = this.config.runtimes[runtimeId];
+      const now = new Date().toISOString();
+
+      const adopted: Worker = {
+        id: workerId,
+        name: liveWindow.window,
+        projectId,
+        projectPath: this.resolveProjectPath(liveWindow, projectId, process.cwd()),
+        runtimeId,
+        runtimeLabel: liveWindow.runtimeLabel ?? runtimeConfig?.label ?? runtimeId,
+        command: runtimeConfig?.command ?? ["bash"],
+        status: "working",
+        activityTool: "terminal",
+        avatarType: this.nextAvatar(),
+        position: this.nextSpawnPosition(),
+        tmuxRef: {
+          session: this.config.backend.tmux.sessionName,
+          window: liveWindow.window,
+          pane: liveWindow.pane
+        },
+        createdAt: now,
+        updatedAt: now
+      };
+
+      this.workers.saveWorker(adopted);
+      adoptedWorkers.push(adopted);
+    }
+
+    return {
+      updatedWorkers,
+      adoptedWorkers
+    };
   }
 
   private resolveSpawnPlan(input: WorkerSpawnInput): SpawnPlan {
@@ -271,6 +397,69 @@ export class OrchestratorService {
     return worker;
   }
 
+  private resolveProjectId(liveWindow: ManagedWindow, currentWorker?: Worker): string {
+    if (liveWindow.projectId && this.config.projects[liveWindow.projectId]) {
+      return liveWindow.projectId;
+    }
+
+    if (currentWorker && this.config.projects[currentWorker.projectId]) {
+      return currentWorker.projectId;
+    }
+
+    const projectPath = liveWindow.projectPath;
+    if (projectPath) {
+      for (const [projectId, project] of Object.entries(this.config.projects)) {
+        if (project.path === projectPath) {
+          return projectId;
+        }
+      }
+    }
+
+    const fallbackPath = projectPath ?? process.cwd();
+    const basename = path.basename(fallbackPath) || "adopted";
+    const baseId = slugify(liveWindow.projectId ?? basename);
+
+    let candidate = baseId;
+    let suffix = 2;
+    while (this.config.projects[candidate]) {
+      candidate = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+
+    const discoveredProject: ProjectConfig = {
+      path: fallbackPath,
+      shortName: candidate.slice(0, 8),
+      label: basename,
+      source: "discovered"
+    };
+
+    this.discoveredProjects[candidate] = discoveredProject;
+    this.refreshConfigProjects();
+
+    return candidate;
+  }
+
+  private resolveProjectPath(liveWindow: ManagedWindow, projectId: string, fallbackPath: string): string {
+    return liveWindow.projectPath ?? this.config.projects[projectId]?.path ?? fallbackPath;
+  }
+
+  private resolveRuntimeId(candidateRuntimeId?: string, fallbackRuntimeId?: string): string {
+    if (candidateRuntimeId && this.config.runtimes[candidateRuntimeId]) {
+      return candidateRuntimeId;
+    }
+
+    if (fallbackRuntimeId && this.config.runtimes[fallbackRuntimeId]) {
+      return fallbackRuntimeId;
+    }
+
+    if (this.config.runtimes.shell) {
+      return "shell";
+    }
+
+    const firstRuntimeId = Object.keys(this.config.runtimes)[0];
+    return firstRuntimeId ?? "shell";
+  }
+
   private makeWindowName(projectShortName: string, runtimeId: string, shortId: string): string {
     const sanitize = (value: string) => value.toLowerCase().replace(/[^a-z0-9-]/g, "-");
     return `${sanitize(projectShortName)}-${sanitize(runtimeId)}-${sanitize(shortId)}`;
@@ -299,4 +488,35 @@ export class OrchestratorService {
       y: 310 + Math.sin(angle) * radius
     };
   }
+
+  private refreshConfigProjects(): void {
+    this.config = {
+      ...this.config,
+      projects: {
+        ...this.configuredProjects,
+        ...this.discoveredProjects
+      }
+    };
+  }
+}
+
+function slugify(value: string): string {
+  const slug = value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
+  return slug || "project";
+}
+
+function isSameWorkerRecord(a: Worker, b: Worker): boolean {
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.projectId === b.projectId &&
+    a.projectPath === b.projectPath &&
+    a.runtimeId === b.runtimeId &&
+    a.runtimeLabel === b.runtimeLabel &&
+    JSON.stringify(a.command) === JSON.stringify(b.command) &&
+    a.status === b.status &&
+    a.tmuxRef.session === b.tmuxRef.session &&
+    a.tmuxRef.window === b.tmuxRef.window &&
+    a.tmuxRef.pane === b.tmuxRef.pane
+  );
 }

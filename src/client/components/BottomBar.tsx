@@ -7,6 +7,7 @@ interface BottomBarProps {
   onOpenSpawnDialog: () => void;
   onOpenPalette: () => void;
   onDeselect: () => void;
+  onOpenSelectedInTerminal: () => void;
   onStopSelected: () => void;
   onRestartSelected: () => void;
   onRemoveSelected: () => void;
@@ -19,11 +20,14 @@ export function BottomBar({
   onOpenSpawnDialog,
   onOpenPalette,
   onDeselect,
+  onOpenSelectedInTerminal,
   onStopSelected,
   onRestartSelected,
   onRemoveSelected
 }: BottomBarProps): JSX.Element {
   if (selectedWorker) {
+    const stopped = selectedWorker.status === "stopped";
+
     return (
       <div className="bottom-bar">
         <button className="bar-btn subtle" onClick={onDeselect}>
@@ -36,11 +40,14 @@ export function BottomBar({
           </div>
         </div>
 
-        <button className="bar-btn danger" onClick={onStopSelected}>
+        <button className="bar-btn danger" onClick={onStopSelected} disabled={stopped}>
           Stop
         </button>
         <button className="bar-btn" onClick={onRestartSelected}>
           Restart
+        </button>
+        <button className="bar-btn" onClick={onOpenSelectedInTerminal} disabled={stopped}>
+          Open in Terminal
         </button>
         <button className="bar-btn subtle" onClick={onRemoveSelected}>
           Remove

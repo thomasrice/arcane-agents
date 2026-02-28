@@ -1,17 +1,95 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
 
 interface TerminalPanelProps {
   workerId?: string;
   workerName?: string;
+  focusRequestKey?: number;
 }
 
-export function TerminalPanel({ workerId, workerName }: TerminalPanelProps): JSX.Element {
+export function TerminalPanel({ workerId, workerName, focusRequestKey }: TerminalPanelProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const fitRafRef = useRef<number | null>(null);
+
+  const focusTerminal = useCallback(() => {
+    terminalRef.current?.focus();
+  }, []);
+
+  const sendResizeMessage = useCallback(() => {
+    const socket = socketRef.current;
+    const terminal = terminalRef.current;
+    if (!socket || !terminal) {
+      return;
+    }
+
+    if (socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: "resize",
+        cols: terminal.cols,
+        rows: terminal.rows
+      })
+    );
+  }, []);
+
+  const fitIfVisible = useCallback((): boolean => {
+    const container = containerRef.current;
+    const fitAddon = fitAddonRef.current;
+    const terminal = terminalRef.current;
+    if (!container || !fitAddon || !terminal) {
+      return false;
+    }
+
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    if (width < 8 || height < 8 || container.getClientRects().length === 0) {
+      return false;
+    }
+
+    try {
+      fitAddon.fit();
+    } catch {
+      return false;
+    }
+
+    return terminal.cols > 0 && terminal.rows > 0;
+  }, []);
+
+  const scheduleFit = useCallback(
+    (attempts = 16) => {
+      if (fitRafRef.current) {
+        cancelAnimationFrame(fitRafRef.current);
+      }
+
+      const run = (remaining: number) => {
+        const fitted = fitIfVisible();
+        if (fitted) {
+          sendResizeMessage();
+          return;
+        }
+
+        if (remaining <= 0) {
+          return;
+        }
+
+        fitRafRef.current = requestAnimationFrame(() => {
+          run(remaining - 1);
+        });
+      };
+
+      fitRafRef.current = requestAnimationFrame(() => {
+        run(attempts);
+      });
+    },
+    [fitIfVisible, sendResizeMessage]
+  );
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -32,47 +110,42 @@ export function TerminalPanel({ workerId, workerName }: TerminalPanelProps): JSX
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(containerRef.current);
-    fitAddon.fit();
+
     terminal.writeln("Select a worker to connect its terminal.");
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+    scheduleFit();
 
     const observer = new ResizeObserver(() => {
-      fitAddon.fit();
-      const socket = socketRef.current;
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(
-          JSON.stringify({
-            type: "resize",
-            cols: terminal.cols,
-            rows: terminal.rows
-          })
-        );
-      }
+      scheduleFit();
     });
 
     observer.observe(containerRef.current);
 
     return () => {
       observer.disconnect();
+      if (fitRafRef.current) {
+        cancelAnimationFrame(fitRafRef.current);
+        fitRafRef.current = null;
+      }
       socketRef.current?.close();
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, []);
+  }, [scheduleFit]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
-    const fitAddon = fitAddonRef.current;
-    if (!terminal || !fitAddon) {
+    if (!terminal) {
       return;
     }
 
     socketRef.current?.close();
     socketRef.current = null;
     terminal.clear();
+    scheduleFit();
 
     if (!workerId) {
       terminal.writeln("Select a worker to connect its terminal.");
@@ -92,14 +165,11 @@ export function TerminalPanel({ workerId, workerName }: TerminalPanelProps): JSX
     });
 
     socket.addEventListener("open", () => {
-      fitAddon.fit();
-      socket.send(
-        JSON.stringify({
-          type: "resize",
-          cols: terminal.cols,
-          rows: terminal.rows
-        })
-      );
+      scheduleFit(24);
+      focusTerminal();
+      setTimeout(() => {
+        focusTerminal();
+      }, 0);
     });
 
     socket.addEventListener("message", (event) => {
@@ -120,6 +190,11 @@ export function TerminalPanel({ workerId, workerName }: TerminalPanelProps): JSX
       terminal.writeln("\r\n[terminal connection error]");
     });
 
+    focusTerminal();
+    setTimeout(() => {
+      focusTerminal();
+    }, 0);
+
     return () => {
       dataDisposable.dispose();
       socket.close();
@@ -127,7 +202,22 @@ export function TerminalPanel({ workerId, workerName }: TerminalPanelProps): JSX
         socketRef.current = null;
       }
     };
-  }, [workerId, workerName]);
+  }, [focusTerminal, scheduleFit, workerId, workerName]);
+
+  useEffect(() => {
+    if (!workerId) {
+      return;
+    }
+
+    focusTerminal();
+    const timer = setTimeout(() => {
+      focusTerminal();
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [focusRequestKey, focusTerminal, workerId]);
 
   return <div className="terminal-panel" ref={containerRef} />;
 }
