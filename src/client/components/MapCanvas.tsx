@@ -6,6 +6,8 @@ interface MapCanvasProps {
   selectedWorkerId?: string;
   onSelect: (workerId: string | undefined) => void;
   onPositionCommit: (workerId: string, position: WorkerPosition) => void;
+  centerOnWorkerId?: string;
+  centerRequestKey?: number;
 }
 
 interface ViewportState {
@@ -54,10 +56,18 @@ const avatarColor: Record<Worker["avatarType"], string> = {
   dwarf: "#a37854"
 };
 
-export function MapCanvas({ workers, selectedWorkerId, onSelect, onPositionCommit }: MapCanvasProps): JSX.Element {
+export function MapCanvas({
+  workers,
+  selectedWorkerId,
+  onSelect,
+  onPositionCommit,
+  centerOnWorkerId,
+  centerRequestKey
+}: MapCanvasProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const lastCenterRequestRef = useRef<number | undefined>(undefined);
 
   const [canvasSize, setCanvasSize] = useState({ width: 1000, height: 640 });
   const [viewport, setViewport] = useState<ViewportState>({
@@ -167,6 +177,30 @@ export function MapCanvas({ workers, selectedWorkerId, onSelect, onPositionCommi
       workers.map((worker) => [worker.id, localPositionOverrides[worker.id] ?? worker.position])
     );
   }, [workers, localPositionOverrides]);
+
+  useEffect(() => {
+    if (!centerOnWorkerId || centerRequestKey === undefined) {
+      return;
+    }
+
+    if (lastCenterRequestRef.current === centerRequestKey) {
+      return;
+    }
+
+    const worker = workers.find((item) => item.id === centerOnWorkerId);
+    if (!worker) {
+      return;
+    }
+
+    lastCenterRequestRef.current = centerRequestKey;
+
+    const position = localPositionOverrides[worker.id] ?? worker.position;
+    setViewport((current) => ({
+      ...current,
+      offsetX: canvasSize.width / 2 - position.x * current.scale,
+      offsetY: canvasSize.height / 2 - position.y * current.scale
+    }));
+  }, [canvasSize.height, canvasSize.width, centerOnWorkerId, centerRequestKey, localPositionOverrides, workers]);
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     const point = readPointerOnCanvas(event);

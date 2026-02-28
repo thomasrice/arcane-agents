@@ -620,17 +620,17 @@ Discovered projects are ephemeral (not written to config) but appear in the cust
 
 ## MVP Acceptance Criteria
 
-- [ ] Can define shortcuts in config and see them as buttons in the bottom bar.
-- [ ] Clicking a shortcut spawns a new worker every time (never reuses).
-- [ ] Each worker appears as a distinct fantasy character on the map.
-- [ ] Clicking a character selects it and auto-connects xterm.js to its terminal.
-- [ ] Terminal panel auto-switches to newly spawned workers.
-- [ ] Bottom bar shows contextual controls (stop/restart) when a worker is selected.
-- [ ] Custom spawn dialog allows picking from configured + discovered projects.
-- [ ] Command palette fuzzy-matches shortcuts, profiles, and project+runtime combos.
-- [ ] Status indicators update in real time (idle, working, attention, error).
-- [ ] Activity text is parsed and shown for at least Claude Code and OpenCode.
-- [ ] Can stop and restart workers from the contextual toolbar.
-- [ ] Dragging characters repositions them; positions persist across reloads.
-- [ ] Restarting the server preserves workers and reconciles with tmux.
+- [x] Can define shortcuts in config and see them as buttons in the bottom bar.
+- [x] Clicking a shortcut spawns a new worker every time (never reuses).
+- [x] Each worker appears as a distinct fantasy character on the map.
+- [x] Clicking a character selects it and auto-connects xterm.js to its terminal.
+- [x] Terminal panel auto-switches to newly spawned workers.
+- [x] Bottom bar shows contextual controls (stop/restart) when a worker is selected.
+- [x] Custom spawn dialog allows picking from configured + discovered projects.
+- [x] Command palette fuzzy-matches shortcuts, profiles, and project+runtime combos.
+- [x] Status indicators update in real time (idle, working, attention, error).
+- [x] Activity text is parsed and shown for at least Claude Code and OpenCode.
+- [x] Can stop and restart workers from the contextual toolbar.
+- [x] Dragging characters repositions them; positions persist across reloads.
+- [x] Restarting the server preserves workers and reconciles with tmux.
 - [ ] Works with 10+ concurrent workers without performance issues.

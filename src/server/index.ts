@@ -46,6 +46,12 @@ async function bootstrap(): Promise<void> {
         type: "worker-updated",
         worker
       });
+    },
+    (workerId) => {
+      hub.broadcast({
+        type: "worker-removed",
+        workerId
+      });
     }
   );
   statusMonitor.start();
@@ -108,9 +114,9 @@ async function bootstrap(): Promise<void> {
 
   app.post("/api/workers/:workerId/stop", async (req, res) => {
     try {
-      const worker = await orchestrator.stop(req.params.workerId);
-      hub.broadcast({ type: "worker-updated", worker });
-      res.json(worker);
+      const workerId = await orchestrator.stop(req.params.workerId);
+      hub.broadcast({ type: "worker-removed", workerId });
+      res.json({ ok: true, workerId });
     } catch (error) {
       handleRequestError(res, error);
     }
@@ -185,6 +191,7 @@ async function bootstrap(): Promise<void> {
       config: orchestrator.getConfig()
     };
     hub.sendTo(socket, initialEvent);
+
   });
 
   const terminalWss = new WebSocketServer({ noServer: true });

@@ -99,18 +99,6 @@ export class TmuxAdapter {
 
   async stop(ref: TmuxRef): Promise<void> {
     const target = this.target(ref);
-    await this.runTmux(["send-keys", "-t", target, "C-c"]).catch(() => undefined);
-
-    const maxGraceMs = 5000;
-    const start = Date.now();
-    while (Date.now() - start < maxGraceMs) {
-      const stillLive = await this.windowExists(ref);
-      if (!stillLive) {
-        return;
-      }
-      await delay(250);
-    }
-
     await this.runTmux(["kill-window", "-t", target]).catch(() => undefined);
   }
 
@@ -157,8 +145,6 @@ export class TmuxAdapter {
     const output = await this.runTmux([
       "list-panes",
       "-a",
-      "-t",
-      this.sessionName,
       "-F",
       "#{window_name}\t#{pane_id}\t#{@overworld_managed}\t#{@overworld_worker_id}\t#{@overworld_project_id}\t#{@overworld_runtime_id}\t#{@overworld_runtime_label}\t#{@overworld_project_path}"
     ]);
@@ -195,15 +181,32 @@ export class TmuxAdapter {
     return windows;
   }
 
-  async openInExternalTerminal(ref: TmuxRef): Promise<void> {
+  async openInExternalTerminal(ref: TmuxRef, workerId: string): Promise<void> {
     const target = this.target(ref);
     const live = await this.windowExists(ref);
     if (!live) {
       throw new Error(`Cannot open terminal: tmux target '${target}' is not available.`);
     }
 
+    const externalSession = createExternalSessionName(workerId);
+    const externalWindowTarget = `${externalSession}:${ref.window}`;
+
+    await this.runTmux(["has-session", "-t", externalSession])
+      .then(async () => {
+        await this.runTmux(["kill-session", "-t", externalSession]);
+      })
+      .catch(() => undefined);
+
+    try {
+      await this.runTmux(["new-session", "-d", "-t", ref.session, "-s", externalSession]);
+      await this.runTmux(["select-window", "-t", externalWindowTarget]);
+    } catch (error) {
+      await this.runTmux(["kill-session", "-t", externalSession]).catch(() => undefined);
+      throw error;
+    }
+
     await new Promise<void>((resolve, reject) => {
-      const guardCommand = `tmux has-session -t ${shellQuote(target)} >/dev/null 2>&1 || exit 0; exec tmux attach-session -t ${shellQuote(target)}`;
+      const guardCommand = `tmux has-session -t ${shellQuote(externalSession)} >/dev/null 2>&1 || exit 0; exec tmux attach-session -t ${shellQuote(externalSession)}`;
       const child = spawn(
         "xdg-terminal-exec",
         ["sh", "-lc", guardCommand],
@@ -292,6 +295,12 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function createExternalSessionName(workerId: string): string {
+  const safeId = workerId.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || "worker";
+  const stamp = Date.now().toString(36);
+  return `overworld-ext-${safeId}-${stamp}`;
 }
 
 function normalizeOption(value: string | undefined): string | undefined {

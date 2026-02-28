@@ -108,22 +108,11 @@ export class OrchestratorService {
     return worker;
   }
 
-  async stop(workerId: string): Promise<Worker> {
+  async stop(workerId: string): Promise<string> {
     const worker = this.requireWorker(workerId);
-
-    if (worker.status !== "stopped") {
-      await this.tmux.stop(worker.tmuxRef);
-    }
-
-    const updated: Worker = {
-      ...worker,
-      status: "stopped",
-      activityText: undefined,
-      updatedAt: new Date().toISOString()
-    };
-
-    this.workers.saveWorker(updated);
-    return updated;
+    await this.tmux.stop(worker.tmuxRef).catch(() => undefined);
+    this.workers.deleteWorker(workerId);
+    return workerId;
   }
 
   async restart(workerId: string): Promise<Worker> {
@@ -190,13 +179,14 @@ export class OrchestratorService {
 
   async openInExternalTerminal(workerId: string): Promise<void> {
     const worker = this.requireWorker(workerId);
-    await this.tmux.openInExternalTerminal(worker.tmuxRef);
+    await this.tmux.openInExternalTerminal(worker.tmuxRef, worker.id);
   }
 
-  async reconcileWithTmux(): Promise<{ updatedWorkers: Worker[]; adoptedWorkers: Worker[] }> {
+  async reconcileWithTmux(): Promise<{ updatedWorkers: Worker[]; adoptedWorkers: Worker[]; removedWorkerIds: string[] }> {
     const currentWorkers = this.workers.listWorkers();
     const updatedWorkers: Worker[] = [];
     const adoptedWorkers: Worker[] = [];
+    const removedWorkerIds: string[] = [];
 
     const liveManagedWindows = await this.tmux.listManagedWindows();
     const liveByWorkerId = new Map<string, ManagedWindow>();
@@ -227,20 +217,10 @@ export class OrchestratorService {
           continue;
         }
 
-        if (worker.status === "stopped") {
-          continue;
+        const removed = this.workers.deleteWorker(worker.id);
+        if (removed) {
+          removedWorkerIds.push(worker.id);
         }
-
-        const stopped: Worker = {
-          ...worker,
-          status: "stopped",
-          activityText: undefined,
-          activityTool: undefined,
-          activityPath: undefined,
-          updatedAt: new Date().toISOString()
-        };
-        this.workers.saveWorker(stopped);
-        updatedWorkers.push(stopped);
         continue;
       }
 
@@ -315,7 +295,8 @@ export class OrchestratorService {
 
     return {
       updatedWorkers,
-      adoptedWorkers
+      adoptedWorkers,
+      removedWorkerIds
     };
   }
 

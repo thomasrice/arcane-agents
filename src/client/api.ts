@@ -39,8 +39,8 @@ export function spawnWorker(input: WorkerSpawnInput): Promise<Worker> {
   });
 }
 
-export function stopWorker(workerId: string): Promise<Worker> {
-  return requestJson<Worker>(`/api/workers/${workerId}/stop`, {
+export function stopWorker(workerId: string): Promise<{ ok: true; workerId: string }> {
+  return requestJson<{ ok: true; workerId: string }>(`/api/workers/${workerId}/stop`, {
     method: "POST"
   });
 }

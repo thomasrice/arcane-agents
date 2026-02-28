@@ -11,7 +11,8 @@ export class StatusMonitor {
     private readonly workers: WorkerRepository,
     private readonly tmux: TmuxAdapter,
     private readonly pollIntervalMs: number,
-    private readonly onWorkerUpdated: (worker: Worker) => void
+    private readonly onWorkerUpdated: (worker: Worker) => void,
+    private readonly onWorkerRemoved: (workerId: string) => void
   ) {}
 
   start(): void {
@@ -42,7 +43,7 @@ export class StatusMonitor {
 
     this.pollInFlight = true;
     try {
-      const currentWorkers = this.workers.listWorkers().filter((worker) => worker.status !== "stopped");
+      const currentWorkers = this.workers.listWorkers();
 
       for (const worker of currentWorkers) {
         await this.updateWorkerStatus(worker);
@@ -55,14 +56,9 @@ export class StatusMonitor {
   private async updateWorkerStatus(worker: Worker): Promise<void> {
     const live = await this.tmux.windowExists(worker.tmuxRef);
     if (!live) {
-      const stopped = this.workers.updateStatus(worker.id, {
-        status: "stopped",
-        activityText: undefined,
-        activityTool: undefined,
-        activityPath: undefined
-      });
-      if (stopped) {
-        this.onWorkerUpdated(stopped);
+      const removed = this.workers.deleteWorker(worker.id);
+      if (removed) {
+        this.onWorkerRemoved(worker.id);
       }
       return;
     }
@@ -76,10 +72,11 @@ export class StatusMonitor {
       const paneState = await this.tmux.getPaneState(worker.tmuxRef);
       const output = await this.tmux.capturePane(worker.tmuxRef, 35);
       if (paneState.isDead) {
-        derivedStatus = "stopped";
-        derivedActivityText = undefined;
-        derivedActivityTool = undefined;
-        derivedActivityPath = undefined;
+        const removed = this.workers.deleteWorker(worker.id);
+        if (removed) {
+          this.onWorkerRemoved(worker.id);
+        }
+        return;
       } else {
         const parsed = parseActivity(paneState.currentCommand, output);
         derivedStatus = parsed.status;
@@ -100,6 +97,14 @@ export class StatusMonitor {
       derivedActivityTool === worker.activityTool &&
       derivedActivityPath === worker.activityPath
     ) {
+      return;
+    }
+
+    if (derivedStatus === "stopped") {
+      const removed = this.workers.deleteWorker(worker.id);
+      if (removed) {
+        this.onWorkerRemoved(worker.id);
+      }
       return;
     }
 

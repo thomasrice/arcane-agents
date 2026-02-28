@@ -20,14 +20,18 @@ export default function App(): JSX.Element {
   const [config, setConfig] = useState<ResolvedConfig | null>(null);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | undefined>(undefined);
+  const [mapCenterToken, setMapCenterToken] = useState(0);
+  const [mapCenterWorkerId, setMapCenterWorkerId] = useState<string | undefined>(undefined);
   const [terminalFocusToken, setTerminalFocusToken] = useState(0);
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [errorText, setErrorText] = useState<string | undefined>(undefined);
 
+  const activeWorkers = useMemo(() => workers.filter((worker) => worker.status !== "stopped"), [workers]);
+
   const selectedWorker = useMemo(
-    () => workers.find((worker) => worker.id === selectedWorkerId),
-    [workers, selectedWorkerId]
+    () => activeWorkers.find((worker) => worker.id === selectedWorkerId),
+    [activeWorkers, selectedWorkerId]
   );
 
   useEffect(() => {
@@ -35,10 +39,10 @@ export default function App(): JSX.Element {
       return;
     }
 
-    if (!workers.some((worker) => worker.id === selectedWorkerId)) {
+    if (!activeWorkers.some((worker) => worker.id === selectedWorkerId)) {
       setSelectedWorkerId(undefined);
     }
-  }, [workers, selectedWorkerId]);
+  }, [activeWorkers, selectedWorkerId]);
 
   useEffect(() => {
     void Promise.all([fetchConfig(), fetchWorkers()])
@@ -155,6 +159,8 @@ export default function App(): JSX.Element {
         setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
         setSelectedWorkerId(worker.id);
         setTerminalFocusToken((current) => current + 1);
+        setMapCenterWorkerId(worker.id);
+        setMapCenterToken((current) => current + 1);
         setSpawnDialogOpen(false);
         setPaletteOpen(false);
       } catch (error) {
@@ -170,8 +176,9 @@ export default function App(): JSX.Element {
     }
 
     try {
-      const worker = await stopWorker(selectedWorkerId);
-      setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
+      const result = await stopWorker(selectedWorkerId);
+      setWorkers((currentWorkers) => currentWorkers.filter((worker) => worker.id !== result.workerId));
+      setSelectedWorkerId(undefined);
     } catch (error) {
       showError(error);
     }
@@ -233,10 +240,12 @@ export default function App(): JSX.Element {
     <div className="app-shell">
       <div className="map-column">
         <MapCanvas
-          workers={workers}
+          workers={activeWorkers}
           selectedWorkerId={selectedWorkerId}
           onSelect={onSelectWorker}
           onPositionCommit={onPositionCommit}
+          centerOnWorkerId={mapCenterWorkerId}
+          centerRequestKey={mapCenterToken}
         />
         <BottomBar
           shortcuts={config?.shortcuts ?? []}
