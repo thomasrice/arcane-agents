@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { Worker, WorkerPosition, WorkerStatus } from "../../shared/types";
+import type { MovementMode, Worker, WorkerPosition, WorkerStatus } from "../../shared/types";
 
 interface WorkerStatusUpdate {
   status: WorkerStatus;
@@ -13,6 +13,7 @@ interface WorkerStatusUpdate {
 interface WorkerRow {
   id: string;
   name: string;
+  display_name: string | null;
   project_id: string;
   project_path: string;
   runtime_id: string;
@@ -24,6 +25,7 @@ interface WorkerRow {
   activity_tool: Worker["activityTool"] | null;
   activity_path: string | null;
   avatar_type: Worker["avatarType"];
+  movement_mode: MovementMode | null;
   position_x: number;
   position_y: number;
   tmux_session: string;
@@ -61,18 +63,19 @@ export class WorkerRepository {
       .prepare(
         `
         INSERT INTO workers (
-          id, name, project_id, project_path, runtime_id, runtime_label,
-          command_json, profile_id, status, activity_text, activity_tool, activity_path, avatar_type,
+          id, name, display_name, project_id, project_path, runtime_id, runtime_label,
+          command_json, profile_id, status, activity_text, activity_tool, activity_path, avatar_type, movement_mode,
           position_x, position_y, tmux_session, tmux_window, tmux_pane,
           created_at, updated_at
         ) VALUES (
-          @id, @name, @project_id, @project_path, @runtime_id, @runtime_label,
-          @command_json, @profile_id, @status, @activity_text, @activity_tool, @activity_path, @avatar_type,
+          @id, @name, @display_name, @project_id, @project_path, @runtime_id, @runtime_label,
+          @command_json, @profile_id, @status, @activity_text, @activity_tool, @activity_path, @avatar_type, @movement_mode,
           @position_x, @position_y, @tmux_session, @tmux_window, @tmux_pane,
           @created_at, @updated_at
         )
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
+          display_name = excluded.display_name,
           project_id = excluded.project_id,
           project_path = excluded.project_path,
           runtime_id = excluded.runtime_id,
@@ -84,6 +87,7 @@ export class WorkerRepository {
           activity_tool = excluded.activity_tool,
           activity_path = excluded.activity_path,
           avatar_type = excluded.avatar_type,
+          movement_mode = excluded.movement_mode,
           position_x = excluded.position_x,
           position_y = excluded.position_y,
           tmux_session = excluded.tmux_session,
@@ -130,6 +134,22 @@ export class WorkerRepository {
     return updated;
   }
 
+  updateMovementMode(workerId: string, movementMode: MovementMode): Worker | undefined {
+    const worker = this.getWorker(workerId);
+    if (!worker) {
+      return undefined;
+    }
+
+    const updated: Worker = {
+      ...worker,
+      movementMode,
+      updatedAt: new Date().toISOString()
+    };
+
+    this.saveWorker(updated);
+    return updated;
+  }
+
   deleteWorker(workerId: string): boolean {
     const result = this.db.prepare("DELETE FROM workers WHERE id = ?").run(workerId);
     return result.changes > 0;
@@ -144,6 +164,7 @@ export class WorkerRepository {
       CREATE TABLE IF NOT EXISTS workers (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
+        display_name TEXT,
         project_id TEXT NOT NULL,
         project_path TEXT NOT NULL,
         runtime_id TEXT NOT NULL,
@@ -155,6 +176,7 @@ export class WorkerRepository {
         activity_tool TEXT,
         activity_path TEXT,
         avatar_type TEXT NOT NULL,
+        movement_mode TEXT,
         position_x REAL NOT NULL,
         position_y REAL NOT NULL,
         tmux_session TEXT NOT NULL,
@@ -170,12 +192,15 @@ export class WorkerRepository {
 
     this.ensureColumn("workers", "activity_tool", "TEXT");
     this.ensureColumn("workers", "activity_path", "TEXT");
+    this.ensureColumn("workers", "display_name", "TEXT");
+    this.ensureColumn("workers", "movement_mode", "TEXT");
   }
 
   private fromRow(row: WorkerRow): Worker {
     return {
       id: row.id,
       name: row.name,
+      displayName: row.display_name ?? undefined,
       projectId: row.project_id,
       projectPath: row.project_path,
       runtimeId: row.runtime_id,
@@ -187,6 +212,7 @@ export class WorkerRepository {
       activityTool: row.activity_tool ?? undefined,
       activityPath: row.activity_path ?? undefined,
       avatarType: row.avatar_type,
+      movementMode: row.movement_mode === "wander" ? "wander" : "hold",
       position: {
         x: row.position_x,
         y: row.position_y
@@ -205,6 +231,7 @@ export class WorkerRepository {
     return {
       id: worker.id,
       name: worker.name,
+      display_name: worker.displayName ?? null,
       project_id: worker.projectId,
       project_path: worker.projectPath,
       runtime_id: worker.runtimeId,
@@ -216,6 +243,7 @@ export class WorkerRepository {
       activity_tool: worker.activityTool ?? null,
       activity_path: worker.activityPath ?? null,
       avatar_type: worker.avatarType,
+      movement_mode: worker.movementMode,
       position_x: worker.position.x,
       position_y: worker.position.y,
       tmux_session: worker.tmuxRef.session,

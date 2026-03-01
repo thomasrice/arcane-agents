@@ -1,5 +1,7 @@
 export type WorkerStatus = "idle" | "working" | "attention" | "error" | "stopped";
 
+export type MovementMode = "hold" | "wander";
+
 export type ActivityTool =
   | "read"
   | "edit"
@@ -15,10 +17,15 @@ export type ActivityTool =
 
 export type AvatarType =
   | "knight"
-  | "mage"
-  | "ranger"
+  | "wizard"
+  | "enchantress"
+  | "berserker"
   | "druid"
   | "rogue"
+  | "priestess"
+  | "elf-ranger"
+  | "mage"
+  | "ranger"
   | "paladin"
   | "orc"
   | "dwarf";
@@ -92,6 +99,7 @@ export interface WorkerPosition {
 export interface Worker {
   id: string;
   name: string;
+  displayName?: string;
   projectId: string;
   projectPath: string;
   runtimeId: string;
@@ -103,6 +111,7 @@ export interface Worker {
   activityTool?: ActivityTool;
   activityPath?: string;
   avatarType: AvatarType;
+  movementMode: MovementMode;
   position: WorkerPosition;
   tmuxRef: TmuxRef;
   createdAt: string;

@@ -4,21 +4,30 @@ export type SpriteDirection = "south" | "east" | "north" | "west";
 
 export interface CharacterSpriteSet {
   type: string;
+  assetType: string;
   rotations: Partial<Record<SpriteDirection, HTMLImageElement>>;
   animations: {
     walk: Partial<Record<SpriteDirection, HTMLImageElement[]>>;
+    working: HTMLImageElement[];
   };
   hasSprites: boolean;
 }
 
 interface SpriteFrameOptions {
   direction: SpriteDirection;
-  moving: boolean;
+  state: "idle" | "walking" | "working";
   frameIndex: number;
 }
 
 const directions: SpriteDirection[] = ["south", "east", "north", "west"];
 const imageLoadCache = new Map<string, Promise<HTMLImageElement | null>>();
+const spriteTypeAliases: Partial<Record<string, string>> = {
+  mage: "wizard",
+  ranger: "elf-ranger",
+  paladin: "priestess",
+  orc: "berserker",
+  dwarf: "enchantress"
+};
 
 export function useCharacterSpriteLibrary(characterTypes: string[]): Partial<Record<string, CharacterSpriteSet>> {
   const normalizedTypes = useMemo(
@@ -64,19 +73,24 @@ export function getSpriteFrame(spriteSet: CharacterSpriteSet | undefined, option
     return undefined;
   }
 
-  const resolvedDirection = pickDirection(spriteSet, options.direction, options.moving);
-  if (options.moving) {
+  if (options.state === "working" && spriteSet.animations.working.length > 0) {
+    return spriteSet.animations.working[options.frameIndex % spriteSet.animations.working.length];
+  }
+
+  const resolvedDirection = pickDirection(spriteSet, options.direction, options.state === "walking");
+  if (options.state === "walking") {
     const walkFrames = spriteSet.animations.walk[resolvedDirection] ?? spriteSet.animations.walk.south;
     if (walkFrames && walkFrames.length > 0) {
       return walkFrames[options.frameIndex % walkFrames.length];
     }
   }
 
-  return spriteSet.rotations[resolvedDirection] ?? spriteSet.rotations.south;
+  return spriteSet.rotations[resolvedDirection] ?? spriteSet.rotations.south ?? spriteSet.animations.working[0];
 }
 
 async function loadCharacterSpriteSet(characterType: string): Promise<CharacterSpriteSet> {
-  const baseUrl = `/api/assets/characters/${encodeURIComponent(characterType)}`;
+  const assetType = resolveSpriteAssetType(characterType);
+  const baseUrl = `/api/assets/characters/${encodeURIComponent(assetType)}`;
 
   const rotationEntries = await Promise.all(
     directions.map(async (direction) => {
@@ -92,6 +106,8 @@ async function loadCharacterSpriteSet(characterType: string): Promise<CharacterS
     })
   );
 
+  const working = await loadAnimationFrames(`${baseUrl}/animations/working`, 16);
+
   const rotations = Object.fromEntries(rotationEntries.filter(([, image]) => Boolean(image))) as Partial<
     Record<SpriteDirection, HTMLImageElement>
   >;
@@ -102,13 +118,16 @@ async function loadCharacterSpriteSet(characterType: string): Promise<CharacterS
 
   const hasSprites =
     Object.values(rotations).some((image) => Boolean(image)) ||
-    Object.values(walk).some((frames) => Array.isArray(frames) && frames.length > 0);
+    Object.values(walk).some((frames) => Array.isArray(frames) && frames.length > 0) ||
+    working.length > 0;
 
   return {
     type: characterType,
+    assetType,
     rotations,
     animations: {
-      walk
+      walk,
+      working
     },
     hasSprites
   };
@@ -169,4 +188,8 @@ function pickDirection(spriteSet: CharacterSpriteSet, requested: SpriteDirection
   }
 
   return "south";
+}
+
+export function resolveSpriteAssetType(characterType: string): string {
+  return spriteTypeAliases[characterType] ?? characterType;
 }

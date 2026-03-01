@@ -43,7 +43,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 4,
+        "col": 2
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "10",
@@ -79,7 +85,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 2,
+        "col": 6
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "4",
@@ -115,7 +127,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 4,
+        "col": 1
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "12",
@@ -151,7 +169,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 3,
+        "col": 5
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "6",
@@ -187,7 +211,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 5,
+        "col": 2
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "8",
@@ -223,7 +253,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 3,
+        "col": 6
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "0",
@@ -259,7 +295,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 6,
+        "col": 3
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "1",
@@ -295,7 +337,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 1,
+        "col": 1
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "11",
@@ -331,7 +379,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 2,
+        "col": 3
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "3",
@@ -367,7 +421,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 1,
+        "col": 2
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "2",
@@ -403,7 +463,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 1,
+        "col": 3
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "5",
@@ -439,7 +505,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 2,
+        "col": 1
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "15",
@@ -475,7 +547,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 2,
+        "col": 2
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "14",
@@ -511,7 +589,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 3,
+        "col": 4
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "9",
@@ -547,7 +631,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 4,
+        "col": 4
+      },
+      "description": null,
+      "connections": null
     },
     {
       "id": "7",
@@ -583,7 +673,13 @@
           255,
           255
         ]
-      }
+      },
+      "original_position": {
+        "row": 2,
+        "col": 4
+      },
+      "description": null,
+      "connections": null
     }
   ],
   "metadata": {
@@ -592,8 +688,8 @@
       "upper"
     ],
     "terrain_prompts": {
-      "lower": "lush green grass, fantasy meadow",
-      "upper": "worn dirt path, earthy brown trail"
+      "lower": "desaturated sage meadow grass, muted olive green, no flowers, no speckles, smooth ground texture",
+      "upper": "worn dirt path, muted earthy brown, subtle texture, no pebbles"
     },
     "terrain_ids": null,
     "transition_size": 0.5,
@@ -604,6 +700,6 @@
       "text_guidance_scale": 8.0,
       "tileset_adherence_freedom": 500
     },
-    "created_at": "2026-02-28T12:49:49.402567+00:00"
+    "created_at": "2026-02-28T23:11:47.824729+00:00"
   }
 }

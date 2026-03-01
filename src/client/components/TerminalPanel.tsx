@@ -14,6 +14,7 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
   const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const fitRafRef = useRef<number | null>(null);
+  const lastFocusRequestRef = useRef<number | undefined>(undefined);
 
   const focusTerminal = useCallback(() => {
     terminalRef.current?.focus();
@@ -97,7 +98,9 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
     }
 
     const terminal = new Terminal({
-      cursorBlink: true,
+      cursorBlink: false,
+      cursorStyle: "block",
+      cursorInactiveStyle: "block",
       fontSize: 13,
       lineHeight: 1.2,
       theme: {
@@ -166,10 +169,6 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
 
     socket.addEventListener("open", () => {
       scheduleFit(24);
-      focusTerminal();
-      setTimeout(() => {
-        focusTerminal();
-      }, 0);
     });
 
     socket.addEventListener("message", (event) => {
@@ -190,11 +189,6 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
       terminal.writeln("\r\n[terminal connection error]");
     });
 
-    focusTerminal();
-    setTimeout(() => {
-      focusTerminal();
-    }, 0);
-
     return () => {
       dataDisposable.dispose();
       socket.close();
@@ -202,12 +196,21 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
         socketRef.current = null;
       }
     };
-  }, [focusTerminal, scheduleFit, workerId, workerName]);
+  }, [scheduleFit, workerId, workerName]);
 
   useEffect(() => {
     if (!workerId) {
       return;
     }
+
+    if (focusRequestKey === undefined) {
+      return;
+    }
+
+    if (lastFocusRequestRef.current === focusRequestKey) {
+      return;
+    }
+    lastFocusRequestRef.current = focusRequestKey;
 
     focusTerminal();
     const timer = setTimeout(() => {

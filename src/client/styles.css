@@ -53,6 +53,10 @@ body {
   cursor: pointer;
 }
 
+.map-canvas:focus {
+  outline: none;
+}
+
 .map-tooltip {
   position: absolute;
   z-index: 4;
@@ -147,17 +151,141 @@ body {
   background: rgba(12, 19, 17, 0.92);
 }
 
+.terminal-column.terminal-column-selected {
+  border-color: rgba(236, 242, 212, 0.36);
+}
+
+.terminal-column.terminal-column-focused {
+  border-color: rgba(136, 233, 255, 0.86);
+  box-shadow: 0 0 0 1px rgba(55, 173, 202, 0.45), 0 0 22px rgba(26, 98, 115, 0.22);
+}
+
 .terminal-header {
   min-height: 52px;
   padding: 14px 16px;
   font-weight: 700;
   border-bottom: 1px solid rgba(218, 235, 186, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.terminal-header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-open-external {
+  border: 1px solid rgba(207, 224, 181, 0.34);
+  border-radius: 8px;
+  background: rgba(32, 52, 42, 0.95);
+  color: #f0f5e3;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.terminal-open-external:hover {
+  background: rgba(52, 80, 65, 0.95);
+}
+
+.terminal-open-external:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .terminal-panel {
   flex: 1;
   min-height: 0;
   padding: 8px;
+}
+
+.worker-roster {
+  flex: 1;
+  min-height: 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.worker-roster-item {
+  border: 1px solid rgba(208, 224, 181, 0.22);
+  border-radius: 9px;
+  background: rgba(20, 34, 27, 0.9);
+  color: #f1f5e6;
+  text-align: left;
+  padding: 9px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.worker-roster-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.worker-roster-avatar {
+  width: 42px;
+  height: 42px;
+  image-rendering: pixelated;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.worker-roster-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.worker-roster-item:hover {
+  background: rgba(32, 53, 42, 0.92);
+  border-color: rgba(226, 237, 199, 0.38);
+}
+
+.worker-roster-item.active {
+  border-color: rgba(239, 244, 212, 0.74);
+  background: rgba(53, 80, 64, 0.92);
+}
+
+.worker-roster-name {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.worker-roster-meta {
+  font-size: 12px;
+  color: rgba(230, 236, 216, 0.78);
+}
+
+.worker-roster-activity {
+  font-size: 12px;
+  color: rgba(238, 244, 225, 0.86);
+}
+
+.worker-roster-empty {
+  border: 1px dashed rgba(207, 223, 182, 0.28);
+  border-radius: 8px;
+  padding: 12px;
+  color: rgba(232, 240, 218, 0.82);
+  font-size: 13px;
 }
 
 .overlay {
@@ -252,6 +380,72 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.shortcuts-dialog {
+  width: min(720px, calc(100vw - 34px));
+}
+
+.shortcut-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(214, 229, 188, 0.16);
+  background: rgba(16, 26, 21, 0.82);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 52px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(233, 242, 206, 0.36);
+  background: rgba(10, 14, 12, 0.92);
+  color: #edf4dd;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.rename-dialog {
+  width: min(540px, calc(100vw - 34px));
+}
+
+.rename-subtitle {
+  margin-top: -2px;
+  margin-bottom: 10px;
+  color: rgba(227, 235, 211, 0.76);
+  font-size: 13px;
+}
+
+.rename-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.kill-confirm-dialog {
+  width: min(520px, calc(100vw - 34px));
+}
+
+.kill-confirm-copy {
+  color: rgba(231, 238, 217, 0.85);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.kill-confirm-hint {
+  margin-top: 8px;
+  color: rgba(214, 224, 192, 0.76);
+  font-size: 12px;
 }
 
 .palette {

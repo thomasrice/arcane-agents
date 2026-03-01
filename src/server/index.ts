@@ -153,6 +153,36 @@ async function bootstrap(): Promise<void> {
     }
   });
 
+  app.patch("/api/workers/:workerId/rename", (req, res) => {
+    try {
+      const displayName = req.body?.displayName;
+      if (typeof displayName !== "string") {
+        throw new Error("Rename request requires a string displayName.");
+      }
+
+      const worker = orchestrator.rename(req.params.workerId, displayName);
+      hub.broadcast({ type: "worker-updated", worker });
+      res.json(worker);
+    } catch (error) {
+      handleRequestError(res, error);
+    }
+  });
+
+  app.patch("/api/workers/:workerId/movement-mode", (req, res) => {
+    try {
+      const movementMode = req.body?.movementMode;
+      if (movementMode !== "hold" && movementMode !== "wander") {
+        throw new Error("movementMode must be 'hold' or 'wander'.");
+      }
+
+      const worker = orchestrator.setMovementMode(req.params.workerId, movementMode);
+      hub.broadcast({ type: "worker-updated", worker });
+      res.json(worker);
+    } catch (error) {
+      handleRequestError(res, error);
+    }
+  });
+
   app.delete("/api/workers/:workerId", async (req, res) => {
     try {
       const removed = await orchestrator.remove(req.params.workerId);

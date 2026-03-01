@@ -58,6 +58,20 @@ export function updateWorkerPosition(workerId: string, x: number, y: number): Pr
   });
 }
 
+export function renameWorker(workerId: string, displayName: string): Promise<Worker> {
+  return requestJson<Worker>(`/api/workers/${workerId}/rename`, {
+    method: "PATCH",
+    body: JSON.stringify({ displayName })
+  });
+}
+
+export function setWorkerMovementMode(workerId: string, movementMode: "hold" | "wander"): Promise<Worker> {
+  return requestJson<Worker>(`/api/workers/${workerId}/movement-mode`, {
+    method: "PATCH",
+    body: JSON.stringify({ movementMode })
+  });
+}
+
 export function removeWorker(workerId: string): Promise<void> {
   return requestJson<void>(`/api/workers/${workerId}`, {
     method: "DELETE"

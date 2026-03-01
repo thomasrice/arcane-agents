@@ -49,7 +49,7 @@ profiles:
     runtime: shell
     command: ["poetry", "run", "python", "chat.py", "-a", "kairos"]
     label: Chat with Kairos
-    avatar: mage
+    avatar: wizard
 
 discovery:
   - name: code-projects

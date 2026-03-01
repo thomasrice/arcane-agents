@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import type { Worker, WorkerPosition } from "../../shared/types";
 import { cornerKey, useOutpostMap, type LoadedOutpostMap } from "../map/tileMapLoader";
 import {
@@ -10,8 +10,12 @@ import {
 
 interface MapCanvasProps {
   workers: Worker[];
+  fadingWorkers?: Array<{ worker: Worker; startedAtMs: number }>;
   selectedWorkerId?: string;
+  terminalFocusedSelected?: boolean;
+  controlGroups?: Partial<Record<number, string>>;
   onSelect: (workerId: string | undefined) => void;
+  onActivateWorker?: (workerId: string) => void;
   onPositionCommit: (workerId: string, position: WorkerPosition) => void;
   centerOnWorkerId?: string;
   centerRequestKey?: number;
@@ -34,6 +38,28 @@ interface WorkerMotion {
   facing: SpriteDirection;
 }
 
+interface MoveOrder {
+  waypoints: WorkerPosition[];
+  waypointIndex: number;
+  speedPerTick: number;
+  commitOnArrival: boolean;
+  source: "manual" | "wander";
+}
+
+interface WanderState {
+  anchor: WorkerPosition;
+  nextMoveAfterMs: number;
+}
+
+interface PanDragState {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  lastX: number;
+  lastY: number;
+  moved: boolean;
+}
+
 interface SpriteBounds {
   x: number;
   y: number;
@@ -42,12 +68,23 @@ interface SpriteBounds {
 }
 
 const workerRadius = 13;
-const spriteBaseSize = 72;
-const spriteAnchorYFactor = 0.82;
+const spriteBaseSize = 64;
+const spriteAnchorYFactor = 0.84;
 const moveSpeedPerTick = 9;
+const animationIntervalMs = 95;
+const keyboardPanSpeedPerSecond = 520;
+const pointerPanDragThreshold = 4;
+const defaultZoomScale = 1.45;
+const recenterVisibilityPaddingPx = 56;
+const fadingWorkerDurationMs = 420;
 
-const avatarColor: Record<Worker["avatarType"], string> = {
+const avatarColor: Record<string, string> = {
   knight: "#8ca1c8",
+  wizard: "#6489cf",
+  enchantress: "#a68bc9",
+  berserker: "#9b7350",
+  priestess: "#d4c07b",
+  "elf-ranger": "#5b9463",
   mage: "#4b83d6",
   ranger: "#4d9961",
   druid: "#6f8f44",
@@ -59,8 +96,12 @@ const avatarColor: Record<Worker["avatarType"], string> = {
 
 export function MapCanvas({
   workers,
+  fadingWorkers,
   selectedWorkerId,
+  terminalFocusedSelected,
+  controlGroups,
   onSelect,
+  onActivateWorker,
   onPositionCommit,
   centerOnWorkerId,
   centerRequestKey
@@ -71,12 +112,17 @@ export function MapCanvas({
   const previousWorkerPositionsRef = useRef<Record<string, WorkerPosition>>({});
   const workerMovingUntilRef = useRef<Record<string, number>>({});
   const workerFacingRef = useRef<Record<string, SpriteDirection>>({});
-  const moveOrdersRef = useRef<Record<string, WorkerPosition>>({});
+  const moveOrdersRef = useRef<Record<string, MoveOrder>>({});
+  const wanderStateRef = useRef<Record<string, WanderState>>({});
   const animatedPositionsRef = useRef<Record<string, WorkerPosition>>({});
+  const panDragRef = useRef<PanDragState | null>(null);
+  const pressedPanKeysRef = useRef<Set<PanDirection>>(new Set());
+  const panRafRef = useRef<number | null>(null);
+  const lastPanFrameRef = useRef<number | null>(null);
 
   const [canvasSize, setCanvasSize] = useState({ width: 1000, height: 640 });
   const [viewport, setViewport] = useState<ViewportState>({
-    scale: 1,
+    scale: defaultZoomScale,
     offsetX: 70,
     offsetY: 25
   });
@@ -127,10 +173,32 @@ export function MapCanvas({
 
   useEffect(() => {
     const activeWorkerIds = new Set(workers.map((worker) => worker.id));
+    const now = performance.now();
 
     for (const workerId of Object.keys(moveOrdersRef.current)) {
       if (!activeWorkerIds.has(workerId)) {
         delete moveOrdersRef.current[workerId];
+      }
+    }
+
+    for (const workerId of Object.keys(wanderStateRef.current)) {
+      if (!activeWorkerIds.has(workerId)) {
+        delete wanderStateRef.current[workerId];
+      }
+    }
+
+    for (const worker of workers) {
+      const existing = wanderStateRef.current[worker.id];
+      if (!existing) {
+        wanderStateRef.current[worker.id] = {
+          anchor: { ...worker.position },
+          nextMoveAfterMs: now + randomRange(2000, 5000)
+        };
+        continue;
+      }
+
+      if (Math.hypot(existing.anchor.x - worker.position.x, existing.anchor.y - worker.position.y) > 5) {
+        existing.anchor = { ...worker.position };
       }
     }
 
@@ -154,16 +222,83 @@ export function MapCanvas({
       setAnimationTick((current) => (current + 1) % 1000000);
 
       const orders = moveOrdersRef.current;
-      if (Object.keys(orders).length === 0) {
-        return;
-      }
-
       const workersById = new Map(workers.map((worker) => [worker.id, worker]));
       const nextPositions = { ...animatedPositionsRef.current };
       const commitQueue: Array<{ workerId: string; position: WorkerPosition }> = [];
       let changed = false;
+      const now = performance.now();
+      const tileSize = mapData?.tileSize ?? 32;
 
-      for (const [workerId, target] of Object.entries(orders)) {
+      if (selectedWorkerId) {
+        const selectedOrder = orders[selectedWorkerId];
+        if (selectedOrder?.source === "wander") {
+          delete orders[selectedWorkerId];
+        }
+      }
+
+      for (const worker of workers) {
+        if (worker.status !== "working" && worker.movementMode === "wander") {
+          continue;
+        }
+
+        const activeOrder = orders[worker.id];
+        if (activeOrder?.source === "wander") {
+          delete orders[worker.id];
+          const wanderState = wanderStateRef.current[worker.id];
+          if (wanderState) {
+            wanderState.nextMoveAfterMs = now + randomRange(2000, 5000);
+          }
+        }
+      }
+
+      for (const worker of workers) {
+        if (worker.id === selectedWorkerId) {
+          continue;
+        }
+
+        if (worker.movementMode !== "wander") {
+          continue;
+        }
+
+        if (worker.status === "working") {
+          continue;
+        }
+
+        if (orders[worker.id]) {
+          continue;
+        }
+
+        const wanderState = wanderStateRef.current[worker.id];
+        if (!wanderState || now < wanderState.nextMoveAfterMs) {
+          continue;
+        }
+
+        const nextTarget = randomWanderTarget(wanderState.anchor, tileSize, mapData);
+        const currentPosition = nextPositions[worker.id] ?? worker.position;
+        const distance = Math.hypot(nextTarget.x - currentPosition.x, nextTarget.y - currentPosition.y);
+        if (distance < 6) {
+          wanderState.nextMoveAfterMs = now + randomRange(2000, 5000);
+          continue;
+        }
+
+        const durationMs = randomRange(1000, 2000);
+        const steps = Math.max(8, durationMs / animationIntervalMs);
+        const waypoints = createCardinalWaypoints(currentPosition, nextTarget);
+
+        orders[worker.id] = {
+          waypoints,
+          waypointIndex: 0,
+          speedPerTick: Math.max(1.1, distance / steps),
+          commitOnArrival: false,
+          source: "wander"
+        };
+      }
+
+      if (Object.keys(orders).length === 0) {
+        return;
+      }
+
+      for (const [workerId, order] of Object.entries(orders)) {
         const worker = workersById.get(workerId);
         if (!worker) {
           delete orders[workerId];
@@ -175,28 +310,50 @@ export function MapCanvas({
         }
 
         const currentPosition = nextPositions[workerId] ?? worker.position;
-        const dx = target.x - currentPosition.x;
-        const dy = target.y - currentPosition.y;
+        const targetWaypoint = order.waypoints[order.waypointIndex];
+        if (!targetWaypoint) {
+          delete orders[workerId];
+          continue;
+        }
+
+        const dx = targetWaypoint.x - currentPosition.x;
+        const dy = targetWaypoint.y - currentPosition.y;
         const distance = Math.hypot(dx, dy);
 
-        if (distance <= moveSpeedPerTick) {
+        if (distance <= order.speedPerTick) {
           const finalPosition = {
-            x: target.x,
-            y: target.y
+            x: targetWaypoint.x,
+            y: targetWaypoint.y
           };
           nextPositions[workerId] = finalPosition;
+
+          if (order.waypointIndex < order.waypoints.length - 1) {
+            order.waypointIndex += 1;
+            changed = true;
+            continue;
+          }
+
           delete orders[workerId];
-          commitQueue.push({
-            workerId,
-            position: finalPosition
-          });
+
+          if (order.commitOnArrival) {
+            commitQueue.push({
+              workerId,
+              position: finalPosition
+            });
+          } else {
+            const wanderState = wanderStateRef.current[workerId];
+            if (wanderState) {
+              wanderState.nextMoveAfterMs = now + randomRange(2000, 5000);
+            }
+          }
+
           changed = true;
           continue;
         }
 
         nextPositions[workerId] = {
-          x: currentPosition.x + (dx / distance) * moveSpeedPerTick,
-          y: currentPosition.y + (dy / distance) * moveSpeedPerTick
+          x: currentPosition.x + (dx / distance) * order.speedPerTick,
+          y: currentPosition.y + (dy / distance) * order.speedPerTick
         };
         changed = true;
       }
@@ -228,12 +385,12 @@ export function MapCanvas({
           y: Math.round(commit.position.y * 10) / 10
         });
       }
-    }, 95);
+    }, animationIntervalMs);
 
     return () => {
       clearInterval(animationInterval);
     };
-  }, [onPositionCommit, workers]);
+  }, [mapData, onPositionCommit, selectedWorkerId, workers]);
 
   useEffect(() => {
     if (!mapData || hasCenteredOnMap) {
@@ -268,12 +425,24 @@ export function MapCanvas({
     lastCenterRequestRef.current = centerRequestKey;
     const position = animatedPositions[worker.id] ?? worker.position;
 
+    const workerScreenPosition = worldToScreen(position.x, position.y, viewport);
+    if (
+      isInsideViewport(
+        workerScreenPosition,
+        canvasSize.width,
+        canvasSize.height,
+        recenterVisibilityPaddingPx
+      )
+    ) {
+      return;
+    }
+
     setViewport((current) => ({
       ...current,
       offsetX: canvasSize.width / 2 - position.x * current.scale,
       offsetY: canvasSize.height / 2 - position.y * current.scale
     }));
-  }, [animatedPositions, canvasSize.height, canvasSize.width, centerOnWorkerId, centerRequestKey, workers]);
+  }, [animatedPositions, canvasSize.height, canvasSize.width, centerOnWorkerId, centerRequestKey, viewport, workers]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -308,9 +477,12 @@ export function MapCanvas({
       width: canvasSize.width,
       height: canvasSize.height,
       workers,
+      fadingWorkers,
       displayedPositions: animatedPositions,
       workerMotion,
       selectedWorkerId,
+      terminalFocusedSelected,
+      controlGroups,
       viewport,
       mapData,
       spriteLibrary,
@@ -321,8 +493,11 @@ export function MapCanvas({
     animatedPositions,
     animationTick,
     canvasSize,
+    controlGroups,
+    fadingWorkers,
     mapData,
     selectedWorkerId,
+    terminalFocusedSelected,
     spriteLibrary,
     fallbackSpriteSet,
     viewport,
@@ -331,68 +506,212 @@ export function MapCanvas({
   ]);
 
   useEffect(() => {
+    const stopPanLoop = () => {
+      if (panRafRef.current !== null) {
+        cancelAnimationFrame(panRafRef.current);
+        panRafRef.current = null;
+      }
+      lastPanFrameRef.current = null;
+    };
+
+    const panStep = (timestamp: number) => {
+      const pressed = pressedPanKeysRef.current;
+      if (pressed.size === 0) {
+        stopPanLoop();
+        return;
+      }
+
+      const lastFrame = lastPanFrameRef.current ?? timestamp;
+      const deltaSeconds = Math.min(0.05, (timestamp - lastFrame) / 1000);
+      lastPanFrameRef.current = timestamp;
+
+      let xAxis = 0;
+      let yAxis = 0;
+
+      if (pressed.has("left")) {
+        xAxis += 1;
+      }
+      if (pressed.has("right")) {
+        xAxis -= 1;
+      }
+      if (pressed.has("up")) {
+        yAxis += 1;
+      }
+      if (pressed.has("down")) {
+        yAxis -= 1;
+      }
+
+      if (xAxis !== 0 || yAxis !== 0) {
+        const vectorLength = Math.hypot(xAxis, yAxis);
+        const speed = keyboardPanSpeedPerSecond * deltaSeconds;
+        const deltaX = (xAxis / vectorLength) * speed;
+        const deltaY = (yAxis / vectorLength) * speed;
+
+        setViewport((current) => ({
+          ...current,
+          offsetX: current.offsetX + deltaX,
+          offsetY: current.offsetY + deltaY
+        }));
+      }
+
+      panRafRef.current = requestAnimationFrame(panStep);
+    };
+
+    const startPanLoop = () => {
+      if (panRafRef.current !== null) {
+        return;
+      }
+      lastPanFrameRef.current = null;
+      panRafRef.current = requestAnimationFrame(panStep);
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) {
         return;
       }
 
-      const step = 30;
-      if (["ArrowUp", "w", "W"].includes(event.key)) {
-        event.preventDefault();
-        setViewport((current) => ({ ...current, offsetY: current.offsetY + step }));
-      } else if (["ArrowDown", "s", "S"].includes(event.key)) {
-        event.preventDefault();
-        setViewport((current) => ({ ...current, offsetY: current.offsetY - step }));
-      } else if (["ArrowLeft", "a", "A"].includes(event.key)) {
-        event.preventDefault();
-        setViewport((current) => ({ ...current, offsetX: current.offsetX + step }));
-      } else if (["ArrowRight", "d", "D"].includes(event.key)) {
-        event.preventDefault();
-        setViewport((current) => ({ ...current, offsetX: current.offsetX - step }));
+      const direction = toPanDirection(event.key);
+      if (!direction) {
+        return;
+      }
+
+      event.preventDefault();
+      pressedPanKeysRef.current.add(direction);
+      startPanLoop();
+    };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      const direction = toPanDirection(event.key);
+      if (!direction) {
+        return;
+      }
+
+      pressedPanKeysRef.current.delete(direction);
+      if (pressedPanKeysRef.current.size === 0) {
+        stopPanLoop();
       }
     };
 
+    const onBlur = () => {
+      pressedPanKeysRef.current.clear();
+      stopPanLoop();
+    };
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+      stopPanLoop();
+      pressedPanKeysRef.current.clear();
+    };
   }, []);
 
+  const issueManualMoveOrder = (worker: Worker, point: { x: number; y: number }) => {
+    const target = clampWorldPosition(screenToWorld(point.x, point.y, viewport), mapData);
+    const currentPosition = animatedPositionsRef.current[worker.id] ?? worker.position;
+    const normalizedTarget = {
+      x: Math.round(target.x * 10) / 10,
+      y: Math.round(target.y * 10) / 10
+    };
+
+    moveOrdersRef.current[worker.id] = {
+      waypoints: createCardinalWaypoints(currentPosition, normalizedTarget),
+      waypointIndex: 0,
+      speedPerTick: moveSpeedPerTick,
+      commitOnArrival: true,
+      source: "manual"
+    };
+
+    setAnimatedPositions((current) => {
+      if (current[worker.id]) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [worker.id]: worker.position
+      };
+    });
+  };
+
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
+    event.currentTarget.focus();
+
+    if (event.button === 2) {
+      event.preventDefault();
+
+      if (!selectedWorkerId) {
+        return;
+      }
+
+      const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId);
+      if (!selectedWorker) {
+        return;
+      }
+
+      const point = readPointerOnCanvas(event);
+      issueManualMoveOrder(selectedWorker, point);
+      return;
+    }
+
+    if (event.button !== 0) {
+      return;
+    }
+
     const point = readPointerOnCanvas(event);
     const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary, fallbackSpriteSet);
 
     if (hit) {
-      onSelect(hit.id);
-      return;
-    }
-
-    if (selectedWorkerId) {
-      const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId);
-      if (selectedWorker) {
-        const target = clampWorldPosition(screenToWorld(point.x, point.y, viewport), mapData);
-        moveOrdersRef.current[selectedWorker.id] = {
-          x: Math.round(target.x * 10) / 10,
-          y: Math.round(target.y * 10) / 10
-        };
-
-        setAnimatedPositions((current) => {
-          if (current[selectedWorker.id]) {
-            return current;
-          }
-
-          return {
-            ...current,
-            [selectedWorker.id]: selectedWorker.position
-          };
-        });
+      if (hit.id === selectedWorkerId) {
+        onActivateWorker?.(hit.id);
+      } else {
+        onSelect(hit.id);
       }
       return;
     }
 
-    onSelect(undefined);
+    panDragRef.current = {
+      pointerId: event.pointerId,
+      startX: point.x,
+      startY: point.y,
+      lastX: point.x,
+      lastY: point.y,
+      moved: false
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
     const point = readPointerOnCanvas(event);
+
+    const panDrag = panDragRef.current;
+    if (panDrag && panDrag.pointerId === event.pointerId) {
+      const deltaX = point.x - panDrag.lastX;
+      const deltaY = point.y - panDrag.lastY;
+      const dragDistance = Math.hypot(point.x - panDrag.startX, point.y - panDrag.startY);
+
+      if (!panDrag.moved && dragDistance >= pointerPanDragThreshold) {
+        panDrag.moved = true;
+      }
+
+      if (panDrag.moved && (deltaX !== 0 || deltaY !== 0)) {
+        setViewport((current) => ({
+          ...current,
+          offsetX: current.offsetX + deltaX,
+          offsetY: current.offsetY + deltaY
+        }));
+        setHover(null);
+      }
+
+      panDrag.lastX = point.x;
+      panDrag.lastY = point.y;
+      return;
+    }
+
     const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary, fallbackSpriteSet);
 
     if (!hit) {
@@ -407,8 +726,56 @@ export function MapCanvas({
     });
   };
 
+  const handlePointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
+    const panDrag = panDragRef.current;
+    if (!panDrag || panDrag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    panDragRef.current = null;
+
+    if (panDrag.moved) {
+      return;
+    }
+  };
+
+  const handleContextMenu = (event: MouseEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+  };
+
+  const handleDoubleClick = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const point = readPointerOnCanvas(event);
+    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary, fallbackSpriteSet);
+    if (!hit) {
+      return;
+    }
+
+    onActivateWorker?.(hit.id);
+  };
+
+  const handlePointerCancel = (event: PointerEvent<HTMLCanvasElement>) => {
+    const panDrag = panDragRef.current;
+    if (!panDrag || panDrag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    panDragRef.current = null;
+  };
+
   const handlePointerLeave = () => {
-    setHover(null);
+    if (!panDragRef.current) {
+      setHover(null);
+    }
   };
 
   const handleWheel = (event: WheelEvent<HTMLCanvasElement>) => {
@@ -433,19 +800,25 @@ export function MapCanvas({
       <canvas
         ref={canvasRef}
         className="map-canvas"
+        tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onPointerLeave={handlePointerLeave}
+        onDoubleClick={handleDoubleClick}
+        onContextMenu={handleContextMenu}
         onWheel={handleWheel}
       />
 
       {hover ? (
         <div className="map-tooltip" style={{ left: hover.screenX + 16, top: hover.screenY + 18 }}>
-          <div className="map-tooltip-title">{hover.worker.name}</div>
+          <div className="map-tooltip-title">{hover.worker.displayName ?? hover.worker.name}</div>
           <div>
             {hover.worker.projectId} · {hover.worker.runtimeId}
           </div>
           <div>Status: {hover.worker.status}</div>
+          <div>Mode: {hover.worker.movementMode === "wander" ? "Wander" : "Hold"}</div>
           {hover.worker.activityTool ? <div>Tool: {hover.worker.activityTool}</div> : null}
           {hover.worker.activityPath ? <div>Path: {hover.worker.activityPath}</div> : null}
           {hover.worker.activityText ? <div>{hover.worker.activityText}</div> : null}
@@ -466,9 +839,12 @@ interface DrawSceneInput {
   width: number;
   height: number;
   workers: Worker[];
+  fadingWorkers?: Array<{ worker: Worker; startedAtMs: number }>;
   displayedPositions: Record<string, WorkerPosition>;
   workerMotion: Record<string, WorkerMotion>;
   selectedWorkerId: string | undefined;
+  terminalFocusedSelected: boolean | undefined;
+  controlGroups?: Partial<Record<number, string>>;
   viewport: ViewportState;
   mapData: LoadedOutpostMap | undefined;
   spriteLibrary: Partial<Record<string, CharacterSpriteSet>>;
@@ -481,9 +857,12 @@ function drawScene({
   width,
   height,
   workers,
+  fadingWorkers,
   displayedPositions,
   workerMotion,
   selectedWorkerId,
+  terminalFocusedSelected,
+  controlGroups,
   viewport,
   mapData,
   spriteLibrary,
@@ -491,6 +870,8 @@ function drawScene({
   animationTick
 }: DrawSceneInput): void {
   context.clearRect(0, 0, width, height);
+
+  const controlGroupsByWorker = groupControlKeysByWorker(controlGroups);
 
   if (mapData) {
     drawOutpostTerrain(context, viewport, width, height, mapData);
@@ -505,19 +886,25 @@ function drawScene({
 
   context.textAlign = "center";
   context.imageSmoothingEnabled = false;
+  const activeWorkerIds = new Set(workers.map((worker) => worker.id));
 
   for (const worker of workers) {
     const worldPosition = displayedPositions[worker.id] ?? worker.position;
     const screen = worldToScreen(worldPosition.x, worldPosition.y, viewport);
     const radius = workerRadius * viewport.scale;
     const motion = workerMotion[worker.id] ?? { moving: false, facing: "south" as const };
+    const displayLabel = worker.displayName ?? worker.name;
+    const controlKeys = controlGroupsByWorker.get(worker.id) ?? [];
 
     const spriteSet = spriteLibrary[worker.avatarType] ?? fallbackSpriteSet;
+    const spriteState = motion.moving ? "walking" : worker.status === "working" ? "working" : "idle";
     const spriteFrame = getSpriteFrame(spriteSet, {
       direction: motion.facing,
-      moving: motion.moving,
+      state: spriteState,
       frameIndex: animationTick
     });
+
+    drawCharacterGroundShadow(context, screen.x, screen.y, viewport.scale);
 
     let spriteBounds: SpriteBounds | undefined;
     if (spriteFrame) {
@@ -558,8 +945,8 @@ function drawScene({
     }
 
     if (worker.id === selectedWorkerId) {
-      context.strokeStyle = "#f1f2d4";
-      context.lineWidth = 2;
+      context.strokeStyle = terminalFocusedSelected ? "#8ce8ff" : "#f1f2d4";
+      context.lineWidth = terminalFocusedSelected ? 2.4 : 2;
 
       if (spriteBounds) {
         context.strokeRect(
@@ -568,19 +955,89 @@ function drawScene({
           spriteBounds.width + 4 * viewport.scale,
           spriteBounds.height + 4 * viewport.scale
         );
+
+        if (terminalFocusedSelected) {
+          context.strokeStyle = "rgba(31, 153, 184, 0.65)";
+          context.lineWidth = 1.4;
+          context.strokeRect(
+            spriteBounds.x - 5 * viewport.scale,
+            spriteBounds.y - 5 * viewport.scale,
+            spriteBounds.width + 10 * viewport.scale,
+            spriteBounds.height + 10 * viewport.scale
+          );
+        }
       } else {
         context.beginPath();
         context.arc(screen.x, screen.y, radius + 6 * viewport.scale, 0, Math.PI * 2);
         context.stroke();
+
+        if (terminalFocusedSelected) {
+          context.beginPath();
+          context.strokeStyle = "rgba(31, 153, 184, 0.65)";
+          context.lineWidth = 1.2;
+          context.arc(screen.x, screen.y, radius + 10 * viewport.scale, 0, Math.PI * 2);
+          context.stroke();
+        }
       }
     }
 
-    context.fillStyle = "rgba(0, 0, 0, 0.54)";
-    context.fillRect(screen.x - 52, screen.y + 20 * viewport.scale, 104, 18);
+    if (controlKeys.length > 0) {
+      const indicatorAnchorX = spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x;
+      let indicatorY = spriteBounds ? spriteBounds.y - 18 * viewport.scale : screen.y - radius - 24 * viewport.scale;
+      if (activityBadge) {
+        indicatorY -= 18 * viewport.scale;
+      }
 
+      drawControlGroupIndicator(context, indicatorAnchorX, indicatorY, controlKeys, viewport.scale);
+    }
+
+    const labelAnchorX = spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x;
+    const labelTopY = (spriteBounds ? spriteBounds.y + spriteBounds.height : screen.y + radius) + 8 * viewport.scale;
     context.fillStyle = "#f8f7e5";
     context.font = "12px 'Trebuchet MS', sans-serif";
-    context.fillText(worker.name, screen.x, screen.y + 33 * viewport.scale);
+    const labelWidth = Math.max(90, context.measureText(displayLabel).width + 18);
+    const labelHeight = 18;
+
+    context.fillStyle = "rgba(0, 0, 0, 0.56)";
+    context.fillRect(labelAnchorX - labelWidth / 2, labelTopY, labelWidth, labelHeight);
+
+    context.fillStyle = "#f8f7e5";
+    context.fillText(displayLabel, labelAnchorX, labelTopY + 13);
+  }
+
+  if (fadingWorkers && fadingWorkers.length > 0) {
+    const now = Date.now();
+    for (const fading of fadingWorkers) {
+      if (activeWorkerIds.has(fading.worker.id)) {
+        continue;
+      }
+
+      const elapsed = now - fading.startedAtMs;
+      const alpha = clamp(1 - elapsed / fadingWorkerDurationMs, 0, 1);
+      if (alpha <= 0) {
+        continue;
+      }
+
+      const worldPosition = fading.worker.position;
+      const screen = worldToScreen(worldPosition.x, worldPosition.y, viewport);
+      const radius = workerRadius * viewport.scale;
+      const spriteSet = spriteLibrary[fading.worker.avatarType] ?? fallbackSpriteSet;
+      const spriteFrame = getSpriteFrame(spriteSet, {
+        direction: "south",
+        state: "idle",
+        frameIndex: animationTick
+      });
+
+      context.save();
+      context.globalAlpha = alpha;
+      drawCharacterGroundShadow(context, screen.x, screen.y, viewport.scale);
+      if (spriteFrame) {
+        drawSpriteCharacter(context, spriteFrame, screen.x, screen.y, viewport.scale, spriteBaseSize);
+      } else {
+        drawFallbackWorker(context, fading.worker, screen.x, screen.y, radius, viewport.scale);
+      }
+      context.restore();
+    }
   }
 }
 
@@ -593,7 +1050,13 @@ function drawSpriteCharacter(
   baseSize: number
 ): SpriteBounds {
   const bounds = spriteBoundsAtGround(centerX, groundY, scale, baseSize);
+  context.save();
+  context.shadowColor = "rgba(8, 12, 10, 0.5)";
+  context.shadowOffsetX = 0;
+  context.shadowOffsetY = Math.max(1, Math.round(2 * scale));
+  context.shadowBlur = 0;
   context.drawImage(image, bounds.x, bounds.y, bounds.width, bounds.height);
+  context.restore();
   return bounds;
 }
 
@@ -605,13 +1068,79 @@ function drawFallbackWorker(
   radius: number,
   scale: number
 ): void {
-  context.fillStyle = avatarColor[worker.avatarType];
+  context.fillStyle = avatarColor[worker.avatarType] ?? "#7a8c9a";
   context.beginPath();
   context.arc(centerX, centerY, radius, 0, Math.PI * 2);
   context.fill();
 
+  context.strokeStyle = "rgba(8, 12, 10, 0.7)";
+  context.lineWidth = Math.max(1, 1.5 * scale);
+  context.stroke();
+
   context.fillStyle = "rgba(15, 24, 19, 0.45)";
   context.fillRect(centerX - 4 * scale, centerY - 3 * scale, 8 * scale, 6 * scale);
+}
+
+function drawCharacterGroundShadow(context: CanvasRenderingContext2D, centerX: number, groundY: number, scale: number): void {
+  context.fillStyle = "rgba(7, 12, 10, 0.28)";
+  context.beginPath();
+  context.ellipse(centerX, groundY + 2 * scale, 8 * scale, 4.5 * scale, 0, 0, Math.PI * 2);
+  context.fill();
+}
+
+function drawControlGroupIndicator(
+  context: CanvasRenderingContext2D,
+  anchorX: number,
+  topY: number,
+  controlKeys: string[],
+  scale: number
+): void {
+  const badgeSize = Math.max(12, Math.round(14 * scale));
+  const gap = Math.max(2, Math.round(3 * scale));
+  const totalWidth = controlKeys.length * badgeSize + (controlKeys.length - 1) * gap;
+  const startX = Math.round(anchorX - totalWidth / 2);
+  const roundedTopY = Math.round(topY);
+
+  context.font = `${Math.max(10, Math.round(10 * scale))}px 'Trebuchet MS', sans-serif`;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+
+  controlKeys.forEach((key, index) => {
+    const x = startX + index * (badgeSize + gap);
+    context.fillStyle = "rgba(12, 17, 15, 0.88)";
+    context.fillRect(x, roundedTopY, badgeSize, badgeSize);
+    context.strokeStyle = "rgba(235, 242, 207, 0.72)";
+    context.lineWidth = 1;
+    context.strokeRect(x, roundedTopY, badgeSize, badgeSize);
+
+    context.fillStyle = "#f2f5dd";
+    context.fillText(key, x + badgeSize / 2, roundedTopY + badgeSize / 2 + 0.5);
+  });
+
+  context.textBaseline = "alphabetic";
+}
+
+function groupControlKeysByWorker(controlGroups: Partial<Record<number, string>> | undefined): Map<string, string[]> {
+  const grouped = new Map<string, string[]>();
+  if (!controlGroups) {
+    return grouped;
+  }
+
+  for (const [digitText, workerId] of Object.entries(controlGroups)) {
+    if (!workerId) {
+      continue;
+    }
+
+    const digits = grouped.get(workerId) ?? [];
+    digits.push(digitText);
+    grouped.set(workerId, digits);
+  }
+
+  for (const digits of grouped.values()) {
+    digits.sort((a, b) => Number(a) - Number(b));
+  }
+
+  return grouped;
 }
 
 function drawOutpostTerrain(
@@ -655,11 +1184,13 @@ function drawOutpostTerrain(
         continue;
       }
 
+      const minCornerMatches = tileset.name.includes("water") ? 1 : 2;
+
       const key = cornerKey(
-        cornerStateAtVertex(mapData, terrainValue, tileX, tileY),
-        cornerStateAtVertex(mapData, terrainValue, tileX + 1, tileY),
-        cornerStateAtVertex(mapData, terrainValue, tileX, tileY + 1),
-        cornerStateAtVertex(mapData, terrainValue, tileX + 1, tileY + 1)
+        cornerStateAtVertex(mapData, terrainValue, tileX, tileY, minCornerMatches),
+        cornerStateAtVertex(mapData, terrainValue, tileX + 1, tileY, minCornerMatches),
+        cornerStateAtVertex(mapData, terrainValue, tileX, tileY + 1, minCornerMatches),
+        cornerStateAtVertex(mapData, terrainValue, tileX + 1, tileY + 1, minCornerMatches)
       );
 
       const overlayTile = tileset.tilesByCornerKey[key] ?? tileset.fallbackTile;
@@ -715,11 +1246,56 @@ function drawOutpostObjects(
   }
 }
 
+function drawOutpostZoneLabels(
+  context: CanvasRenderingContext2D,
+  viewport: ViewportState,
+  width: number,
+  height: number,
+  mapData: LoadedOutpostMap
+): void {
+  if (!mapData.zones.length) {
+    return;
+  }
+
+  context.save();
+  context.textAlign = "center";
+  context.font = "11px 'Trebuchet MS', sans-serif";
+
+  for (const zone of mapData.zones) {
+    const centerTileX = (zone.x1 + zone.x2 + 1) / 2;
+    const centerTileY = (zone.y1 + zone.y2 + 1) / 2;
+    const worldX = centerTileX * mapData.tileSize;
+    const worldY = (centerTileY - 0.45) * mapData.tileSize;
+
+    const screen = worldToScreen(worldX, worldY, viewport);
+    if (screen.x < -120 || screen.x > width + 120 || screen.y < -30 || screen.y > height + 30) {
+      continue;
+    }
+
+    const label = zone.label.toUpperCase();
+    const textWidth = context.measureText(label).width;
+    const badgeWidth = Math.max(70, textWidth + 14);
+    const badgeHeight = 16;
+
+    context.fillStyle = "rgba(8, 14, 12, 0.42)";
+    context.fillRect(screen.x - badgeWidth / 2, screen.y - badgeHeight / 2, badgeWidth, badgeHeight);
+    context.strokeStyle = "rgba(227, 235, 205, 0.38)";
+    context.lineWidth = 1;
+    context.strokeRect(screen.x - badgeWidth / 2, screen.y - badgeHeight / 2, badgeWidth, badgeHeight);
+
+    context.fillStyle = "rgba(238, 245, 220, 0.8)";
+    context.fillText(label, screen.x, screen.y + 4);
+  }
+
+  context.restore();
+}
+
 function cornerStateAtVertex(
   mapData: LoadedOutpostMap,
   terrainValue: number,
   vertexTileX: number,
-  vertexTileY: number
+  vertexTileY: number,
+  minimumMatches: number
 ): "lower" | "upper" {
   let matchCount = 0;
 
@@ -736,7 +1312,7 @@ function cornerStateAtVertex(
     matchCount += 1;
   }
 
-  return matchCount >= 2 ? "upper" : "lower";
+  return matchCount >= minimumMatches ? "upper" : "lower";
 }
 
 function terrainAt(mapData: LoadedOutpostMap, tileX: number, tileY: number): number {
@@ -761,11 +1337,78 @@ function clampWorldPosition(position: WorkerPosition, mapData: LoadedOutpostMap 
   };
 }
 
+function createCardinalWaypoints(from: WorkerPosition, to: WorkerPosition): WorkerPosition[] {
+  const epsilon = 0.01;
+  const waypoints: WorkerPosition[] = [];
+
+  const horizontal = {
+    x: to.x,
+    y: from.y
+  };
+
+  if (Math.hypot(horizontal.x - from.x, horizontal.y - from.y) > epsilon) {
+    waypoints.push(horizontal);
+  }
+
+  const lastWaypoint = waypoints[waypoints.length - 1] ?? from;
+  if (Math.hypot(to.x - lastWaypoint.x, to.y - lastWaypoint.y) > epsilon) {
+    waypoints.push({
+      x: to.x,
+      y: to.y
+    });
+  }
+
+  if (waypoints.length === 0) {
+    return [
+      {
+        x: to.x,
+        y: to.y
+      }
+    ];
+  }
+
+  return waypoints;
+}
+
+function randomWanderTarget(
+  anchor: WorkerPosition,
+  tileSize: number,
+  mapData: LoadedOutpostMap | undefined
+): WorkerPosition {
+  const angle = randomRange(0, Math.PI * 2);
+  const radius = tileSize * randomRange(3, 4);
+  return clampWorldPosition(
+    {
+      x: anchor.x + Math.cos(angle) * radius,
+      y: anchor.y + Math.sin(angle) * radius
+    },
+    mapData
+  );
+}
+
+function randomRange(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
+
 function worldToScreen(worldX: number, worldY: number, viewport: ViewportState): { x: number; y: number } {
   return {
     x: worldX * viewport.scale + viewport.offsetX,
     y: worldY * viewport.scale + viewport.offsetY
   };
+}
+
+function isInsideViewport(
+  screenPoint: { x: number; y: number },
+  viewportWidth: number,
+  viewportHeight: number,
+  padding: number
+): boolean {
+  return (
+    screenPoint.x >= padding &&
+    screenPoint.x <= viewportWidth - padding &&
+    screenPoint.y >= padding &&
+    screenPoint.y <= viewportHeight - padding
+  );
 }
 
 function screenToWorld(screenX: number, screenY: number, viewport: ViewportState): { x: number; y: number } {
@@ -918,7 +1561,7 @@ function spriteBoundsAtGround(centerX: number, groundY: number, scale: number, b
   };
 }
 
-function readPointerOnCanvas(event: PointerEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>): {
+function readPointerOnCanvas(event: PointerEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement> | MouseEvent<HTMLCanvasElement>): {
   x: number;
   y: number;
 } {
@@ -931,6 +1574,28 @@ function readPointerOnCanvas(event: PointerEvent<HTMLCanvasElement> | WheelEvent
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+type PanDirection = "up" | "down" | "left" | "right";
+
+function toPanDirection(key: string): PanDirection | undefined {
+  const normalized = key.length === 1 ? key.toLowerCase() : key;
+  switch (normalized) {
+    case "ArrowUp":
+    case "w":
+      return "up";
+    case "ArrowDown":
+    case "s":
+      return "down";
+    case "ArrowLeft":
+    case "a":
+      return "left";
+    case "ArrowRight":
+    case "d":
+      return "right";
+    default:
+      return undefined;
+  }
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

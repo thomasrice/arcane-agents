@@ -7,10 +7,9 @@ interface BottomBarProps {
   onOpenSpawnDialog: () => void;
   onOpenPalette: () => void;
   onDeselect: () => void;
-  onOpenSelectedInTerminal: () => void;
-  onStopSelected: () => void;
-  onRestartSelected: () => void;
-  onRemoveSelected: () => void;
+  onKillSelected: () => void;
+  onRenameSelected: () => void;
+  onToggleMovementMode: () => void;
 }
 
 export function BottomBar({
@@ -20,13 +19,14 @@ export function BottomBar({
   onOpenSpawnDialog,
   onOpenPalette,
   onDeselect,
-  onOpenSelectedInTerminal,
-  onStopSelected,
-  onRestartSelected,
-  onRemoveSelected
+  onKillSelected,
+  onRenameSelected,
+  onToggleMovementMode
 }: BottomBarProps): JSX.Element {
   if (selectedWorker) {
     const stopped = selectedWorker.status === "stopped";
+    const displayLabel = selectedWorker.displayName ?? selectedWorker.name;
+    const movementModeLabel = selectedWorker.movementMode === "wander" ? "Wander" : "Hold";
 
     return (
       <div className="bottom-bar">
@@ -34,23 +34,20 @@ export function BottomBar({
           Back
         </button>
         <div className="selected-worker-meta">
-          <div className="selected-worker-name">{selectedWorker.name}</div>
+          <div className="selected-worker-name">{displayLabel}</div>
           <div className="selected-worker-subline">
-            {selectedWorker.projectId} · {selectedWorker.runtimeId} · {selectedWorker.status}
+            {selectedWorker.projectId} · {selectedWorker.runtimeId} · {selectedWorker.status} · {movementModeLabel}
           </div>
         </div>
 
-        <button className="bar-btn danger" onClick={onStopSelected} disabled={stopped}>
-          Stop
+        <button className="bar-btn" onClick={onToggleMovementMode}>
+          {movementModeLabel === "Wander" ? "Mode: Wander" : "Mode: Hold"}
         </button>
-        <button className="bar-btn" onClick={onRestartSelected}>
-          Restart
+        <button className="bar-btn" onClick={onRenameSelected}>
+          Rename
         </button>
-        <button className="bar-btn" onClick={onOpenSelectedInTerminal} disabled={stopped}>
-          Open in Terminal
-        </button>
-        <button className="bar-btn subtle" onClick={onRemoveSelected}>
-          Remove
+        <button className="bar-btn danger" onClick={onKillSelected} disabled={stopped}>
+          Kill
         </button>
       </div>
     );

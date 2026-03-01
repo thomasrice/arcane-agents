@@ -24,15 +24,21 @@ const toolMatchers: ToolMatch[] = [
   { tool: "task", label: "Subtask", regex: /\b(Task|subagent|agent)\b/i },
   { tool: "todo", label: "Planning", regex: /\b(TodoWrite|todo\b)\b/i },
   { tool: "web", label: "Fetching", regex: /\b(WebFetch|http|https)\b/i },
-  { tool: "terminal", label: "Terminal", regex: /\b(claude|opencode|terminal|tmux)\b/i }
+  { tool: "terminal", label: "Terminal", regex: /\b(claude|terminal|tmux)\b/i }
 ];
 
-const inputPromptRegex =
-  /(\[Y\/n\]|\[y\/N\]|allow\?|permission|continue\?|approve|press enter|confirm|select option|waiting for input)/i;
+const inputPromptLineMatchers: RegExp[] = [
+  /\[(?:Y\/n|y\/N|y\/n|N\/y)\]\s*$/i,
+  /\b(?:press enter|press any key)\b/i,
+  /\b(?:waiting for input|awaiting input|awaiting confirmation)\b/i,
+  /\b(?:select (?:an )?option|enter choice|choose (?:an )?option)\b[:?]?\s*$/i,
+  /\b(?:allow|approve|confirm|continue|proceed)\b[^\n]{0,40}\?\s*$/i
+];
 const errorRegex = /(traceback|exception|\berror\b|fatal|sigterm|command not found|panic|failed)/i;
 
 const filePathRegex =
   /(?:^|\s|"|')((?:~|\.|\.\.|\/)?(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.[A-Za-z][A-Za-z0-9_-]{0,7})(?=$|\s|"|'|:|,|\))/;
+const shellCommands = new Set(["bash", "zsh", "fish", "sh", "nu", "pwsh"]);
 
 export function parseActivity(currentCommand: string, output: string): {
   status: WorkerStatus;
@@ -46,7 +52,7 @@ export function parseActivity(currentCommand: string, output: string): {
 
   const newestFirst = [...lines].reverse();
   const recentForStatus = newestFirst.slice(0, 14).join("\n");
-  const needsInput = inputPromptRegex.test(recentForStatus);
+  const needsInput = hasInputPromptSignal(newestFirst);
   const hasError = errorRegex.test(recentForStatus);
 
   const toolResult = findTool(newestFirst);
@@ -63,7 +69,7 @@ export function parseActivity(currentCommand: string, output: string): {
           : fallbackLine;
 
   const latestLine = newestFirst[0] ?? "";
-  const hasPrompt = /[$#>]\s*$/.test(latestLine);
+  const hasPrompt = /(?:[$#>]|\u276F|\u279C|\u03BB)\s*$/.test(latestLine);
   const status = deriveStatus(currentCommand, needsInput, hasError, Boolean(toolResult || filePath), hasPrompt);
 
   return {
@@ -76,6 +82,30 @@ export function parseActivity(currentCommand: string, output: string): {
       hasError
     }
   };
+}
+
+function hasInputPromptSignal(linesNewestFirst: string[]): boolean {
+  const latest = linesNewestFirst[0] ?? "";
+  const secondLatest = linesNewestFirst[1] ?? "";
+
+  if (isInputPromptLine(latest)) {
+    return true;
+  }
+
+  return isShellPromptLine(latest) && isInputPromptLine(secondLatest);
+}
+
+function isInputPromptLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length > 220) {
+    return false;
+  }
+
+  return inputPromptLineMatchers.some((matcher) => matcher.test(trimmed));
+}
+
+function isShellPromptLine(line: string): boolean {
+  return /[$#>]\s*$/.test(line.trimEnd());
 }
 
 function findTool(linesNewestFirst: string[]): ToolMatch | undefined {
@@ -120,8 +150,7 @@ function deriveStatus(
     return "error";
   }
 
-  const shellCommands = new Set(["bash", "zsh", "fish", "sh"]);
-  if (shellCommands.has(currentCommand.toLowerCase()) && (hasPrompt || !hasActivitySignal)) {
+  if (shellCommands.has(currentCommand.toLowerCase())) {
     return "idle";
   }
 

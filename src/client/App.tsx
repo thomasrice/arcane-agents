@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchConfig,
   fetchWorkers,
   openWorkerInTerminal,
-  removeWorker,
-  restartWorker,
+  renameWorker,
+  setWorkerMovementMode,
   spawnWorker,
   stopWorker,
   updateWorkerPosition
@@ -14,7 +14,23 @@ import { CommandPalette } from "./components/CommandPalette";
 import { MapCanvas } from "./components/MapCanvas";
 import { SpawnDialog } from "./components/SpawnDialog";
 import { TerminalPanel } from "./components/TerminalPanel";
+import { resolveSpriteAssetType } from "./sprites/spriteLoader";
 import type { ResolvedConfig, Worker, WorkerSpawnInput, WsServerEvent } from "../shared/types";
+
+type ControlGroupMap = Partial<Record<number, string>>;
+
+interface FadingWorker {
+  worker: Worker;
+  startedAtMs: number;
+}
+
+const controlGroupStorageKey = "overworld.control-groups.v1";
+const layoutSplitStorageKey = "overworld.layout-split.v1";
+const killFadeDurationMs = 420;
+const defaultMapColumnRatio = 0.61;
+const minMapColumnRatio = 0.42;
+const maxMapColumnRatio = 0.78;
+const mapColumnRatioStep = 0.03;
 
 export default function App(): JSX.Element {
   const [config, setConfig] = useState<ResolvedConfig | null>(null);
@@ -22,10 +38,21 @@ export default function App(): JSX.Element {
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | undefined>(undefined);
   const [mapCenterToken, setMapCenterToken] = useState(0);
   const [mapCenterWorkerId, setMapCenterWorkerId] = useState<string | undefined>(undefined);
-  const [terminalFocusToken, setTerminalFocusToken] = useState(0);
+  const [terminalFocusToken, setTerminalFocusToken] = useState<number | undefined>(undefined);
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOverlayOpen, setShortcutsOverlayOpen] = useState(false);
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [killConfirmWorkerId, setKillConfirmWorkerId] = useState<string | undefined>(undefined);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameTargetWorkerId, setRenameTargetWorkerId] = useState<string | undefined>(undefined);
   const [errorText, setErrorText] = useState<string | undefined>(undefined);
+  const [fadingWorkers, setFadingWorkers] = useState<FadingWorker[]>([]);
+  const [mapColumnRatio, setMapColumnRatio] = useState<number>(() => loadMapColumnRatioFromStorage());
+  const [rosterActiveIndex, setRosterActiveIndex] = useState(0);
+  const [terminalFocused, setTerminalFocused] = useState(false);
+  const [controlGroups, setControlGroups] = useState<ControlGroupMap>(() => loadControlGroupsFromStorage());
+  const controlGroupByDigitRef = useRef<ControlGroupMap>(controlGroups);
 
   const activeWorkers = useMemo(() => workers.filter((worker) => worker.status !== "stopped"), [workers]);
 
@@ -33,6 +60,33 @@ export default function App(): JSX.Element {
     () => activeWorkers.find((worker) => worker.id === selectedWorkerId),
     [activeWorkers, selectedWorkerId]
   );
+
+  const renameTargetWorker = useMemo(
+    () => workers.find((worker) => worker.id === renameTargetWorkerId),
+    [renameTargetWorkerId, workers]
+  );
+
+  const killConfirmWorker = useMemo(
+    () => workers.find((worker) => worker.id === killConfirmWorkerId),
+    [killConfirmWorkerId, workers]
+  );
+
+  useEffect(() => {
+    if (activeWorkers.length === 0) {
+      setRosterActiveIndex(0);
+      return;
+    }
+
+    if (selectedWorkerId) {
+      const selectedIndex = activeWorkers.findIndex((worker) => worker.id === selectedWorkerId);
+      if (selectedIndex >= 0) {
+        setRosterActiveIndex(selectedIndex);
+      }
+      return;
+    }
+
+    setRosterActiveIndex((current) => clampNumber(current, 0, activeWorkers.length - 1));
+  }, [activeWorkers, selectedWorkerId]);
 
   useEffect(() => {
     if (!selectedWorkerId) {
@@ -43,6 +97,69 @@ export default function App(): JSX.Element {
       setSelectedWorkerId(undefined);
     }
   }, [activeWorkers, selectedWorkerId]);
+
+  useEffect(() => {
+    setTerminalFocusToken(undefined);
+  }, [selectedWorkerId]);
+
+  useEffect(() => {
+    if (!selectedWorkerId) {
+      setTerminalFocused(false);
+    }
+  }, [selectedWorkerId]);
+
+  useEffect(() => {
+    const updateTerminalFocus = () => {
+      setTerminalFocused(isElementInTerminalPanel(document.activeElement));
+    };
+
+    const handleFocusOut = () => {
+      setTimeout(updateTerminalFocus, 0);
+    };
+
+    const handleWindowBlur = () => {
+      setTerminalFocused(false);
+    };
+
+    window.addEventListener("focusin", updateTerminalFocus, true);
+    window.addEventListener("focusout", handleFocusOut, true);
+    window.addEventListener("blur", handleWindowBlur);
+
+    updateTerminalFocus();
+    return () => {
+      window.removeEventListener("focusin", updateTerminalFocus, true);
+      window.removeEventListener("focusout", handleFocusOut, true);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, []);
+
+  useEffect(() => {
+    controlGroupByDigitRef.current = controlGroups;
+    persistControlGroups(controlGroups);
+  }, [controlGroups]);
+
+  useEffect(() => {
+    persistMapColumnRatio(mapColumnRatio);
+  }, [mapColumnRatio]);
+
+  useEffect(() => {
+    const activeIds = new Set(activeWorkers.map((worker) => worker.id));
+    setControlGroups((current) => {
+      let changed = false;
+      const next: ControlGroupMap = { ...current };
+
+      for (const [digitText, workerId] of Object.entries(next)) {
+        if (!workerId || activeIds.has(workerId)) {
+          continue;
+        }
+
+        delete next[Number(digitText)];
+        changed = true;
+      }
+
+      return changed ? next : current;
+    });
+  }, [activeWorkers]);
 
   useEffect(() => {
     void Promise.all([fetchConfig(), fetchWorkers()])
@@ -109,14 +226,384 @@ export default function App(): JSX.Element {
     };
   }, []);
 
+  const escapeTerminalFocus = useCallback((): boolean => {
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLElement)) {
+      return false;
+    }
+
+    if (!activeElement.closest(".terminal-panel")) {
+      return false;
+    }
+
+    activeElement.blur();
+    const mapCanvas = document.querySelector<HTMLCanvasElement>(".map-canvas");
+    mapCanvas?.focus();
+    return true;
+  }, []);
+
+  const showError = useCallback((error: unknown) => {
+    setErrorText(error instanceof Error ? error.message : "Unknown request failure");
+  }, []);
+
+  const requestTerminalFocus = useCallback(() => {
+    setTerminalFocusToken((current) => (current ?? 0) + 1);
+  }, []);
+
+  const queueWorkerFade = useCallback((worker: Worker) => {
+    setFadingWorkers((current) => [
+      {
+        worker,
+        startedAtMs: Date.now()
+      },
+      ...current.filter((item) => item.worker.id !== worker.id)
+    ]);
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setFadingWorkers((current) =>
+        current.filter((item) => now - item.startedAtMs < killFadeDurationMs)
+      );
+    }, 80);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const closeRenameModal = useCallback(() => {
+    setRenameModalOpen(false);
+    setRenameTargetWorkerId(undefined);
+  }, []);
+
+  const closeKillConfirm = useCallback(() => {
+    setKillConfirmWorkerId(undefined);
+  }, []);
+
+  const openRenameForWorker = useCallback((worker: Worker) => {
+    setRenameDraft(worker.displayName ?? worker.name);
+    setRenameTargetWorkerId(worker.id);
+    setRenameModalOpen(true);
+  }, []);
+
+  const submitRename = useCallback(async () => {
+    const targetWorkerId = renameTargetWorkerId;
+    if (!targetWorkerId) {
+      closeRenameModal();
+      return;
+    }
+
+    try {
+      const worker = await renameWorker(targetWorkerId, renameDraft);
+      setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
+      closeRenameModal();
+    } catch (error) {
+      showError(error);
+    }
+  }, [closeRenameModal, renameDraft, renameTargetWorkerId, showError]);
+
+  const onKillWorker = useCallback(async (workerId: string) => {
+    const worker = workers.find((item) => item.id === workerId);
+    if (!worker) {
+      return;
+    }
+
+    closeKillConfirm();
+    queueWorkerFade(worker);
+
+    try {
+      const result = await stopWorker(workerId);
+      setWorkers((currentWorkers) => currentWorkers.filter((item) => item.id !== result.workerId));
+      setSelectedWorkerId((current) => (current === result.workerId ? undefined : current));
+    } catch (error) {
+      setFadingWorkers((current) => current.filter((item) => item.worker.id !== workerId));
+      showError(error);
+    }
+  }, [closeKillConfirm, queueWorkerFade, showError, workers]);
+
+  const onKillSelected = useCallback(() => {
+    if (!selectedWorkerId) {
+      return;
+    }
+
+    setKillConfirmWorkerId(selectedWorkerId);
+  }, [selectedWorkerId]);
+
+  const onToggleMovementModeSelected = useCallback(async () => {
+    if (!selectedWorker) {
+      return;
+    }
+
+    const nextMode = selectedWorker.movementMode === "wander" ? "hold" : "wander";
+
+    try {
+      const worker = await setWorkerMovementMode(selectedWorker.id, nextMode);
+      setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
+    } catch (error) {
+      showError(error);
+    }
+  }, [selectedWorker, showError]);
+
+  const nudgeMapColumnRatio = useCallback((delta: number) => {
+    setMapColumnRatio((current) => clampNumber(current + delta, minMapColumnRatio, maxMapColumnRatio));
+  }, []);
+
+  const resetMapColumnRatio = useCallback(() => {
+    setMapColumnRatio(defaultMapColumnRatio);
+  }, []);
+
+  const cycleSelection = useCallback(
+    (direction: 1 | -1) => {
+      if (activeWorkers.length === 0) {
+        return;
+      }
+
+      const currentIndex = activeWorkers.findIndex((worker) => worker.id === selectedWorkerId);
+      const startIndex = currentIndex >= 0 ? currentIndex : direction > 0 ? -1 : 0;
+      const nextIndex = (startIndex + direction + activeWorkers.length) % activeWorkers.length;
+      const nextWorker = activeWorkers[nextIndex];
+      if (!nextWorker) {
+        return;
+      }
+
+      setSelectedWorkerId(nextWorker.id);
+      setMapCenterWorkerId(nextWorker.id);
+      setMapCenterToken((current) => current + 1);
+    },
+    [activeWorkers, selectedWorkerId]
+  );
+
+  const onSelectRosterIndex = useCallback(
+    (index: number) => {
+      const worker = activeWorkers[index];
+      if (!worker) {
+        return;
+      }
+
+      setRosterActiveIndex(index);
+      setSelectedWorkerId(worker.id);
+      setMapCenterWorkerId(worker.id);
+      setMapCenterToken((current) => current + 1);
+    },
+    [activeWorkers]
+  );
+
+  useEffect(() => {
+    if (!renameModalOpen || !renameTargetWorkerId) {
+      return;
+    }
+
+    if (!activeWorkers.some((worker) => worker.id === renameTargetWorkerId)) {
+      closeRenameModal();
+    }
+  }, [activeWorkers, closeRenameModal, renameModalOpen, renameTargetWorkerId]);
+
+  useEffect(() => {
+    if (!killConfirmWorkerId) {
+      return;
+    }
+
+    if (!activeWorkers.some((worker) => worker.id === killConfirmWorkerId)) {
+      closeKillConfirm();
+    }
+  }, [activeWorkers, closeKillConfirm, killConfirmWorkerId]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (killConfirmWorkerId) {
+        if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+          event.preventDefault();
+          void onKillWorker(killConfirmWorkerId);
+          return;
+        }
+
+        event.preventDefault();
+        closeKillConfirm();
+        return;
+      }
+
       if (event.key === "Escape") {
+        if (renameModalOpen) {
+          event.preventDefault();
+          closeRenameModal();
+          return;
+        }
+
+        if (shortcutsOverlayOpen) {
+          event.preventDefault();
+          setShortcutsOverlayOpen(false);
+          return;
+        }
+
         if (paletteOpen || spawnDialogOpen) {
           event.preventDefault();
           setPaletteOpen(false);
           setSpawnDialogOpen(false);
+          return;
         }
+
+        if (isTerminalTarget(event.target)) {
+          return;
+        }
+
+        if (selectedWorkerId) {
+          event.preventDefault();
+          setSelectedWorkerId(undefined);
+        }
+        return;
+      }
+
+      if (isTerminalEscapeShortcut(event)) {
+        const escaped = escapeTerminalFocus();
+        if (escaped) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
+        if (!renameModalOpen && !shortcutsOverlayOpen && !paletteOpen && !spawnDialogOpen && selectedWorkerId) {
+          event.preventDefault();
+          const selectedIndex = activeWorkers.findIndex((worker) => worker.id === selectedWorkerId);
+          if (selectedIndex >= 0) {
+            setRosterActiveIndex(selectedIndex);
+          }
+          setSelectedWorkerId(undefined);
+        }
+        return;
+      }
+
+      if (event.key === "?" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (!isEditableTarget(event.target) || shortcutsOverlayOpen) {
+          event.preventDefault();
+          setShortcutsOverlayOpen((current) => !current);
+        }
+        return;
+      }
+
+      if (
+        (event.key === "[" || event.key === "]" || event.key === "=") &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        !isEditableTarget(event.target) &&
+        !isTerminalTarget(event.target)
+      ) {
+        event.preventDefault();
+        if (event.key === "=") {
+          resetMapColumnRatio();
+        } else {
+          nudgeMapColumnRatio(event.key === "]" ? mapColumnRatioStep : -mapColumnRatioStep);
+        }
+        return;
+      }
+
+      if (event.key === "Tab" && !event.ctrlKey && !event.metaKey && !event.altKey && !isEditableTarget(event.target)) {
+        if (isTerminalTarget(event.target)) {
+          return;
+        }
+
+        event.preventDefault();
+        cycleSelection(event.shiftKey ? -1 : 1);
+        return;
+      }
+
+      const groupDigit = parseControlGroupDigit(event);
+      if (groupDigit !== undefined) {
+        if ((event.ctrlKey || event.metaKey) && !event.altKey && selectedWorkerId) {
+          event.preventDefault();
+          setControlGroups((current) => {
+            const existingForSelected = Object.entries(current).find(([, workerId]) => workerId === selectedWorkerId)?.[0];
+            const existingDigit = existingForSelected !== undefined ? Number(existingForSelected) : undefined;
+            if (current[groupDigit] === selectedWorkerId && existingDigit === groupDigit) {
+              return current;
+            }
+
+            const next: ControlGroupMap = {};
+            for (const [digitText, workerId] of Object.entries(current)) {
+              const digit = Number(digitText);
+              if (!Number.isInteger(digit) || digit < 0 || digit > 9) {
+                continue;
+              }
+
+              if (workerId === selectedWorkerId || digit === groupDigit) {
+                continue;
+              }
+
+              next[digit] = workerId;
+            }
+
+            next[groupDigit] = selectedWorkerId;
+            return next;
+          });
+          return;
+        }
+
+        if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !isEditableTarget(event.target)) {
+          const workerId = controlGroupByDigitRef.current[groupDigit];
+          if (!workerId) {
+            return;
+          }
+
+          const workerExists = activeWorkers.some((worker) => worker.id === workerId);
+          if (!workerExists) {
+            setControlGroups((current) => {
+              if (!(groupDigit in current)) {
+                return current;
+              }
+
+              const next = { ...current };
+              delete next[groupDigit];
+              return next;
+            });
+            return;
+          }
+
+          event.preventDefault();
+          setSelectedWorkerId(workerId);
+          setMapCenterWorkerId(workerId);
+          setMapCenterToken((current) => current + 1);
+        }
+        return;
+      }
+
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (!selectedWorkerId && activeWorkers.length > 0 && !isTerminalTarget(event.target)) {
+        const keyLower = event.key.toLowerCase();
+        if ((keyLower === "j" || keyLower === "k") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          setRosterActiveIndex((current) => {
+            const delta = keyLower === "j" ? 1 : -1;
+            return clampNumber(current + delta, 0, activeWorkers.length - 1);
+          });
+          return;
+        }
+
+        if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+          event.preventDefault();
+          onSelectRosterIndex(rosterActiveIndex);
+          return;
+        }
+      }
+
+      if (event.key.toLowerCase() === "k" && !event.ctrlKey && !event.metaKey && !event.altKey && selectedWorkerId) {
+        event.preventDefault();
+        onKillSelected();
+        return;
+      }
+
+      if (event.key.toLowerCase() === "r" && !event.ctrlKey && !event.metaKey && !event.altKey && selectedWorker) {
+        event.preventDefault();
+        openRenameForWorker(selectedWorker);
+        return;
+      }
+
+      if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && selectedWorkerId) {
+        event.preventDefault();
+        requestTerminalFocus();
         return;
       }
 
@@ -128,29 +615,45 @@ export default function App(): JSX.Element {
         return;
       }
 
-      if (isEditableTarget(event.target)) {
-        return;
-      }
-
       event.preventDefault();
       setPaletteOpen(true);
       setSpawnDialogOpen(false);
+      setShortcutsOverlayOpen(false);
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [paletteOpen, spawnDialogOpen]);
-
-  const showError = useCallback((error: unknown) => {
-    setErrorText(error instanceof Error ? error.message : "Unknown request failure");
-  }, []);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [
+    activeWorkers,
+    closeKillConfirm,
+    closeRenameModal,
+    cycleSelection,
+    escapeTerminalFocus,
+    killConfirmWorkerId,
+    nudgeMapColumnRatio,
+    resetMapColumnRatio,
+    onKillWorker,
+    onKillSelected,
+    onSelectRosterIndex,
+    openRenameForWorker,
+    paletteOpen,
+    renameModalOpen,
+    requestTerminalFocus,
+    rosterActiveIndex,
+    selectedWorker,
+    selectedWorkerId,
+    shortcutsOverlayOpen,
+    spawnDialogOpen
+  ]);
 
   const onSelectWorker = useCallback((workerId: string | undefined) => {
     setSelectedWorkerId(workerId);
-    if (workerId) {
-      setTerminalFocusToken((current) => current + 1);
-    }
   }, []);
+
+  const onActivateWorker = useCallback((workerId: string) => {
+    setSelectedWorkerId(workerId);
+    requestTerminalFocus();
+  }, [requestTerminalFocus]);
 
   const runSpawn = useCallback(
     async (input: WorkerSpawnInput) => {
@@ -158,7 +661,6 @@ export default function App(): JSX.Element {
         const worker = await spawnWorker(input);
         setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
         setSelectedWorkerId(worker.id);
-        setTerminalFocusToken((current) => current + 1);
         setMapCenterWorkerId(worker.id);
         setMapCenterToken((current) => current + 1);
         setSpawnDialogOpen(false);
@@ -169,47 +671,6 @@ export default function App(): JSX.Element {
     },
     [showError]
   );
-
-  const onStopSelected = useCallback(async () => {
-    if (!selectedWorkerId) {
-      return;
-    }
-
-    try {
-      const result = await stopWorker(selectedWorkerId);
-      setWorkers((currentWorkers) => currentWorkers.filter((worker) => worker.id !== result.workerId));
-      setSelectedWorkerId(undefined);
-    } catch (error) {
-      showError(error);
-    }
-  }, [selectedWorkerId, showError]);
-
-  const onRestartSelected = useCallback(async () => {
-    if (!selectedWorkerId) {
-      return;
-    }
-
-    try {
-      const worker = await restartWorker(selectedWorkerId);
-      setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
-    } catch (error) {
-      showError(error);
-    }
-  }, [selectedWorkerId, showError]);
-
-  const onRemoveSelected = useCallback(async () => {
-    if (!selectedWorkerId) {
-      return;
-    }
-
-    try {
-      await removeWorker(selectedWorkerId);
-      setWorkers((currentWorkers) => currentWorkers.filter((worker) => worker.id !== selectedWorkerId));
-      setSelectedWorkerId(undefined);
-    } catch (error) {
-      showError(error);
-    }
-  }, [selectedWorkerId, showError]);
 
   const onOpenSelectedInTerminal = useCallback(async () => {
     if (!selectedWorkerId) {
@@ -222,6 +683,14 @@ export default function App(): JSX.Element {
       showError(error);
     }
   }, [selectedWorkerId, showError]);
+
+  const onRenameSelected = useCallback(() => {
+    if (!selectedWorker) {
+      return;
+    }
+
+    openRenameForWorker(selectedWorker);
+  }, [openRenameForWorker, selectedWorker]);
 
   const onPositionCommit = useCallback(
     (workerId: string, position: { x: number; y: number }) => {
@@ -237,12 +706,21 @@ export default function App(): JSX.Element {
   );
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      style={{
+        gridTemplateColumns: `minmax(380px, ${mapColumnRatio.toFixed(3)}fr) minmax(360px, ${(1 - mapColumnRatio).toFixed(3)}fr)`
+      }}
+    >
       <div className="map-column">
         <MapCanvas
           workers={activeWorkers}
+          fadingWorkers={fadingWorkers}
           selectedWorkerId={selectedWorkerId}
+          terminalFocusedSelected={Boolean(selectedWorkerId && terminalFocused)}
+          controlGroups={controlGroups}
           onSelect={onSelectWorker}
+          onActivateWorker={onActivateWorker}
           onPositionCommit={onPositionCommit}
           centerOnWorkerId={mapCenterWorkerId}
           centerRequestKey={mapCenterToken}
@@ -262,30 +740,85 @@ export default function App(): JSX.Element {
             setSpawnDialogOpen(false);
           }}
           onDeselect={() => onSelectWorker(undefined)}
-          onOpenSelectedInTerminal={() => {
-            void onOpenSelectedInTerminal();
+          onKillSelected={() => {
+            void onKillSelected();
           }}
-          onStopSelected={() => {
-            void onStopSelected();
+          onRenameSelected={() => {
+            onRenameSelected();
           }}
-          onRestartSelected={() => {
-            void onRestartSelected();
-          }}
-          onRemoveSelected={() => {
-            void onRemoveSelected();
+          onToggleMovementMode={() => {
+            void onToggleMovementModeSelected();
           }}
         />
       </div>
 
-      <div className="terminal-column">
+      <div
+        className={`terminal-column${selectedWorker ? " terminal-column-selected" : ""}${
+          selectedWorker && terminalFocused ? " terminal-column-focused" : ""
+        }`}
+      >
         <div className="terminal-header">
-          {selectedWorker ? `${selectedWorker.name} (${selectedWorker.status})` : "Select a worker"}
+          <div className="terminal-header-title">
+            {selectedWorker
+              ? `${selectedWorker.displayName ?? selectedWorker.name} (${selectedWorker.status})`
+              : `Workers (${activeWorkers.length})`}
+          </div>
+
+          {selectedWorker ? (
+            <button
+              className="terminal-open-external"
+              onClick={() => {
+                void onOpenSelectedInTerminal();
+              }}
+              disabled={selectedWorker.status === "stopped"}
+              title="Open in external terminal"
+              type="button"
+            >
+              ↗
+            </button>
+          ) : null}
         </div>
-        <TerminalPanel
-          workerId={selectedWorker?.id}
-          workerName={selectedWorker?.name}
-          focusRequestKey={terminalFocusToken}
-        />
+
+        {selectedWorker ? (
+          <TerminalPanel
+            workerId={selectedWorker.id}
+            workerName={selectedWorker.displayName ?? selectedWorker.name}
+            focusRequestKey={terminalFocusToken}
+          />
+        ) : (
+          <div className="worker-roster">
+            {activeWorkers.length === 0 ? (
+              <div className="worker-roster-empty">No active workers yet. Spawn one from the bottom bar.</div>
+            ) : (
+              activeWorkers.map((worker, index) => (
+                <button
+                  key={worker.id}
+                  className={`worker-roster-item ${index === rosterActiveIndex ? "active" : ""}`}
+                  onMouseEnter={() => setRosterActiveIndex(index)}
+                  onClick={() => onSelectRosterIndex(index)}
+                  type="button"
+                >
+                  <div className="worker-roster-main">
+                    <img
+                      className="worker-roster-avatar"
+                      src={`/api/assets/characters/${encodeURIComponent(resolveSpriteAssetType(worker.avatarType))}/rotations/south.png`}
+                      alt=""
+                      loading="lazy"
+                      aria-hidden="true"
+                    />
+                    <div className="worker-roster-text">
+                      <div className="worker-roster-name">{worker.displayName ?? worker.name}</div>
+                      <div className="worker-roster-meta">
+                        {worker.projectId} · {worker.runtimeId} · {worker.status}
+                      </div>
+                      {worker.activityText ? <div className="worker-roster-activity">{worker.activityText}</div> : null}
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {config ? (
@@ -317,6 +850,123 @@ export default function App(): JSX.Element {
         />
       ) : null}
 
+      {shortcutsOverlayOpen ? (
+        <div className="overlay" onClick={() => setShortcutsOverlayOpen(false)}>
+          <div className="dialog shortcuts-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="dialog-title">Keyboard Shortcuts</div>
+            <div className="shortcut-grid">
+              <div className="shortcut-row">
+                <kbd>1-0</kbd>
+                <span>Select control group</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>Ctrl+1-0</kbd>
+                <span>Assign selected worker to group</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>Tab</kbd>
+                <span>Select next worker</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>Shift+Tab</kbd>
+                <span>Select previous worker</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>J / K</kbd>
+                <span>Move selection in roster list</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>[ / ] / =</kbd>
+                <span>Resize columns or reset split</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>Enter</kbd>
+                <span>Focus terminal for selected worker</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>Ctrl+]</kbd>
+                <span>Leave terminal focus, then deselect worker</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>R</kbd>
+                <span>Rename selected worker</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>K</kbd>
+                <span>Open kill confirm (then Enter)</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>?</kbd>
+                <span>Toggle this shortcut panel</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>Esc</kbd>
+                <span>Close overlay/dialog, then deselect</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {killConfirmWorkerId ? (
+        <div className="overlay" onClick={closeKillConfirm}>
+          <div className="dialog kill-confirm-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="dialog-title">Kill Worker?</div>
+            <div className="rename-subtitle">{killConfirmWorker?.displayName ?? killConfirmWorker?.name ?? "Selected worker"}</div>
+            <div className="kill-confirm-copy">This will terminate the session and remove this worker from the map.</div>
+            <div className="dialog-actions">
+              <button className="bar-btn subtle" type="button" onClick={closeKillConfirm}>
+                Cancel
+              </button>
+              <button
+                className="bar-btn danger"
+                type="button"
+                onClick={() => {
+                  if (killConfirmWorkerId) {
+                    void onKillWorker(killConfirmWorkerId);
+                  }
+                }}
+              >
+                Kill (Enter)
+              </button>
+            </div>
+            <div className="kill-confirm-hint">Press any other key to dismiss.</div>
+          </div>
+        </div>
+      ) : null}
+
+      {renameModalOpen ? (
+        <div className="overlay" onClick={closeRenameModal}>
+          <div className="dialog rename-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="dialog-title">Rename Worker</div>
+            <div className="rename-subtitle">{renameTargetWorker?.name ?? "Selected worker"}</div>
+            <form
+              className="rename-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitRename();
+              }}
+            >
+              <input
+                className="input"
+                autoFocus
+                value={renameDraft}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                placeholder="Display name"
+              />
+              <div className="dialog-actions">
+                <button className="bar-btn subtle" type="button" onClick={closeRenameModal}>
+                  Cancel (Esc)
+                </button>
+                <button className="bar-btn" type="submit">
+                  Save (Enter)
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
       {errorText ? (
         <div className="error-toast" onClick={() => setErrorText(undefined)}>
           {errorText}
@@ -337,6 +987,113 @@ function upsertWorker(currentWorkers: Worker[], worker: Worker): Worker[] {
   return nextWorkers;
 }
 
+function loadControlGroupsFromStorage(): ControlGroupMap {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(controlGroupStorageKey);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    const next: ControlGroupMap = {};
+    const digitByWorkerId = new Map<string, number>();
+    for (const [key, value] of Object.entries(parsed)) {
+      const digit = Number(key);
+      if (!Number.isInteger(digit) || digit < 0 || digit > 9) {
+        continue;
+      }
+
+      if (typeof value !== "string" || value.trim().length === 0) {
+        continue;
+      }
+
+      const previousDigit = digitByWorkerId.get(value);
+      if (previousDigit !== undefined) {
+        delete next[previousDigit];
+      }
+
+      digitByWorkerId.set(value, digit);
+      next[digit] = value;
+    }
+
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+function persistControlGroups(groups: ControlGroupMap): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    const serializable: Record<string, string> = {};
+    for (const [key, value] of Object.entries(groups)) {
+      const digit = Number(key);
+      if (!Number.isInteger(digit) || digit < 0 || digit > 9) {
+        continue;
+      }
+
+      if (typeof value !== "string" || value.trim().length === 0) {
+        continue;
+      }
+
+      serializable[String(digit)] = value;
+    }
+
+    window.localStorage.setItem(controlGroupStorageKey, JSON.stringify(serializable));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function loadMapColumnRatioFromStorage(): number {
+  if (typeof window === "undefined") {
+    return defaultMapColumnRatio;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(layoutSplitStorageKey);
+    if (!raw) {
+      return defaultMapColumnRatio;
+    }
+
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+      return defaultMapColumnRatio;
+    }
+
+    return clampNumber(parsed, minMapColumnRatio, maxMapColumnRatio);
+  } catch {
+    return defaultMapColumnRatio;
+  }
+}
+
+function persistMapColumnRatio(value: number): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(layoutSplitStorageKey, String(clampNumber(value, minMapColumnRatio, maxMapColumnRatio)));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -344,4 +1101,36 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
   const tagName = target.tagName.toLowerCase();
   return target.isContentEditable || tagName === "input" || tagName === "textarea";
+}
+
+function isTerminalTarget(target: EventTarget | null): boolean {
+  return isElementInTerminalPanel(target);
+}
+
+function isElementInTerminalPanel(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && Boolean(target.closest(".terminal-panel"));
+}
+
+function parseControlGroupDigit(event: KeyboardEvent): number | undefined {
+  if (/^[0-9]$/.test(event.key)) {
+    return Number(event.key);
+  }
+
+  if (/^Digit[0-9]$/.test(event.code)) {
+    return Number(event.code.slice("Digit".length));
+  }
+
+  if (/^Numpad[0-9]$/.test(event.code)) {
+    return Number(event.code.slice("Numpad".length));
+  }
+
+  return undefined;
+}
+
+function isTerminalEscapeShortcut(event: KeyboardEvent): boolean {
+  if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+    return false;
+  }
+
+  return event.key === "]" || event.code === "BracketRight";
 }

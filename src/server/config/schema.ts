@@ -3,10 +3,15 @@ import type { AvatarType, ResolvedConfig } from "../../shared/types";
 
 const avatarValues: [AvatarType, ...AvatarType[]] = [
   "knight",
-  "mage",
-  "ranger",
+  "wizard",
+  "enchantress",
+  "berserker",
   "druid",
   "rogue",
+  "priestess",
+  "elf-ranger",
+  "mage",
+  "ranger",
   "paladin",
   "orc",
   "dwarf"

@@ -294,7 +294,7 @@ profiles:
     runtime: shell
     command: ["poetry", "run", "python", "chat.py", "-a", "kairos"]
     label: Chat with Kairos
-    avatar: mage
+    avatar: wizard
 
 # Discovery: auto-scan rules to find additional projects
 discovery:

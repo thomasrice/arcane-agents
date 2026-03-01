@@ -1,8 +1,10 @@
 import { nanoid } from "nanoid";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type {
   AvatarType,
+  MovementMode,
   ProjectConfig,
   ResolvedConfig,
   RuntimeConfig,
@@ -37,13 +39,13 @@ interface OutpostMapSpec {
 
 const allWorkerAvatars: AvatarType[] = [
   "knight",
-  "mage",
-  "ranger",
+  "wizard",
+  "enchantress",
+  "berserker",
   "druid",
   "rogue",
-  "paladin",
-  "orc",
-  "dwarf"
+  "priestess",
+  "elf-ranger"
 ];
 
 const outpostSpawnSpec = loadOutpostSpawnSpec();
@@ -89,13 +91,14 @@ export class OrchestratorService {
   async spawn(input: WorkerSpawnInput): Promise<Worker> {
     const plan = this.resolveSpawnPlan(input);
     const workerId = nanoid(8).toLowerCase();
+    const launchCommand = withClaudeSessionId(plan.runtimeId, plan.command);
     const shortId = workerId.slice(0, 4);
     const windowName = this.makeWindowName(plan.project.shortName, plan.runtimeId, shortId);
     const tmuxRef = await this.tmux.spawnWorker({
       workerId,
       windowName,
       projectPath: plan.project.path,
-      command: plan.command,
+      command: launchCommand,
       projectId: plan.projectId,
       runtimeId: plan.runtimeId,
       runtimeLabel: plan.runtime.label
@@ -109,10 +112,11 @@ export class OrchestratorService {
       projectPath: plan.project.path,
       runtimeId: plan.runtimeId,
       runtimeLabel: plan.runtime.label,
-      command: plan.command,
+      command: launchCommand,
       profileId: plan.profileId,
-      status: "working",
+      status: "idle",
       avatarType: this.nextAvatar(plan.avatar),
+      movementMode: "hold",
       position: this.nextSpawnPosition(),
       tmuxRef,
       createdAt: now,
@@ -144,13 +148,14 @@ export class OrchestratorService {
       throw new Error(`Cannot restart worker '${workerId}': runtime '${worker.runtimeId}' is no longer configured.`);
     }
 
+    const launchCommand = withClaudeSessionId(worker.runtimeId, worker.command);
     const shortId = worker.id.slice(0, 4);
     const windowName = this.makeWindowName(project.shortName, worker.runtimeId, shortId);
     const tmuxRef = await this.tmux.spawnWorker({
       workerId: worker.id,
       windowName,
       projectPath: project.path,
-      command: worker.command,
+      command: launchCommand,
       projectId: worker.projectId,
       runtimeId: worker.runtimeId,
       runtimeLabel: runtime.label
@@ -159,13 +164,16 @@ export class OrchestratorService {
     const updated: Worker = {
       ...worker,
       name: windowName,
-      projectPath: project.path,
-      runtimeLabel: runtime.label,
-      status: "working",
-      activityText: undefined,
-      tmuxRef,
-      updatedAt: new Date().toISOString()
-    };
+        projectPath: project.path,
+        runtimeLabel: runtime.label,
+        status: "idle",
+        activityText: undefined,
+        activityTool: undefined,
+        activityPath: undefined,
+        command: launchCommand,
+        tmuxRef,
+        updatedAt: new Date().toISOString()
+      };
 
     this.workers.saveWorker(updated);
     return updated;
@@ -176,6 +184,29 @@ export class OrchestratorService {
     if (!updated) {
       throw new Error(`Worker '${workerId}' not found.`);
     }
+    return updated;
+  }
+
+  rename(workerId: string, nextDisplayName: string): Worker {
+    const worker = this.requireWorker(workerId);
+    const trimmed = nextDisplayName.trim();
+
+    const updated: Worker = {
+      ...worker,
+      displayName: trimmed.length > 0 ? trimmed : undefined,
+      updatedAt: new Date().toISOString()
+    };
+
+    this.workers.saveWorker(updated);
+    return updated;
+  }
+
+  setMovementMode(workerId: string, movementMode: MovementMode): Worker {
+    const updated = this.workers.updateMovementMode(workerId, movementMode);
+    if (!updated) {
+      throw new Error(`Worker '${workerId}' not found.`);
+    }
+
     return updated;
   }
 
@@ -223,7 +254,10 @@ export class OrchestratorService {
           if (worker.status === "stopped") {
             const resumed: Worker = {
               ...worker,
-              status: "working",
+              status: "idle",
+              activityText: undefined,
+              activityTool: undefined,
+              activityPath: undefined,
               updatedAt: new Date().toISOString()
             };
             this.workers.saveWorker(resumed);
@@ -291,9 +325,9 @@ export class OrchestratorService {
         runtimeId,
         runtimeLabel: liveWindow.runtimeLabel ?? runtimeConfig?.label ?? runtimeId,
         command: runtimeConfig?.command ?? ["bash"],
-        status: "working",
-        activityTool: "terminal",
+        status: "idle",
         avatarType: this.nextAvatar(),
+        movementMode: "hold",
         position: this.nextSpawnPosition(),
         tmuxRef: {
           session: this.config.backend.tmux.sessionName,
@@ -467,7 +501,17 @@ export class OrchestratorService {
     }
 
     const pool = this.spawnAvatarPool.length > 0 ? this.spawnAvatarPool : allWorkerAvatars;
-    return pool[Math.floor(Math.random() * pool.length)] ?? "knight";
+    const activeAvatars = new Set(
+      this.workers
+        .listWorkers()
+        .filter((worker) => worker.status !== "stopped")
+        .map((worker) => worker.avatarType)
+    );
+
+    const unusedAvatars = pool.filter((avatarType) => !activeAvatars.has(avatarType));
+    const selectionPool = unusedAvatars.length > 0 ? unusedAvatars : pool;
+
+    return selectionPool[Math.floor(Math.random() * selectionPool.length)] ?? "knight";
   }
 
   private nextSpawnPosition(): WorkerPosition {
@@ -540,6 +584,45 @@ function loadOutpostSpawnSpec(): OutpostMapSpec | undefined {
   }
 }
 
+function withClaudeSessionId(runtimeId: string, command: string[]): string[] {
+  const commandCopy = [...command];
+  if (!looksLikeClaudeRuntime(runtimeId, commandCopy)) {
+    return commandCopy;
+  }
+
+  if (hasSessionIdArg(commandCopy)) {
+    return commandCopy;
+  }
+
+  return [...commandCopy, "--session-id", randomUUID()];
+}
+
+function looksLikeClaudeRuntime(runtimeId: string, command: string[]): boolean {
+  if (runtimeId.toLowerCase().includes("claude")) {
+    return true;
+  }
+
+  const binary = path.basename(command[0] ?? "").toLowerCase();
+  return binary.includes("claude");
+}
+
+function hasSessionIdArg(command: string[]): boolean {
+  for (let index = 0; index < command.length; index += 1) {
+    const token = command[index] ?? "";
+    if (token === "--session-id") {
+      const nextValue = command[index + 1];
+      return typeof nextValue === "string" && nextValue.trim().length > 0;
+    }
+
+    if (token.startsWith("--session-id=")) {
+      const value = token.slice("--session-id=".length).trim();
+      return value.length > 0;
+    }
+  }
+
+  return false;
+}
+
 function slugify(value: string): string {
   const slug = value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
   return slug || "project";
@@ -555,6 +638,7 @@ function isSameWorkerRecord(a: Worker, b: Worker): boolean {
     a.runtimeLabel === b.runtimeLabel &&
     JSON.stringify(a.command) === JSON.stringify(b.command) &&
     a.status === b.status &&
+    a.movementMode === b.movementMode &&
     a.tmuxRef.session === b.tmuxRef.session &&
     a.tmuxRef.window === b.tmuxRef.window &&
     a.tmuxRef.pane === b.tmuxRef.pane

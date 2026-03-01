@@ -2,11 +2,21 @@ import { useEffect, useState } from "react";
 
 export type CornerState = "lower" | "upper";
 
+export interface MapZone {
+  id: string;
+  label: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
 export interface LoadedOutpostMap {
   name: string;
   width: number;
   height: number;
   tileSize: number;
+  zones: MapZone[];
   terrain: number[][];
   spawnArea?: {
     x1: number;
@@ -42,6 +52,7 @@ interface RawMapData {
   width: number;
   height: number;
   tileSize: number;
+  zones?: MapZone[];
   terrainTypes: Record<
     string,
     {
@@ -131,6 +142,7 @@ async function loadOutpostMap(): Promise<LoadedOutpostMap> {
     width: rawMap.width,
     height: rawMap.height,
     tileSize: rawMap.tileSize,
+    zones: rawMap.zones ?? [],
     terrain: rawMap.terrain,
     spawnArea: rawMap.spawnArea,
     objects: rawMap.objects,

@@ -17,6 +17,7 @@ interface SpawnTmuxInput {
 interface PaneState {
   currentCommand: string;
   isDead: boolean;
+  currentPath?: string;
 }
 
 interface WindowSummary {
@@ -238,13 +239,14 @@ export class TmuxAdapter {
       "-t",
       this.target(ref),
       "-F",
-      "#{pane_current_command}\t#{pane_dead}"
+      "#{pane_current_command}\t#{pane_dead}\t#{pane_current_path}"
     ]);
 
-    const [currentCommand = "", deadFlag = "0"] = firstLine(output).split("\t");
+    const [currentCommand = "", deadFlag = "0", currentPath = ""] = firstLine(output).split("\t");
     return {
       currentCommand,
-      isDead: deadFlag === "1"
+      isDead: deadFlag === "1",
+      currentPath: currentPath.trim().length > 0 ? currentPath : undefined
     };
   }
 
