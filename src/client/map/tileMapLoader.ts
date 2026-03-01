@@ -18,6 +18,14 @@ export interface LoadedOutpostMap {
   tileSize: number;
   zones: MapZone[];
   terrain: number[][];
+  backgroundImageUrl?: string;
+  collisionTileKeys: Set<string>;
+  occlusionRects: Array<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
   spawnArea?: {
     x1: number;
     y1: number;
@@ -54,6 +62,14 @@ export interface LoadedWangTileset {
   name: string;
   tilesByCornerKey: Record<string, HTMLImageElement>;
   fallbackTile?: HTMLImageElement;
+}
+
+interface LogicGridSpec {
+  width: number;
+  height: number;
+  tileSize: number;
+  worldWidth: number;
+  worldHeight: number;
 }
 
 interface RawMapData {
@@ -101,6 +117,18 @@ interface RawObjectDefinition {
   height: number;
 }
 
+interface RawMapLogicData {
+  version?: number;
+  width?: number;
+  height?: number;
+  tileSize?: number;
+  backgroundImage?: string;
+  collisionTiles?: unknown;
+  occlusionCellSize?: number;
+  occlusionCells?: unknown;
+  occlusionTiles?: unknown;
+}
+
 export function useOutpostMap(): {
   mapData?: LoadedOutpostMap;
   errorText?: string;
@@ -136,11 +164,19 @@ export function useOutpostMap(): {
 
 async function loadOutpostMap(): Promise<LoadedOutpostMap> {
   const rawMap = await fetchJson<RawMapData>("/api/assets/maps/outpost.json");
+  const rawMapLogic = await fetchJsonOptional<RawMapLogicData>("/api/assets/maps/outpost.logic.json");
   const objectDefinitions = await fetchJson<Record<string, RawObjectDefinition>>("/api/assets/objects/objects.json");
 
   const loadedObjectDefinitions = await loadObjectDefinitions(objectDefinitions);
   const animatedObjectDefinitions = await loadAnimatedObjectDefinitions(objectDefinitions);
   const tilesetsByTerrain = await loadTilesetsByTerrain(rawMap);
+  const logicGridSpec = deriveLogicGridSpec(rawMapLogic, rawMap.width, rawMap.height, rawMap.tileSize);
+  const collisionTileKeys = parseLogicTileKeySet(rawMapLogic?.collisionTiles, logicGridSpec, rawMap.width, rawMap.height);
+  const occlusionRects = parseLogicOcclusionRects(rawMapLogic, logicGridSpec, rawMap.width, rawMap.height, rawMap.tileSize);
+  const backgroundImageUrl =
+    typeof rawMapLogic?.backgroundImage === "string" && rawMapLogic.backgroundImage.trim().length > 0
+      ? rawMapLogic.backgroundImage.trim()
+      : undefined;
 
   const baseGrassTile =
     tilesetsByTerrain[1]?.tilesByCornerKey[cornerKey("lower", "lower", "lower", "lower")] ??
@@ -154,6 +190,9 @@ async function loadOutpostMap(): Promise<LoadedOutpostMap> {
     tileSize: rawMap.tileSize,
     zones: rawMap.zones ?? [],
     terrain: rawMap.terrain,
+    backgroundImageUrl,
+    collisionTileKeys,
+    occlusionRects,
     spawnArea: rawMap.spawnArea,
     objects: rawMap.objects,
     objectDefinitions: loadedObjectDefinitions,
@@ -293,6 +332,217 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error(`Failed to load ${url}: ${response.status}`);
   }
   return (await response.json()) as T;
+}
+
+async function fetchJsonOptional<T>(url: string): Promise<T | undefined> {
+  const response = await fetch(url);
+  if (response.status === 404) {
+    return undefined;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to load ${url}: ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+function deriveLogicGridSpec(
+  rawMapLogic: RawMapLogicData | undefined,
+  mapWidth: number,
+  mapHeight: number,
+  mapTileSize: number
+): LogicGridSpec {
+  const logicWidth = clampLogicInt(rawMapLogic?.width, 1, 4096, mapWidth);
+  const logicHeight = clampLogicInt(rawMapLogic?.height, 1, 4096, mapHeight);
+  const logicTileSize = clampLogicInt(rawMapLogic?.tileSize, 1, 512, mapTileSize);
+
+  return {
+    width: logicWidth,
+    height: logicHeight,
+    tileSize: logicTileSize,
+    worldWidth: logicWidth * logicTileSize,
+    worldHeight: logicHeight * logicTileSize
+  };
+}
+
+function parseLogicTileKeySet(
+  rawTiles: unknown,
+  logicGrid: LogicGridSpec,
+  mapWidth: number,
+  mapHeight: number
+): Set<string> {
+  const keys = new Set<string>();
+  if (!Array.isArray(rawTiles)) {
+    return keys;
+  }
+
+  for (const entry of rawTiles) {
+    if (!Array.isArray(entry) || entry.length < 2) {
+      continue;
+    }
+
+    const tileX = Number(entry[0]);
+    const tileY = Number(entry[1]);
+
+    if (!Number.isInteger(tileX) || !Number.isInteger(tileY)) {
+      continue;
+    }
+
+    if (tileX < 0 || tileY < 0 || tileX >= logicGrid.width || tileY >= logicGrid.height) {
+      continue;
+    }
+
+    const minMapTileX = clamp(Math.floor((tileX / logicGrid.width) * mapWidth), 0, mapWidth - 1);
+    const minMapTileY = clamp(Math.floor((tileY / logicGrid.height) * mapHeight), 0, mapHeight - 1);
+
+    const mappedEndXExclusive = Math.ceil(((tileX + 1) / logicGrid.width) * mapWidth);
+    const mappedEndYExclusive = Math.ceil(((tileY + 1) / logicGrid.height) * mapHeight);
+    const maxMapTileX = clamp(mappedEndXExclusive - 1, minMapTileX, mapWidth - 1);
+    const maxMapTileY = clamp(mappedEndYExclusive - 1, minMapTileY, mapHeight - 1);
+
+    for (let mapTileY = minMapTileY; mapTileY <= maxMapTileY; mapTileY += 1) {
+      for (let mapTileX = minMapTileX; mapTileX <= maxMapTileX; mapTileX += 1) {
+        keys.add(logicTileKey(mapTileX, mapTileY));
+      }
+    }
+  }
+
+  return keys;
+}
+
+function parseLogicOcclusionRects(
+  rawMapLogic: RawMapLogicData | undefined,
+  logicGrid: LogicGridSpec,
+  mapWidth: number,
+  mapHeight: number,
+  tileSize: number
+): LoadedOutpostMap["occlusionRects"] {
+  const mapWorldWidth = mapWidth * tileSize;
+  const mapWorldHeight = mapHeight * tileSize;
+  const logicWorldWidth = Math.max(1, logicGrid.worldWidth);
+  const logicWorldHeight = Math.max(1, logicGrid.worldHeight);
+  const rects: LoadedOutpostMap["occlusionRects"] = [];
+  const rectKeys = new Set<string>();
+
+  const mapLogicRectToWorld = (x: number, y: number, width: number, height: number) => {
+    const mappedX = (x / logicWorldWidth) * mapWorldWidth;
+    const mappedY = (y / logicWorldHeight) * mapWorldHeight;
+    const mappedWidth = (width / logicWorldWidth) * mapWorldWidth;
+    const mappedHeight = (height / logicWorldHeight) * mapWorldHeight;
+    return {
+      x: mappedX,
+      y: mappedY,
+      width: mappedWidth,
+      height: mappedHeight
+    };
+  };
+
+  const pushRect = (x: number, y: number, width: number, height: number) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) {
+      return;
+    }
+
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+
+    const right = Math.min(mapWorldWidth, x + width);
+    const bottom = Math.min(mapWorldHeight, y + height);
+    const left = Math.max(0, x);
+    const top = Math.max(0, y);
+    const clampedWidth = right - left;
+    const clampedHeight = bottom - top;
+
+    if (clampedWidth <= 0 || clampedHeight <= 0) {
+      return;
+    }
+
+    const key = `${left},${top},${clampedWidth},${clampedHeight}`;
+    if (rectKeys.has(key)) {
+      return;
+    }
+
+    rectKeys.add(key);
+    rects.push({
+      x: left,
+      y: top,
+      width: clampedWidth,
+      height: clampedHeight
+    });
+  };
+
+  const rawOcclusionCells = rawMapLogic?.occlusionCells;
+  if (Array.isArray(rawOcclusionCells)) {
+    const maxCellSize = Math.max(2, logicGrid.tileSize);
+    const cellSize = clampLogicInt(rawMapLogic?.occlusionCellSize, 2, maxCellSize, Math.min(8, maxCellSize));
+
+    for (const entry of rawOcclusionCells) {
+      if (!Array.isArray(entry) || entry.length < 2) {
+        continue;
+      }
+
+      const cellX = Number(entry[0]);
+      const cellY = Number(entry[1]);
+      if (!Number.isInteger(cellX) || !Number.isInteger(cellY)) {
+        continue;
+      }
+
+      const mappedRect = mapLogicRectToWorld(cellX * cellSize, cellY * cellSize, cellSize, cellSize);
+      pushRect(mappedRect.x, mappedRect.y, mappedRect.width, mappedRect.height);
+    }
+
+    if (rects.length > 0) {
+      return rects;
+    }
+  }
+
+  const rawOcclusionTiles = rawMapLogic?.occlusionTiles;
+  if (Array.isArray(rawOcclusionTiles)) {
+    for (const entry of rawOcclusionTiles) {
+      if (!Array.isArray(entry) || entry.length < 2) {
+        continue;
+      }
+
+      const tileX = Number(entry[0]);
+      const tileY = Number(entry[1]);
+      if (!Number.isInteger(tileX) || !Number.isInteger(tileY)) {
+        continue;
+      }
+
+      if (tileX < 0 || tileY < 0 || tileX >= logicGrid.width || tileY >= logicGrid.height) {
+        continue;
+      }
+
+      const mappedRect = mapLogicRectToWorld(
+        tileX * logicGrid.tileSize,
+        tileY * logicGrid.tileSize,
+        logicGrid.tileSize,
+        logicGrid.tileSize
+      );
+      pushRect(mappedRect.x, mappedRect.y, mappedRect.width, mappedRect.height);
+    }
+  }
+
+  return rects;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function clampLogicInt(value: unknown, min: number, max: number, fallback: number): number {
+  const numberValue = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numberValue)) {
+    return fallback;
+  }
+
+  const rounded = Math.round(numberValue);
+  return Math.max(min, Math.min(max, rounded));
+}
+
+function logicTileKey(tileX: number, tileY: number): string {
+  return `${tileX},${tileY}`;
 }
 
 async function loadImage(url: string): Promise<HTMLImageElement | null> {

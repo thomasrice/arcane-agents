@@ -1,0 +1,1609 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Overworld Map Mask Editor</title>
+  <style>
+    :root {
+      --bg: #0f1613;
+      --panel: #16231e;
+      --panel-border: #2b3b34;
+      --text: #e9f0e8;
+      --muted: #a3b7ad;
+      --accent: #8dd5ad;
+      --danger: #f08e8e;
+      --collision: #ff6d6d;
+      --occlusion: #56b6ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      color: var(--text);
+      background: radial-gradient(circle at 12% 4%, #1f3128 0%, #101916 48%, #0a0f0d 100%);
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+    }
+
+    .shell {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: minmax(320px, 390px) 1fr;
+      gap: 10px;
+      padding: 10px;
+    }
+
+    .controls {
+      min-height: 0;
+      overflow: auto;
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(20, 33, 27, 0.95), rgba(12, 20, 17, 0.98));
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: 0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.35;
+      font-size: 13px;
+    }
+
+    .group {
+      border: 1px solid rgba(206, 225, 191, 0.18);
+      border-radius: 10px;
+      background: rgba(17, 27, 23, 0.84);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .group h2 {
+      margin: 0;
+      font-size: 14px;
+      color: #e4f3de;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    label {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .triple {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      border-radius: 8px;
+      border: 1px solid rgba(216, 232, 196, 0.28);
+      background: rgba(8, 13, 11, 0.92);
+      color: var(--text);
+      font-family: inherit;
+    }
+
+    input,
+    select,
+    textarea {
+      padding: 8px 9px;
+      font-size: 13px;
+    }
+
+    input[type="range"] {
+      padding: 0;
+    }
+
+    button,
+    .file-label {
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      background: rgba(34, 58, 46, 0.95);
+      border: 1px solid rgba(164, 223, 183, 0.32);
+      color: #e7f7df;
+      text-decoration: none;
+    }
+
+    button:hover,
+    .file-label:hover {
+      background: rgba(47, 78, 62, 0.95);
+    }
+
+    button.secondary {
+      background: rgba(28, 40, 34, 0.95);
+      border-color: rgba(208, 224, 183, 0.24);
+    }
+
+    button.danger {
+      background: rgba(98, 37, 37, 0.95);
+      border-color: rgba(242, 160, 160, 0.35);
+    }
+
+    .file-label {
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+    }
+
+    .file-label input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .layer-toggle {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .layer-option {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid rgba(212, 227, 188, 0.2);
+      border-radius: 8px;
+      background: rgba(14, 21, 18, 0.85);
+      padding: 8px;
+      cursor: pointer;
+      user-select: none;
+      color: #e5f1e2;
+    }
+
+    .layer-chip {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      flex: 0 0 auto;
+    }
+
+    .layer-chip.collision {
+      background: var(--collision);
+      box-shadow: 0 0 0 1px rgba(255, 109, 109, 0.35);
+    }
+
+    .layer-chip.occlusion {
+      background: var(--occlusion);
+      box-shadow: 0 0 0 1px rgba(86, 182, 255, 0.35);
+    }
+
+    .status {
+      min-height: 18px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .status.error {
+      color: var(--danger);
+    }
+
+    .status.ok {
+      color: var(--accent);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 170px;
+      resize: vertical;
+      line-height: 1.35;
+      font-family: "Consolas", "Monaco", monospace;
+    }
+
+    .stage {
+      min-height: 0;
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(9, 14, 12, 0.85);
+      display: grid;
+      grid-template-rows: 1fr auto;
+    }
+
+    .canvas-wrap {
+      min-height: 0;
+      overflow: auto;
+      padding: 10px;
+      display: grid;
+      place-items: start center;
+      background: linear-gradient(180deg, rgba(11, 19, 16, 0.78), rgba(8, 12, 10, 0.88));
+    }
+
+    #editor-canvas {
+      width: min(100%, 1400px);
+      height: auto;
+      border: 1px solid rgba(213, 229, 193, 0.22);
+      border-radius: 6px;
+      background: #1a231e;
+      touch-action: none;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+    }
+
+    .hud {
+      border-top: 1px solid rgba(206, 225, 191, 0.18);
+      background: rgba(14, 21, 18, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #d4e5d8;
+      flex-wrap: wrap;
+    }
+
+    .legend {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .dot.collision {
+      background: var(--collision);
+    }
+
+    .dot.occlusion {
+      background: var(--occlusion);
+    }
+
+    @media (max-width: 1100px) {
+      .shell {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+      }
+
+      .controls {
+        max-height: 46vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="controls">
+      <h1>Map Mask Editor</h1>
+      <p class="subtitle">
+        Paint collision and occlusion over a background map. Left click paints, right click erases.
+      </p>
+
+      <section class="group">
+        <h2>Background</h2>
+        <label>
+          Preset
+          <select id="variant-preset">
+            <option value="/api/assets/maps/backgrounds/outpost-v1-2x.png" selected>Outpost V1 (2x current)</option>
+            <option value="/api/assets/maps/backgrounds/outpost-v1.png">Outpost V1 (1x previous)</option>
+            <option value="/api/assets/maps/backgrounds/outpost-v1-original.png">Outpost V1 (original)</option>
+            <option value="/api/assets/maps/backgrounds/outpost-v1-upscaled-2x-photo.png">Outpost V1 (upscaled photo)</option>
+            <option value="custom">Custom URL</option>
+            <option value="/api/dev-map09/variant-01.png">Map09 Variant 01 (legacy)</option>
+            <option value="/api/dev-map09/variant-02.png">Map09 Variant 02</option>
+            <option value="/api/dev-map09/variant-03.png">Map09 Variant 03</option>
+            <option value="/api/dev-map09/variant-04.png">Map09 Variant 04</option>
+            <option value="/api/dev-map09/variant-05.png">Map09 Variant 05</option>
+            <option value="/api/dev-map09/variant-06.png">Map09 Variant 06</option>
+            <option value="/api/dev-map09/variant-07.png">Map09 Variant 07</option>
+            <option value="/api/dev-map09/variant-08.png">Map09 Variant 08</option>
+            <option value="/api/dev-map09/variant-09.png">Map09 Variant 09</option>
+            <option value="/api/dev-map09/variant-10.png">Map09 Variant 10</option>
+            <option value="/api/dev-map09/variant-11.png">Map09 Variant 11</option>
+            <option value="/api/dev-map09/variant-12.png">Map09 Variant 12</option>
+          </select>
+        </label>
+        <label>
+          Image URL
+          <input id="image-url" type="text" spellcheck="false" value="/api/assets/maps/backgrounds/outpost-v1-2x.png">
+        </label>
+        <div class="row">
+          <button id="load-image" type="button">Load URL</button>
+          <label class="file-label">Load local image<input id="load-file" type="file" accept="image/*"></label>
+        </div>
+        <div id="image-status" class="status"></div>
+      </section>
+
+      <section class="group">
+        <h2>Map Grid</h2>
+        <div class="triple">
+          <label>Width (tiles)<input id="map-width" type="number" min="8" max="200" value="40"></label>
+          <label>Height (tiles)<input id="map-height" type="number" min="8" max="200" value="30"></label>
+          <label>Tile px<input id="tile-size" type="number" min="8" max="128" value="32"></label>
+        </div>
+        <label>
+          Occlusion cell px
+          <select id="occlusion-cell-size">
+            <option value="32">32 (tile)</option>
+            <option value="16">16</option>
+            <option value="8" selected>8 (recommended)</option>
+            <option value="4">4</option>
+            <option value="2">2</option>
+          </select>
+        </label>
+        <div class="row">
+          <button id="apply-grid" type="button">Apply grid size</button>
+          <label style="flex-direction: row; align-items: center; gap: 6px;">
+            <input id="show-grid" type="checkbox" checked>
+            Show grid
+          </label>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>Paint</h2>
+        <div class="layer-toggle">
+          <label class="layer-option"><input type="radio" name="layer" value="collision" checked><span class="layer-chip collision"></span>Collision</label>
+          <label class="layer-option"><input type="radio" name="layer" value="occlusion"><span class="layer-chip occlusion"></span>Occlusion</label>
+        </div>
+        <label>
+          Brush size (cells)
+          <input id="brush-size" type="number" min="1" max="32" step="1" value="1">
+        </label>
+        <div id="brush-readout" class="status">Brush: 1 cell</div>
+        <label>
+          Collision opacity
+          <input id="collision-opacity" type="range" min="0" max="1" step="0.05" value="0.42">
+        </label>
+        <label>
+          Occlusion opacity
+          <input id="occlusion-opacity" type="range" min="0" max="1" step="0.05" value="0.36">
+        </label>
+        <div class="row">
+          <button id="clear-layer" class="secondary" type="button">Clear active layer</button>
+          <button id="clear-all" class="danger" type="button">Clear all masks</button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>Export / Import</h2>
+        <div class="row">
+          <button id="refresh-json" type="button">Refresh JSON</button>
+          <button id="copy-json" class="secondary" type="button">Copy JSON</button>
+          <button id="download-json" class="secondary" type="button">Download JSON</button>
+        </div>
+        <div class="row">
+          <button id="load-json" class="secondary" type="button">Load JSON from box</button>
+          <button id="download-masks" class="secondary" type="button">Download mask PNGs</button>
+        </div>
+        <textarea id="json-output" spellcheck="false"></textarea>
+      </section>
+    </aside>
+
+    <main class="stage">
+      <div class="canvas-wrap" id="canvas-wrap">
+        <canvas id="editor-canvas" width="1280" height="960"></canvas>
+      </div>
+      <div class="hud">
+        <div id="tile-readout">Tile: -</div>
+        <div class="legend">
+          <span class="legend-item"><span class="dot collision"></span>Collision</span>
+          <span class="legend-item"><span class="dot occlusion"></span>Occlusion</span>
+        </div>
+        <div id="zoom-readout">Zoom: 100%</div>
+        <div id="count-readout">Collision: 0 | Occlusion: 0</div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("editor-canvas");
+    const context = canvas.getContext("2d");
+    const canvasWrap = document.getElementById("canvas-wrap");
+
+    const minZoom = 0.5;
+    const maxZoom = 6;
+    const zoomFactorStep = 1.12;
+
+    const imageUrlInput = document.getElementById("image-url");
+    const variantPreset = document.getElementById("variant-preset");
+    const loadImageButton = document.getElementById("load-image");
+    const loadFileInput = document.getElementById("load-file");
+    const imageStatus = document.getElementById("image-status");
+
+    const mapWidthInput = document.getElementById("map-width");
+    const mapHeightInput = document.getElementById("map-height");
+    const tileSizeInput = document.getElementById("tile-size");
+    const occlusionCellSizeInput = document.getElementById("occlusion-cell-size");
+    const applyGridButton = document.getElementById("apply-grid");
+    const showGridInput = document.getElementById("show-grid");
+
+    const collisionOpacityInput = document.getElementById("collision-opacity");
+    const occlusionOpacityInput = document.getElementById("occlusion-opacity");
+    const brushSizeInput = document.getElementById("brush-size");
+    const brushReadout = document.getElementById("brush-readout");
+    const clearLayerButton = document.getElementById("clear-layer");
+    const clearAllButton = document.getElementById("clear-all");
+
+    const refreshJsonButton = document.getElementById("refresh-json");
+    const copyJsonButton = document.getElementById("copy-json");
+    const downloadJsonButton = document.getElementById("download-json");
+    const loadJsonButton = document.getElementById("load-json");
+    const downloadMasksButton = document.getElementById("download-masks");
+    const jsonOutput = document.getElementById("json-output");
+
+    const tileReadout = document.getElementById("tile-readout");
+    const zoomReadout = document.getElementById("zoom-readout");
+    const countReadout = document.getElementById("count-readout");
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialImageUrl = urlParams.get("image") || imageUrlInput.value;
+    const initialLogicUrl = urlParams.get("logic") || "/api/assets/maps/outpost.logic.json";
+
+    const state = {
+      mapWidth: 40,
+      mapHeight: 30,
+      tileSize: 32,
+      occlusionCellSize: 8,
+      zoom: 1,
+      showGrid: true,
+      activeLayer: "collision",
+      brushSizeCells: 1,
+      collisionOpacity: 0.42,
+      occlusionOpacity: 0.36,
+      collisionMask: createGrid(40, 30),
+      occlusionMask: createOcclusionGrid(40, 30, 32, 8),
+      backgroundImage: null,
+      backgroundImageUrl: initialImageUrl,
+      hoverInfo: null,
+      pointerDown: false,
+      pointerPaintValue: true
+    };
+
+    imageUrlInput.value = initialImageUrl;
+
+    for (const input of document.querySelectorAll("input[name='layer']")) {
+      input.addEventListener("change", () => {
+        if (input.checked) {
+          state.activeLayer = input.value;
+          draw();
+        }
+      });
+    }
+
+    variantPreset.addEventListener("change", () => {
+      if (variantPreset.value === "custom") {
+        return;
+      }
+
+      imageUrlInput.value = variantPreset.value;
+      void loadImageFromUrl(variantPreset.value);
+    });
+
+    loadImageButton.addEventListener("click", () => {
+      void loadImageFromUrl(imageUrlInput.value);
+    });
+
+    loadFileInput.addEventListener("change", () => {
+      const file = loadFileInput.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      state.backgroundImageUrl = file.name;
+      imageUrlInput.value = file.name;
+      variantPreset.value = "custom";
+      void loadImageFromUrl(objectUrl, true);
+    });
+
+    applyGridButton.addEventListener("click", () => {
+      const previousState = {
+        mapWidth: state.mapWidth,
+        mapHeight: state.mapHeight,
+        tileSize: state.tileSize,
+        occlusionCellSize: state.occlusionCellSize,
+        occlusionMask: state.occlusionMask
+      };
+
+      const nextWidth = clampInt(mapWidthInput.value, 8, 200, state.mapWidth);
+      const nextHeight = clampInt(mapHeightInput.value, 8, 200, state.mapHeight);
+      const nextTileSize = clampInt(tileSizeInput.value, 8, 128, state.tileSize);
+      const nextOcclusionCellSize = clampOcclusionCellSize(occlusionCellSizeInput.value, nextTileSize, state.occlusionCellSize);
+
+      state.collisionMask = resizeGrid(state.collisionMask, nextWidth, nextHeight);
+      state.mapWidth = nextWidth;
+      state.mapHeight = nextHeight;
+      state.tileSize = nextTileSize;
+      state.occlusionCellSize = nextOcclusionCellSize;
+      state.occlusionMask = resampleOcclusionGrid(
+        previousState.occlusionMask,
+        previousState.mapWidth,
+        previousState.mapHeight,
+        previousState.tileSize,
+        previousState.occlusionCellSize,
+        nextWidth,
+        nextHeight,
+        nextTileSize,
+        nextOcclusionCellSize
+      );
+
+      mapWidthInput.value = String(nextWidth);
+      mapHeightInput.value = String(nextHeight);
+      tileSizeInput.value = String(nextTileSize);
+      occlusionCellSizeInput.value = String(nextOcclusionCellSize);
+
+      resizeCanvas();
+      updateBrushReadout();
+      draw();
+      refreshJsonOutput();
+      setStatus(
+        `Grid set to ${nextWidth}x${nextHeight} tiles, tile ${nextTileSize}px, occlusion cell ${nextOcclusionCellSize}px.`,
+        "ok"
+      );
+    });
+
+    occlusionCellSizeInput.addEventListener("change", () => {
+      const nextOcclusionCellSize = clampOcclusionCellSize(occlusionCellSizeInput.value, state.tileSize, state.occlusionCellSize);
+      if (nextOcclusionCellSize === state.occlusionCellSize) {
+        occlusionCellSizeInput.value = String(state.occlusionCellSize);
+        return;
+      }
+
+      state.occlusionMask = resampleOcclusionGrid(
+        state.occlusionMask,
+        state.mapWidth,
+        state.mapHeight,
+        state.tileSize,
+        state.occlusionCellSize,
+        state.mapWidth,
+        state.mapHeight,
+        state.tileSize,
+        nextOcclusionCellSize
+      );
+      state.occlusionCellSize = nextOcclusionCellSize;
+      occlusionCellSizeInput.value = String(nextOcclusionCellSize);
+
+      updateBrushReadout();
+      draw();
+      refreshJsonOutput();
+      setStatus(`Occlusion cell size set to ${nextOcclusionCellSize}px.`, "ok");
+    });
+
+    showGridInput.addEventListener("change", () => {
+      state.showGrid = showGridInput.checked;
+      draw();
+    });
+
+    collisionOpacityInput.addEventListener("input", () => {
+      state.collisionOpacity = clampNumber(Number(collisionOpacityInput.value), 0, 1);
+      draw();
+    });
+
+    occlusionOpacityInput.addEventListener("input", () => {
+      state.occlusionOpacity = clampNumber(Number(occlusionOpacityInput.value), 0, 1);
+      draw();
+    });
+
+    brushSizeInput.addEventListener("input", () => {
+      const nextBrushSize = clampInt(brushSizeInput.value, 1, 32, state.brushSizeCells);
+      state.brushSizeCells = nextBrushSize;
+      brushSizeInput.value = String(nextBrushSize);
+      updateBrushReadout();
+      draw();
+    });
+
+    clearLayerButton.addEventListener("click", () => {
+      const label = state.activeLayer === "collision" ? "collision" : "occlusion";
+      if (!window.confirm(`Clear all ${label} tiles?`)) {
+        return;
+      }
+
+      clearLayer(state.activeLayer);
+      draw();
+      refreshJsonOutput();
+      setStatus(`Cleared ${label} layer.`, "ok");
+    });
+
+    clearAllButton.addEventListener("click", () => {
+      if (!window.confirm("Clear both collision and occlusion layers?")) {
+        return;
+      }
+
+      clearLayer("collision");
+      clearLayer("occlusion");
+      draw();
+      refreshJsonOutput();
+      setStatus("Cleared all masks.", "ok");
+    });
+
+    refreshJsonButton.addEventListener("click", () => {
+      refreshJsonOutput();
+      setStatus("JSON refreshed.", "ok");
+    });
+
+    copyJsonButton.addEventListener("click", async () => {
+      refreshJsonOutput();
+      try {
+        await navigator.clipboard.writeText(jsonOutput.value);
+        setStatus("Copied JSON to clipboard.", "ok");
+      } catch {
+        setStatus("Clipboard copy failed. You can still copy from the text area.", "error");
+      }
+    });
+
+    downloadJsonButton.addEventListener("click", () => {
+      refreshJsonOutput();
+      downloadTextFile("map-logic.json", jsonOutput.value, "application/json");
+      setStatus("Downloaded map-logic.json.", "ok");
+    });
+
+    loadJsonButton.addEventListener("click", () => {
+      const raw = jsonOutput.value.trim();
+      if (!raw) {
+        setStatus("Paste JSON into the text area first.", "error");
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(raw);
+        applySerializedLogic(parsed);
+        draw();
+        refreshJsonOutput();
+        setStatus("Loaded JSON into editor.", "ok");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Invalid JSON";
+        setStatus(`Load failed: ${message}`, "error");
+      }
+    });
+
+    downloadMasksButton.addEventListener("click", async () => {
+      await downloadMaskPng("collision-mask.png", state.collisionMask, state.tileSize, "#000000");
+      await downloadMaskPng("occlusion-mask.png", state.occlusionMask, state.occlusionCellSize, "#000000");
+      setStatus("Downloaded collision-mask.png and occlusion-mask.png.", "ok");
+    });
+
+    canvas.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 && event.button !== 2) {
+        return;
+      }
+
+      event.preventDefault();
+      state.pointerDown = true;
+      state.pointerPaintValue = event.button === 2 ? false : !event.altKey;
+      canvas.setPointerCapture(event.pointerId);
+      paintFromPointer(event);
+    });
+
+    canvas.addEventListener("pointermove", (event) => {
+      updateHoverFromPointer(event);
+
+      if (!state.pointerDown) {
+        draw();
+        return;
+      }
+
+      paintFromPointer(event);
+    });
+
+    canvas.addEventListener("pointerup", (event) => {
+      state.pointerDown = false;
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      refreshJsonOutput();
+    });
+
+    canvas.addEventListener("pointercancel", (event) => {
+      state.pointerDown = false;
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+    });
+
+    canvas.addEventListener("pointerleave", () => {
+      state.hoverInfo = null;
+      draw();
+    });
+
+    canvas.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+    });
+
+    canvas.addEventListener(
+      "wheel",
+      (event) => {
+        event.preventDefault();
+
+        const direction = event.deltaY < 0 ? 1 : -1;
+        const magnitude = Math.max(1, Math.min(3, Math.abs(event.deltaY) / 120));
+        const factor = direction > 0 ? Math.pow(zoomFactorStep, magnitude) : Math.pow(1 / zoomFactorStep, magnitude);
+        setZoom(state.zoom * factor, event.clientX, event.clientY);
+      },
+      {
+        passive: false
+      }
+    );
+
+    window.addEventListener("keydown", (event) => {
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+
+      if (key === "c") {
+        setActiveLayer("collision");
+        event.preventDefault();
+      } else if (key === "o") {
+        setActiveLayer("occlusion");
+        event.preventDefault();
+      } else if (key === "g") {
+        state.showGrid = !state.showGrid;
+        showGridInput.checked = state.showGrid;
+        draw();
+        event.preventDefault();
+      } else if (key === "x") {
+        clearLayer(state.activeLayer);
+        draw();
+        refreshJsonOutput();
+        setStatus(`Cleared ${state.activeLayer} layer.`, "ok");
+        event.preventDefault();
+      } else if (key === "]") {
+        state.brushSizeCells = clampInt(state.brushSizeCells + 1, 1, 32, state.brushSizeCells);
+        brushSizeInput.value = String(state.brushSizeCells);
+        updateBrushReadout();
+        draw();
+        event.preventDefault();
+      } else if (key === "[") {
+        state.brushSizeCells = clampInt(state.brushSizeCells - 1, 1, 32, state.brushSizeCells);
+        brushSizeInput.value = String(state.brushSizeCells);
+        updateBrushReadout();
+        draw();
+        event.preventDefault();
+      } else if (key === "+" || key === "=") {
+        setZoom(state.zoom * zoomFactorStep);
+        event.preventDefault();
+      } else if (key === "-") {
+        setZoom(state.zoom / zoomFactorStep);
+        event.preventDefault();
+      } else if (key === "0") {
+        setZoom(1);
+        event.preventDefault();
+      } else if (key === "s" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        refreshJsonOutput();
+        downloadTextFile("map-logic.json", jsonOutput.value, "application/json");
+        setStatus("Downloaded map-logic.json.", "ok");
+      }
+    });
+
+    function setActiveLayer(layer) {
+      state.activeLayer = layer;
+      for (const input of document.querySelectorAll("input[name='layer']")) {
+        input.checked = input.value === layer;
+      }
+      updateBrushReadout();
+      draw();
+    }
+
+    function getLayerConfig(layer) {
+      if (layer === "collision") {
+        return {
+          grid: state.collisionMask,
+          cellSize: state.tileSize
+        };
+      }
+
+      return {
+        grid: state.occlusionMask,
+        cellSize: state.occlusionCellSize
+      };
+    }
+
+    function updateBrushReadout() {
+      const activeLayerConfig = getLayerConfig(state.activeLayer);
+      const activePixels = state.brushSizeCells * activeLayerConfig.cellSize;
+      const collisionPixels = state.brushSizeCells * state.tileSize;
+      const occlusionPixels = state.brushSizeCells * state.occlusionCellSize;
+      brushReadout.textContent = `Active ${state.activeLayer}: ${state.brushSizeCells} cells (${activePixels}px). Collision ${collisionPixels}px | Occlusion ${occlusionPixels}px.`;
+    }
+
+    function createGrid(width, height) {
+      return Array.from({ length: height }, () => Array.from({ length: width }, () => false));
+    }
+
+    function resizeGrid(existing, nextWidth, nextHeight) {
+      const next = createGrid(nextWidth, nextHeight);
+      for (let y = 0; y < nextHeight; y += 1) {
+        for (let x = 0; x < nextWidth; x += 1) {
+          next[y][x] = Boolean(existing[y]?.[x]);
+        }
+      }
+      return next;
+    }
+
+    function createOcclusionGrid(mapWidth, mapHeight, tileSize, occlusionCellSize) {
+      const worldWidth = mapWidth * tileSize;
+      const worldHeight = mapHeight * tileSize;
+      const columns = Math.max(1, Math.ceil(worldWidth / occlusionCellSize));
+      const rows = Math.max(1, Math.ceil(worldHeight / occlusionCellSize));
+      return createGrid(columns, rows);
+    }
+
+    function clampOcclusionCellSize(rawValue, tileSize, fallback) {
+      const candidate = clampInt(rawValue, 2, tileSize, fallback);
+      if (candidate > 0 && tileSize % candidate === 0) {
+        return candidate;
+      }
+
+      for (let divisor = candidate; divisor >= 2; divisor -= 1) {
+        if (tileSize % divisor === 0) {
+          return divisor;
+        }
+      }
+
+      return Math.max(2, Math.min(tileSize, fallback));
+    }
+
+    function clearGrid(grid) {
+      for (let y = 0; y < grid.length; y += 1) {
+        for (let x = 0; x < (grid[y]?.length ?? 0); x += 1) {
+          grid[y][x] = false;
+        }
+      }
+    }
+
+    function countGridActive(grid) {
+      let count = 0;
+      for (let y = 0; y < grid.length; y += 1) {
+        for (let x = 0; x < (grid[y]?.length ?? 0); x += 1) {
+          if (grid[y][x]) {
+            count += 1;
+          }
+        }
+      }
+      return count;
+    }
+
+    function collectGridActive(grid) {
+      const result = [];
+      for (let y = 0; y < grid.length; y += 1) {
+        for (let x = 0; x < (grid[y]?.length ?? 0); x += 1) {
+          if (grid[y][x]) {
+            result.push([x, y]);
+          }
+        }
+      }
+      return result;
+    }
+
+    function resampleOcclusionGrid(
+      previousMask,
+      previousMapWidth,
+      previousMapHeight,
+      previousTileSize,
+      previousCellSize,
+      nextMapWidth,
+      nextMapHeight,
+      nextTileSize,
+      nextCellSize
+    ) {
+      const nextMask = createOcclusionGrid(nextMapWidth, nextMapHeight, nextTileSize, nextCellSize);
+      const previousWorldWidth = previousMapWidth * previousTileSize;
+      const previousWorldHeight = previousMapHeight * previousTileSize;
+      const nextWorldWidth = nextMapWidth * nextTileSize;
+      const nextWorldHeight = nextMapHeight * nextTileSize;
+
+      for (let previousY = 0; previousY < previousMask.length; previousY += 1) {
+        const row = previousMask[previousY];
+        if (!Array.isArray(row)) {
+          continue;
+        }
+
+        for (let previousX = 0; previousX < row.length; previousX += 1) {
+          if (!row[previousX]) {
+            continue;
+          }
+
+          const left = previousX * previousCellSize;
+          const top = previousY * previousCellSize;
+          const right = Math.min(previousWorldWidth, left + previousCellSize);
+          const bottom = Math.min(previousWorldHeight, top + previousCellSize);
+
+          if (right <= 0 || bottom <= 0 || left >= nextWorldWidth || top >= nextWorldHeight) {
+            continue;
+          }
+
+          const clampedLeft = Math.max(0, left);
+          const clampedTop = Math.max(0, top);
+          const clampedRight = Math.min(nextWorldWidth, right);
+          const clampedBottom = Math.min(nextWorldHeight, bottom);
+          if (clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
+            continue;
+          }
+
+          const minCellX = Math.floor(clampedLeft / nextCellSize);
+          const maxCellX = Math.floor((clampedRight - 0.001) / nextCellSize);
+          const minCellY = Math.floor(clampedTop / nextCellSize);
+          const maxCellY = Math.floor((clampedBottom - 0.001) / nextCellSize);
+
+          for (let nextY = minCellY; nextY <= maxCellY; nextY += 1) {
+            if (nextY < 0 || nextY >= nextMask.length) {
+              continue;
+            }
+            for (let nextX = minCellX; nextX <= maxCellX; nextX += 1) {
+              if (nextX < 0 || nextX >= nextMask[nextY].length) {
+                continue;
+              }
+              nextMask[nextY][nextX] = true;
+            }
+          }
+        }
+      }
+
+      return nextMask;
+    }
+
+    function clampInt(rawValue, min, max, fallback) {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value)) {
+        return fallback;
+      }
+      return Math.max(min, Math.min(max, Math.round(value)));
+    }
+
+    function clampNumber(value, min, max) {
+      if (!Number.isFinite(value)) {
+        return min;
+      }
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function applyCanvasZoom() {
+      const displayWidth = Math.max(1, Math.round(canvas.width * state.zoom));
+      const displayHeight = Math.max(1, Math.round(canvas.height * state.zoom));
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
+
+      if (zoomReadout) {
+        zoomReadout.textContent = `Zoom: ${Math.round(state.zoom * 100)}%`;
+      }
+    }
+
+    function setZoom(nextZoom, anchorClientX, anchorClientY) {
+      const clampedZoom = clampNumber(nextZoom, minZoom, maxZoom);
+      if (Math.abs(clampedZoom - state.zoom) < 0.001) {
+        return;
+      }
+
+      const wrapRect = canvasWrap.getBoundingClientRect();
+      const canvasRect = canvas.getBoundingClientRect();
+      const pointerClientX = Number.isFinite(anchorClientX) ? anchorClientX : wrapRect.left + wrapRect.width / 2;
+      const pointerClientY = Number.isFinite(anchorClientY) ? anchorClientY : wrapRect.top + wrapRect.height / 2;
+
+      const anchorCanvasX = clampNumber(
+        (pointerClientX - canvasRect.left) * (canvas.width / Math.max(1, canvasRect.width)),
+        0,
+        canvas.width
+      );
+      const anchorCanvasY = clampNumber(
+        (pointerClientY - canvasRect.top) * (canvas.height / Math.max(1, canvasRect.height)),
+        0,
+        canvas.height
+      );
+      const pointerOffsetX = pointerClientX - wrapRect.left;
+      const pointerOffsetY = pointerClientY - wrapRect.top;
+
+      state.zoom = clampedZoom;
+      applyCanvasZoom();
+
+      const nextScrollLeft = anchorCanvasX * state.zoom - pointerOffsetX;
+      const nextScrollTop = anchorCanvasY * state.zoom - pointerOffsetY;
+      const maxScrollLeft = Math.max(0, canvasWrap.scrollWidth - canvasWrap.clientWidth);
+      const maxScrollTop = Math.max(0, canvasWrap.scrollHeight - canvasWrap.clientHeight);
+
+      canvasWrap.scrollLeft = clampNumber(nextScrollLeft, 0, maxScrollLeft);
+      canvasWrap.scrollTop = clampNumber(nextScrollTop, 0, maxScrollTop);
+
+      draw();
+    }
+
+    function resizeCanvas() {
+      canvas.width = state.mapWidth * state.tileSize;
+      canvas.height = state.mapHeight * state.tileSize;
+      applyCanvasZoom();
+    }
+
+    async function loadImageFromUrl(url, fromObjectUrl = false) {
+      const trimmed = String(url || "").trim();
+      if (!trimmed) {
+        setStatus("Enter an image URL first.", "error");
+        return;
+      }
+
+      setStatus("Loading image...", "");
+
+      try {
+        const image = await loadImage(trimmed);
+        state.backgroundImage = image;
+        if (!fromObjectUrl) {
+          state.backgroundImageUrl = trimmed;
+        }
+        draw();
+        setStatus(`Loaded ${image.naturalWidth}x${image.naturalHeight} image.`, "ok");
+      } catch {
+        setStatus("Image load failed. Check URL/path and server route.", "error");
+      }
+    }
+
+    function loadImage(url) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("Image load error"));
+        image.src = url;
+      });
+    }
+
+    function updateHoverFromPointer(event) {
+      const pointer = pointerToCanvasPoint(event);
+      if (!pointer) {
+        state.hoverInfo = null;
+        return;
+      }
+
+      if (!isCanvasPointInBounds(pointer.canvasX, pointer.canvasY)) {
+        state.hoverInfo = null;
+        return;
+      }
+
+      state.hoverInfo = {
+        canvasX: pointer.canvasX,
+        canvasY: pointer.canvasY,
+        tileX: Math.floor(pointer.canvasX / state.tileSize),
+        tileY: Math.floor(pointer.canvasY / state.tileSize),
+        occlusionX: Math.floor(pointer.canvasX / state.occlusionCellSize),
+        occlusionY: Math.floor(pointer.canvasY / state.occlusionCellSize)
+      };
+    }
+
+    function paintFromPointer(event) {
+      const pointer = pointerToCanvasPoint(event);
+      if (!pointer || !isCanvasPointInBounds(pointer.canvasX, pointer.canvasY)) {
+        return;
+      }
+
+      const changed = applyBrushToLayer(state.activeLayer, pointer.canvasX, pointer.canvasY, state.pointerPaintValue);
+
+      if (changed) {
+        draw();
+      }
+    }
+
+    function pointerToCanvasPoint(event) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        return null;
+      }
+
+      const canvasX = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width));
+      const canvasY = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height));
+      return {
+        canvasX,
+        canvasY
+      };
+    }
+
+    function isCanvasPointInBounds(canvasX, canvasY) {
+      return canvasX >= 0 && canvasY >= 0 && canvasX < canvas.width && canvasY < canvas.height;
+    }
+
+    function isGridCoordinateInBounds(grid, coordinateX, coordinateY) {
+      return coordinateY >= 0 && coordinateY < grid.length && coordinateX >= 0 && coordinateX < (grid[coordinateY]?.length ?? 0);
+    }
+
+    function computeBrushCellRange(layer, canvasX, canvasY) {
+      const { grid, cellSize } = getLayerConfig(layer);
+      const brushCells = clampInt(state.brushSizeCells, 1, 32, 1);
+      const centerCellX = Math.floor(canvasX / cellSize);
+      const centerCellY = Math.floor(canvasY / cellSize);
+
+      const startCellX = centerCellX - Math.floor(brushCells / 2);
+      const startCellY = centerCellY - Math.floor(brushCells / 2);
+      const minCellX = startCellX;
+      const maxCellX = startCellX + brushCells - 1;
+      const minCellY = startCellY;
+      const maxCellY = startCellY + brushCells - 1;
+
+      const maxGridY = grid.length - 1;
+      const maxGridX = Math.max(0, (grid[0]?.length ?? 1) - 1);
+
+      if (maxGridX < 0 || maxGridY < 0) {
+        return null;
+      }
+
+      const startX = Math.max(0, minCellX);
+      const endX = Math.min(maxGridX, maxCellX);
+      const startY = Math.max(0, minCellY);
+      const endY = Math.min(maxGridY, maxCellY);
+      if (endX < startX || endY < startY) {
+        return null;
+      }
+
+      return {
+        cellSize,
+        startX,
+        endX,
+        startY,
+        endY
+      };
+    }
+
+    function applyBrushToLayer(layer, canvasX, canvasY, value) {
+      const { grid } = getLayerConfig(layer);
+      const range = computeBrushCellRange(layer, canvasX, canvasY);
+      if (!range) {
+        return false;
+      }
+
+      let changed = false;
+      for (let y = range.startY; y <= range.endY; y += 1) {
+        for (let x = range.startX; x <= range.endX; x += 1) {
+          if (!isGridCoordinateInBounds(grid, x, y)) {
+            continue;
+          }
+          if (Boolean(grid[y][x]) === value) {
+            continue;
+          }
+          grid[y][x] = value;
+          changed = true;
+        }
+      }
+
+      return changed;
+    }
+
+    function setMaskTile(layer, coordinateX, coordinateY, value) {
+      const target = layer === "collision" ? state.collisionMask : state.occlusionMask;
+      if (!isGridCoordinateInBounds(target, coordinateX, coordinateY)) {
+        return false;
+      }
+
+      const current = Boolean(target[coordinateY]?.[coordinateX]);
+      if (current === value) {
+        return false;
+      }
+
+      target[coordinateY][coordinateX] = value;
+      return true;
+    }
+
+    function clearLayer(layer) {
+      const target = layer === "collision" ? state.collisionMask : state.occlusionMask;
+      clearGrid(target);
+    }
+
+    function draw() {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (state.backgroundImage) {
+        context.imageSmoothingEnabled = true;
+        context.drawImage(state.backgroundImage, 0, 0, canvas.width, canvas.height);
+      } else {
+        drawPlaceholderBackground();
+      }
+
+      drawMaskLayer(state.collisionMask, state.tileSize, `rgba(255, 109, 109, ${state.collisionOpacity})`);
+      drawMaskLayer(state.occlusionMask, state.occlusionCellSize, `rgba(86, 182, 255, ${state.occlusionOpacity})`);
+
+      if (state.showGrid) {
+        drawGrid(state.tileSize, "rgba(233, 241, 224, 0.2)");
+        if (state.activeLayer === "occlusion" && state.occlusionCellSize < state.tileSize) {
+          drawGrid(state.occlusionCellSize, "rgba(129, 207, 255, 0.18)");
+        }
+      }
+
+      if (state.hoverInfo) {
+        context.save();
+        context.strokeStyle = "rgba(255, 236, 130, 0.95)";
+        context.lineWidth = 2;
+        context.strokeRect(
+          state.hoverInfo.tileX * state.tileSize + 1,
+          state.hoverInfo.tileY * state.tileSize + 1,
+          state.tileSize - 2,
+          state.tileSize - 2
+        );
+
+        context.strokeStyle = "rgba(120, 210, 255, 0.95)";
+        context.lineWidth = 1.5;
+        context.strokeRect(
+          state.hoverInfo.occlusionX * state.occlusionCellSize + 0.75,
+          state.hoverInfo.occlusionY * state.occlusionCellSize + 0.75,
+          state.occlusionCellSize - 1.5,
+          state.occlusionCellSize - 1.5
+        );
+
+        const brushRange = computeBrushCellRange(state.activeLayer, state.hoverInfo.canvasX, state.hoverInfo.canvasY);
+        if (brushRange) {
+          const brushWidth = (brushRange.endX - brushRange.startX + 1) * brushRange.cellSize;
+          const brushHeight = (brushRange.endY - brushRange.startY + 1) * brushRange.cellSize;
+          context.setLineDash([4, 3]);
+          context.strokeStyle = "rgba(246, 249, 225, 0.95)";
+          context.lineWidth = 1.6;
+          context.strokeRect(
+            brushRange.startX * brushRange.cellSize + 0.8,
+            brushRange.startY * brushRange.cellSize + 0.8,
+            Math.max(1, brushWidth - 1.6),
+            Math.max(1, brushHeight - 1.6)
+          );
+          context.setLineDash([]);
+        }
+
+        context.restore();
+      }
+
+      updateHud();
+    }
+
+    function drawPlaceholderBackground() {
+      const tile = 32;
+      for (let y = 0; y < canvas.height; y += tile) {
+        for (let x = 0; x < canvas.width; x += tile) {
+          const odd = ((x / tile) + (y / tile)) % 2 === 1;
+          context.fillStyle = odd ? "#16231d" : "#1b2b24";
+          context.fillRect(x, y, tile, tile);
+        }
+      }
+    }
+
+    function drawMaskLayer(grid, cellSize, color) {
+      context.save();
+      context.fillStyle = color;
+      for (let y = 0; y < grid.length; y += 1) {
+        for (let x = 0; x < (grid[y]?.length ?? 0); x += 1) {
+          if (!grid[y][x]) {
+            continue;
+          }
+
+          const drawX = x * cellSize;
+          const drawY = y * cellSize;
+          const drawWidth = Math.min(cellSize, canvas.width - drawX);
+          const drawHeight = Math.min(cellSize, canvas.height - drawY);
+          if (drawWidth <= 0 || drawHeight <= 0) {
+            continue;
+          }
+
+          context.fillRect(drawX, drawY, drawWidth, drawHeight);
+        }
+      }
+      context.restore();
+    }
+
+    function drawGrid(stepSize, strokeStyle) {
+      context.save();
+      context.strokeStyle = strokeStyle;
+      context.lineWidth = 1;
+      for (let x = 0; x <= canvas.width; x += stepSize) {
+        const px = x + 0.5;
+        context.beginPath();
+        context.moveTo(px, 0);
+        context.lineTo(px, canvas.height);
+        context.stroke();
+      }
+
+      for (let y = 0; y <= canvas.height; y += stepSize) {
+        const py = y + 0.5;
+        context.beginPath();
+        context.moveTo(0, py);
+        context.lineTo(canvas.width, py);
+        context.stroke();
+      }
+      context.restore();
+    }
+
+    function collectOcclusionTilesFromCells() {
+      const tiles = [];
+      const seen = new Set();
+
+      for (let cellY = 0; cellY < state.occlusionMask.length; cellY += 1) {
+        for (let cellX = 0; cellX < (state.occlusionMask[cellY]?.length ?? 0); cellX += 1) {
+          if (!state.occlusionMask[cellY][cellX]) {
+            continue;
+          }
+
+          const worldX = cellX * state.occlusionCellSize;
+          const worldY = cellY * state.occlusionCellSize;
+          const tileX = Math.floor(worldX / state.tileSize);
+          const tileY = Math.floor(worldY / state.tileSize);
+          if (tileX < 0 || tileY < 0 || tileX >= state.mapWidth || tileY >= state.mapHeight) {
+            continue;
+          }
+
+          const key = `${tileX},${tileY}`;
+          if (seen.has(key)) {
+            continue;
+          }
+
+          seen.add(key);
+          tiles.push([tileX, tileY]);
+        }
+      }
+
+      return tiles;
+    }
+
+    function updateHud() {
+      if (state.hoverInfo) {
+        tileReadout.textContent = `Tile: ${state.hoverInfo.tileX},${state.hoverInfo.tileY} | O-cell: ${state.hoverInfo.occlusionX},${state.hoverInfo.occlusionY}`;
+      } else {
+        tileReadout.textContent = "Tile: -";
+      }
+
+      const collisionCount = countGridActive(state.collisionMask);
+      const occlusionCount = countGridActive(state.occlusionMask);
+      countReadout.textContent = `Collision: ${collisionCount} | Occlusion: ${occlusionCount}`;
+    }
+
+    function serializeLogic() {
+      const occlusionCells = collectGridActive(state.occlusionMask);
+      return {
+        version: 1,
+        width: state.mapWidth,
+        height: state.mapHeight,
+        tileSize: state.tileSize,
+        backgroundImage: state.backgroundImageUrl,
+        collisionTiles: collectGridActive(state.collisionMask),
+        occlusionCellSize: state.occlusionCellSize,
+        occlusionCells,
+        occlusionTiles: collectOcclusionTilesFromCells()
+      };
+    }
+
+    function refreshJsonOutput() {
+      jsonOutput.value = JSON.stringify(serializeLogic(), null, 2);
+    }
+
+    function applySerializedLogic(serialized) {
+      if (!serialized || typeof serialized !== "object") {
+        throw new Error("Expected object at top level");
+      }
+
+      const width = clampInt(serialized.width, 8, 200, state.mapWidth);
+      const height = clampInt(serialized.height, 8, 200, state.mapHeight);
+      const tileSize = clampInt(serialized.tileSize, 8, 128, state.tileSize);
+      const hasOcclusionCells = Array.isArray(serialized.occlusionCells);
+      const defaultOcclusionCellSize = hasOcclusionCells ? state.occlusionCellSize : tileSize;
+      const occlusionCellSize = clampOcclusionCellSize(serialized.occlusionCellSize, tileSize, defaultOcclusionCellSize);
+
+      state.mapWidth = width;
+      state.mapHeight = height;
+      state.tileSize = tileSize;
+      state.occlusionCellSize = occlusionCellSize;
+      mapWidthInput.value = String(width);
+      mapHeightInput.value = String(height);
+      tileSizeInput.value = String(tileSize);
+      occlusionCellSizeInput.value = String(occlusionCellSize);
+
+      state.collisionMask = createGrid(width, height);
+      state.occlusionMask = createOcclusionGrid(width, height, tileSize, occlusionCellSize);
+
+      if (Array.isArray(serialized.collisionTiles)) {
+        for (const entry of serialized.collisionTiles) {
+          if (!Array.isArray(entry) || entry.length < 2) {
+            continue;
+          }
+
+          const x = clampInt(entry[0], 0, width - 1, -1);
+          const y = clampInt(entry[1], 0, height - 1, -1);
+          if (x >= 0 && y >= 0) {
+            state.collisionMask[y][x] = true;
+          }
+        }
+      }
+
+      if (hasOcclusionCells) {
+        for (const entry of serialized.occlusionCells) {
+          if (!Array.isArray(entry) || entry.length < 2) {
+            continue;
+          }
+
+          const x = clampInt(entry[0], 0, (state.occlusionMask[0]?.length ?? 1) - 1, -1);
+          const y = clampInt(entry[1], 0, state.occlusionMask.length - 1, -1);
+          if (x >= 0 && y >= 0) {
+            state.occlusionMask[y][x] = true;
+          }
+        }
+      } else if (Array.isArray(serialized.occlusionTiles)) {
+        for (const entry of serialized.occlusionTiles) {
+          if (!Array.isArray(entry) || entry.length < 2) {
+            continue;
+          }
+
+          const tileX = clampInt(entry[0], 0, width - 1, -1);
+          const tileY = clampInt(entry[1], 0, height - 1, -1);
+          if (tileX < 0 || tileY < 0) {
+            continue;
+          }
+
+          const left = tileX * tileSize;
+          const top = tileY * tileSize;
+          const right = left + tileSize;
+          const bottom = top + tileSize;
+          const minCellX = Math.floor(left / occlusionCellSize);
+          const maxCellX = Math.floor((right - 0.001) / occlusionCellSize);
+          const minCellY = Math.floor(top / occlusionCellSize);
+          const maxCellY = Math.floor((bottom - 0.001) / occlusionCellSize);
+
+          for (let cellY = minCellY; cellY <= maxCellY; cellY += 1) {
+            if (cellY < 0 || cellY >= state.occlusionMask.length) {
+              continue;
+            }
+            for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
+              if (cellX < 0 || cellX >= state.occlusionMask[cellY].length) {
+                continue;
+              }
+              state.occlusionMask[cellY][cellX] = true;
+            }
+          }
+        }
+      }
+
+      if (typeof serialized.backgroundImage === "string" && serialized.backgroundImage.trim()) {
+        const backgroundImage = serialized.backgroundImage.trim();
+        state.backgroundImageUrl = backgroundImage;
+        imageUrlInput.value = backgroundImage;
+      }
+
+      updateBrushReadout();
+      resizeCanvas();
+      if (state.backgroundImageUrl) {
+        void loadImageFromUrl(state.backgroundImageUrl);
+      }
+    }
+
+    function downloadTextFile(fileName, contents, mimeType) {
+      const blob = new Blob([contents], { type: mimeType });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    }
+
+    async function downloadMaskPng(fileName, grid, cellSize, fillColor) {
+      const offscreen = document.createElement("canvas");
+      offscreen.width = state.mapWidth * state.tileSize;
+      offscreen.height = state.mapHeight * state.tileSize;
+
+      const offscreenContext = offscreen.getContext("2d");
+      offscreenContext.clearRect(0, 0, offscreen.width, offscreen.height);
+      offscreenContext.fillStyle = fillColor;
+
+      for (let y = 0; y < grid.length; y += 1) {
+        for (let x = 0; x < (grid[y]?.length ?? 0); x += 1) {
+          if (!grid[y][x]) {
+            continue;
+          }
+
+          const drawX = x * cellSize;
+          const drawY = y * cellSize;
+          const drawWidth = Math.min(cellSize, offscreen.width - drawX);
+          const drawHeight = Math.min(cellSize, offscreen.height - drawY);
+          if (drawWidth <= 0 || drawHeight <= 0) {
+            continue;
+          }
+
+          offscreenContext.fillRect(drawX, drawY, drawWidth, drawHeight);
+        }
+      }
+
+      const blob = await new Promise((resolve) => offscreen.toBlob(resolve, "image/png"));
+      if (!blob) {
+        throw new Error("Mask export failed");
+      }
+
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    }
+
+    function setStatus(message, kind) {
+      imageStatus.textContent = message;
+      imageStatus.classList.remove("ok", "error");
+      if (kind) {
+        imageStatus.classList.add(kind);
+      }
+    }
+
+    function isTypingTarget(target) {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+
+      const tagName = target.tagName.toLowerCase();
+      return target.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
+    }
+
+    async function fetchJsonResource(url) {
+      const response = await fetch(url, {
+        cache: "no-store"
+      });
+
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`.trim());
+      }
+
+      return response.json();
+    }
+
+    async function bootstrapEditor() {
+      resizeCanvas();
+      updateBrushReadout();
+      draw();
+
+      const disableAutoLoad = urlParams.get("autoload") === "0";
+      if (!disableAutoLoad) {
+        try {
+          const serialized = await fetchJsonResource(initialLogicUrl);
+          applySerializedLogic(serialized);
+          refreshJsonOutput();
+          setStatus(`Loaded logic from ${initialLogicUrl}.`, "ok");
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          setStatus(`Could not load ${initialLogicUrl}: ${message}. Using blank masks.`, "error");
+        }
+      }
+
+      refreshJsonOutput();
+      await loadImageFromUrl(initialImageUrl);
+    }
+
+    void bootstrapEditor();
+  </script>
+</body>
+</html>

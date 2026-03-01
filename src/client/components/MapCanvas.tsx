@@ -67,11 +67,34 @@ interface SpriteBounds {
   height: number;
 }
 
+interface SelectedWorkerOutline {
+  screenX: number;
+  screenY: number;
+  radius: number;
+  spriteBounds?: SpriteBounds;
+}
+
+interface WorkerNameplate {
+  anchorX: number;
+  topY: number;
+  label: string;
+  visible: boolean;
+}
+
 interface CollisionRect {
   left: number;
   top: number;
   right: number;
   bottom: number;
+}
+
+interface CommandFeedback {
+  kind: "ok" | "blocked";
+  workerId: string;
+  startedAtMs: number;
+  durationMs: number;
+  destination: WorkerPosition;
+  path?: WorkerPosition[];
 }
 
 const workerRadius = 13;
@@ -85,9 +108,15 @@ const pointerPanDragThreshold = 4;
 const defaultZoomScale = 1.45;
 const recenterVisibilityPaddingPx = 56;
 const fadingWorkerDurationMs = 420;
+const summonWorkerDurationMs = 520;
+const commandFeedbackDurationMs = 900;
+const blockedFeedbackDurationMs = 750;
 const blockedTerrainValues = new Set([3]);
 const nonBlockingObjectTypes = new Set(["torch", "signpost", "barrel", "crate", "bush"]);
 const fullBodyCollisionObjectTypes = new Set(["oak-tree", "pine-tree", "tent"]);
+const defaultMapPreviewImageUrl = "/api/assets/maps/backgrounds/outpost-v1-2x.png";
+const occlusionOverlayAlpha = 0.98;
+const occludedGhostAlpha = 0.44;
 
 const avatarColor: Record<string, string> = {
   knight: "#8ca1c8",
@@ -142,8 +171,31 @@ export function MapCanvas({
   const [animatedPositions, setAnimatedPositions] = useState<Record<string, WorkerPosition>>({});
   const [animationTick, setAnimationTick] = useState(0);
   const [hasCenteredOnMap, setHasCenteredOnMap] = useState(false);
+  const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null);
+  const [mapPreviewImage, setMapPreviewImage] = useState<HTMLImageElement | undefined>(undefined);
 
   const { mapData, errorText: mapErrorText } = useOutpostMap();
+  const mapPreviewImageUrl = mapData?.backgroundImageUrl ?? defaultMapPreviewImageUrl;
+
+  useEffect(() => {
+    let cancelled = false;
+    const image = new Image();
+    image.onload = () => {
+      if (!cancelled) {
+        setMapPreviewImage(image);
+      }
+    };
+    image.onerror = () => {
+      if (!cancelled) {
+        setMapPreviewImage(undefined);
+      }
+    };
+    image.src = mapPreviewImageUrl;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mapPreviewImageUrl]);
 
   const workerPositionLookup = useMemo(
     () => new Map<string, WorkerPosition>(workers.map((worker) => [worker.id, animatedPositions[worker.id] ?? worker.position])),
@@ -152,10 +204,6 @@ export function MapCanvas({
 
   const spriteTypes = useMemo(() => Array.from(new Set(workers.map((worker) => worker.avatarType))), [workers]);
   const spriteLibrary = useCharacterSpriteLibrary(spriteTypes);
-  const fallbackSpriteSet = useMemo(
-    () => Object.values(spriteLibrary).find((spriteSet) => Boolean(spriteSet?.hasSprites)),
-    [spriteLibrary]
-  );
   const mapCollisionRects = useMemo(() => buildObjectCollisionRects(mapData), [mapData]);
   const blockedTileKeys = useMemo(() => buildBlockedTileSet(mapData, mapCollisionRects), [mapCollisionRects, mapData]);
 
@@ -533,8 +581,9 @@ export function MapCanvas({
       viewport,
       mapData,
       spriteLibrary,
-      fallbackSpriteSet,
-      animationTick
+      animationTick,
+      commandFeedback,
+      mapPreviewImage
     });
   }, [
     animatedPositions,
@@ -546,7 +595,8 @@ export function MapCanvas({
     selectedWorkerId,
     terminalFocusedSelected,
     spriteLibrary,
-    fallbackSpriteSet,
+    commandFeedback,
+    mapPreviewImage,
     viewport,
     workerPositionLookup,
     workers
@@ -560,6 +610,7 @@ export function MapCanvas({
 
       const target = clampWorldPosition(targetWorld, mapData);
       const currentPosition = animatedPositionsRef.current[worker.id] ?? worker.position;
+      const nowMs = Date.now();
       const normalizedTarget = {
         x: Math.round(target.x * 10) / 10,
         y: Math.round(target.y * 10) / 10
@@ -579,19 +630,42 @@ export function MapCanvas({
         : findNearestWalkableTile(goalTileCandidate, mapData, blockedTileKeys);
 
       if (!startTileResolved || !goalTileResolved) {
+        setCommandFeedback({
+          kind: "blocked",
+          workerId: worker.id,
+          startedAtMs: nowMs,
+          durationMs: blockedFeedbackDurationMs,
+          destination: normalizedTarget
+        });
         return false;
       }
 
       const tilePath = findTilePath(startTileResolved, goalTileResolved, mapData, blockedTileKeys);
       if (!tilePath || tilePath.length === 0) {
+        setCommandFeedback({
+          kind: "blocked",
+          workerId: worker.id,
+          startedAtMs: nowMs,
+          durationMs: blockedFeedbackDurationMs,
+          destination: normalizedTarget
+        });
         return false;
       }
 
       const waypoints = tilePathToWaypoints(tilePath, mapData);
 
       if (waypoints.length === 0) {
+        setCommandFeedback({
+          kind: "blocked",
+          workerId: worker.id,
+          startedAtMs: nowMs,
+          durationMs: blockedFeedbackDurationMs,
+          destination: normalizedTarget
+        });
         return false;
       }
+
+      const resolvedDestination = waypoints[waypoints.length - 1] ?? normalizedTarget;
 
       moveOrdersRef.current[worker.id] = {
         waypoints,
@@ -610,6 +684,15 @@ export function MapCanvas({
           ...current,
           [worker.id]: worker.position
         };
+      });
+
+      setCommandFeedback({
+        kind: "ok",
+        workerId: worker.id,
+        startedAtMs: nowMs,
+        durationMs: commandFeedbackDurationMs,
+        destination: resolvedDestination,
+        path: [currentPosition, ...waypoints]
       });
 
       return true;
@@ -771,7 +854,7 @@ export function MapCanvas({
     }
 
     const point = readPointerOnCanvas(event);
-    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary, fallbackSpriteSet);
+    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary);
 
     if (hit) {
       if (hit.id === selectedWorkerId) {
@@ -820,7 +903,7 @@ export function MapCanvas({
       return;
     }
 
-    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary, fallbackSpriteSet);
+    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary);
 
     if (!hit) {
       setHover(null);
@@ -860,7 +943,7 @@ export function MapCanvas({
     }
 
     const point = readPointerOnCanvas(event);
-    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary, fallbackSpriteSet);
+    const hit = findWorkerAtScreenPoint(point.x, point.y, workers, workerPositionLookup, viewport, spriteLibrary);
     if (!hit) {
       return;
     }
@@ -956,8 +1039,9 @@ interface DrawSceneInput {
   viewport: ViewportState;
   mapData: LoadedOutpostMap | undefined;
   spriteLibrary: Partial<Record<string, CharacterSpriteSet>>;
-  fallbackSpriteSet: CharacterSpriteSet | undefined;
   animationTick: number;
+  commandFeedback: CommandFeedback | null;
+  mapPreviewImage: HTMLImageElement | undefined;
 }
 
 function drawScene({
@@ -974,16 +1058,22 @@ function drawScene({
   viewport,
   mapData,
   spriteLibrary,
-  fallbackSpriteSet,
-  animationTick
+  animationTick,
+  commandFeedback,
+  mapPreviewImage
 }: DrawSceneInput): void {
   context.clearRect(0, 0, width, height);
+  const nowMs = Date.now();
 
   const controlGroupsByWorker = groupControlKeysByWorker(controlGroups);
 
   if (mapData) {
-    drawOutpostTerrain(context, viewport, width, height, mapData);
-    drawOutpostObjects(context, viewport, width, height, mapData, animationTick);
+    if (mapPreviewImage) {
+      drawOutpostPreviewBackground(context, viewport, mapData, mapPreviewImage);
+    } else {
+      drawOutpostTerrain(context, viewport, width, height, mapData);
+      drawOutpostObjects(context, viewport, width, height, mapData, animationTick);
+    }
   } else {
     const gradient = context.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, "#7fc08b");
@@ -992,19 +1082,49 @@ function drawScene({
     context.fillRect(0, 0, width, height);
   }
 
+  if (commandFeedback) {
+    drawCommandFeedback(context, viewport, commandFeedback, nowMs);
+  }
+
   context.textAlign = "center";
   context.imageSmoothingEnabled = false;
   const activeWorkerIds = new Set(workers.map((worker) => worker.id));
+  let selectedOutline: SelectedWorkerOutline | undefined;
+  const pendingNameplates: WorkerNameplate[] = [];
+  const occludedWorkerIds = new Set<string>();
 
-  for (const worker of workers) {
+  if (mapData && mapData.occlusionRects.length > 0) {
+    for (const worker of workers) {
+      const worldPosition = displayedPositions[worker.id] ?? worker.position;
+      if (isWorkerBehindAnyOcclusionRect(worldPosition, mapData)) {
+        occludedWorkerIds.add(worker.id);
+      }
+    }
+  }
+
+  const drawWorker = (
+    worker: Worker,
+    options: {
+      queueNameplate?: boolean;
+      drawUi?: boolean;
+      ghostAlpha?: number;
+    } = {}
+  ): void => {
+    const queueNameplate = options.queueNameplate ?? true;
+    const drawUi = options.drawUi ?? true;
+    const ghostAlpha = options.ghostAlpha;
+
     const worldPosition = displayedPositions[worker.id] ?? worker.position;
     const screen = worldToScreen(worldPosition.x, worldPosition.y, viewport);
-    const radius = workerRadius * viewport.scale;
     const motion = workerMotion[worker.id] ?? { moving: false, facing: "south" as const };
     const displayLabel = worker.displayName ?? worker.name;
     const controlKeys = controlGroupsByWorker.get(worker.id) ?? [];
+    const summonProgress = getWorkerSummonProgress(worker.createdAt, nowMs);
+    const renderScale = summonProgress === undefined ? viewport.scale : viewport.scale * (0.86 + summonProgress * 0.14);
+    const renderAlpha = summonProgress === undefined ? 1 : 0.2 + summonProgress * 0.8;
+    const radius = workerRadius * renderScale;
 
-    const spriteSet = spriteLibrary[worker.avatarType] ?? fallbackSpriteSet;
+    const spriteSet = spriteLibrary[worker.avatarType];
     const spriteState = motion.moving ? "walking" : worker.status === "working" ? "working" : "idle";
     const spriteFrame = getSpriteFrame(spriteSet, {
       direction: motion.facing,
@@ -1012,13 +1132,34 @@ function drawScene({
       frameIndex: animationTick
     });
 
-    drawCharacterGroundShadow(context, screen.x, screen.y, viewport.scale);
+    if (ghostAlpha === undefined) {
+      drawCharacterGroundShadow(context, screen.x, screen.y, renderScale);
+      if (summonProgress !== undefined) {
+        drawSummonEffect(context, screen.x, screen.y, viewport.scale, summonProgress);
+      }
+    }
 
     let spriteBounds: SpriteBounds | undefined;
+    context.save();
+    context.globalAlpha = renderAlpha * (ghostAlpha ?? 1);
     if (spriteFrame) {
-      spriteBounds = drawSpriteCharacter(context, spriteFrame, screen.x, screen.y, viewport.scale, spriteBaseSize);
+      spriteBounds = drawSpriteCharacter(context, spriteFrame, screen.x, screen.y, renderScale, spriteBaseSize);
     } else {
-      drawFallbackWorker(context, worker, screen.x, screen.y, radius, viewport.scale);
+      drawFallbackWorker(context, worker, screen.x, screen.y, radius, renderScale);
+    }
+    context.restore();
+
+    if (worker.id === selectedWorkerId && !selectedOutline) {
+      selectedOutline = {
+        screenX: screen.x,
+        screenY: screen.y,
+        radius,
+        spriteBounds
+      };
+    }
+
+    if (!drawUi) {
+      return;
     }
 
     const activityBadge = getActivityBadge(worker);
@@ -1052,43 +1193,6 @@ function drawScene({
       context.fillText("!", bubbleX, bubbleY + 4 * viewport.scale);
     }
 
-    if (worker.id === selectedWorkerId) {
-      context.strokeStyle = terminalFocusedSelected ? "#8ce8ff" : "#f1f2d4";
-      context.lineWidth = terminalFocusedSelected ? 2.4 : 2;
-
-      if (spriteBounds) {
-        context.strokeRect(
-          spriteBounds.x - 2 * viewport.scale,
-          spriteBounds.y - 2 * viewport.scale,
-          spriteBounds.width + 4 * viewport.scale,
-          spriteBounds.height + 4 * viewport.scale
-        );
-
-        if (terminalFocusedSelected) {
-          context.strokeStyle = "rgba(31, 153, 184, 0.65)";
-          context.lineWidth = 1.4;
-          context.strokeRect(
-            spriteBounds.x - 5 * viewport.scale,
-            spriteBounds.y - 5 * viewport.scale,
-            spriteBounds.width + 10 * viewport.scale,
-            spriteBounds.height + 10 * viewport.scale
-          );
-        }
-      } else {
-        context.beginPath();
-        context.arc(screen.x, screen.y, radius + 6 * viewport.scale, 0, Math.PI * 2);
-        context.stroke();
-
-        if (terminalFocusedSelected) {
-          context.beginPath();
-          context.strokeStyle = "rgba(31, 153, 184, 0.65)";
-          context.lineWidth = 1.2;
-          context.arc(screen.x, screen.y, radius + 10 * viewport.scale, 0, Math.PI * 2);
-          context.stroke();
-        }
-      }
-    }
-
     if (controlKeys.length > 0) {
       const indicatorAnchorX = spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x;
       let indicatorY = spriteBounds ? spriteBounds.y - 18 * viewport.scale : screen.y - radius - 24 * viewport.scale;
@@ -1099,18 +1203,52 @@ function drawScene({
       drawControlGroupIndicator(context, indicatorAnchorX, indicatorY, controlKeys, viewport.scale);
     }
 
-    const labelAnchorX = spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x;
-    const labelTopY = (spriteBounds ? spriteBounds.y + spriteBounds.height : screen.y + radius) + 8 * viewport.scale;
-    context.fillStyle = "#f8f7e5";
-    context.font = "12px 'Trebuchet MS', sans-serif";
-    const labelWidth = Math.max(90, context.measureText(displayLabel).width + 18);
-    const labelHeight = 18;
+    if (queueNameplate) {
+      pendingNameplates.push({
+        anchorX: spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x,
+        topY: (spriteBounds ? spriteBounds.y + spriteBounds.height : screen.y + radius) + 8 * viewport.scale,
+        label: displayLabel,
+        visible: !occludedWorkerIds.has(worker.id)
+      });
+    }
+  };
 
-    context.fillStyle = "rgba(0, 0, 0, 0.56)";
-    context.fillRect(labelAnchorX - labelWidth / 2, labelTopY, labelWidth, labelHeight);
+  if (mapData && mapPreviewImage && mapData.occlusionRects.length > 0) {
+    for (const worker of workers) {
+      if (occludedWorkerIds.has(worker.id)) {
+        drawWorker(worker, {
+          queueNameplate: false
+        });
+      }
+    }
 
-    context.fillStyle = "#f8f7e5";
-    context.fillText(displayLabel, labelAnchorX, labelTopY + 13);
+    drawOutpostOcclusionOverlay(context, viewport, width, height, mapData, mapPreviewImage);
+
+    for (const worker of workers) {
+      if (!occludedWorkerIds.has(worker.id)) {
+        drawWorker(worker, {
+          queueNameplate: true
+        });
+      }
+    }
+
+    for (const worker of workers) {
+      if (!occludedWorkerIds.has(worker.id)) {
+        continue;
+      }
+
+      drawWorker(worker, {
+        queueNameplate: false,
+        drawUi: false,
+        ghostAlpha: occludedGhostAlpha
+      });
+    }
+  } else {
+    for (const worker of workers) {
+      drawWorker(worker, {
+        queueNameplate: true
+      });
+    }
   }
 
   if (fadingWorkers && fadingWorkers.length > 0) {
@@ -1125,11 +1263,12 @@ function drawScene({
       if (alpha <= 0) {
         continue;
       }
+      const fadeProgress = clamp(elapsed / fadingWorkerDurationMs, 0, 1);
 
       const worldPosition = fading.worker.position;
       const screen = worldToScreen(worldPosition.x, worldPosition.y, viewport);
       const radius = workerRadius * viewport.scale;
-      const spriteSet = spriteLibrary[fading.worker.avatarType] ?? fallbackSpriteSet;
+      const spriteSet = spriteLibrary[fading.worker.avatarType];
       const spriteFrame = getSpriteFrame(spriteSet, {
         direction: "south",
         state: "idle",
@@ -1139,6 +1278,7 @@ function drawScene({
       context.save();
       context.globalAlpha = alpha;
       drawCharacterGroundShadow(context, screen.x, screen.y, viewport.scale);
+      drawDespawnEffect(context, screen.x, screen.y, viewport.scale, fadeProgress, alpha);
       if (spriteFrame) {
         drawSpriteCharacter(context, spriteFrame, screen.x, screen.y, viewport.scale, spriteBaseSize);
       } else {
@@ -1146,6 +1286,12 @@ function drawScene({
       }
       context.restore();
     }
+  }
+
+  drawWorkerNameplates(context, pendingNameplates);
+
+  if (selectedOutline) {
+    drawSelectedWorkerOutline(context, selectedOutline, viewport.scale, Boolean(terminalFocusedSelected));
   }
 }
 
@@ -1196,6 +1342,52 @@ function drawCharacterGroundShadow(context: CanvasRenderingContext2D, centerX: n
   context.fill();
 }
 
+function drawSelectedWorkerOutline(
+  context: CanvasRenderingContext2D,
+  selectedOutline: SelectedWorkerOutline,
+  scale: number,
+  terminalFocused: boolean
+): void {
+  context.save();
+  context.strokeStyle = terminalFocused ? "#8ce8ff" : "#f1f2d4";
+  context.lineWidth = terminalFocused ? 2.4 : 2;
+
+  if (selectedOutline.spriteBounds) {
+    const bounds = selectedOutline.spriteBounds;
+    context.strokeRect(
+      bounds.x - 2 * scale,
+      bounds.y - 2 * scale,
+      bounds.width + 4 * scale,
+      bounds.height + 4 * scale
+    );
+
+    if (terminalFocused) {
+      context.strokeStyle = "rgba(31, 153, 184, 0.65)";
+      context.lineWidth = 1.4;
+      context.strokeRect(
+        bounds.x - 5 * scale,
+        bounds.y - 5 * scale,
+        bounds.width + 10 * scale,
+        bounds.height + 10 * scale
+      );
+    }
+  } else {
+    context.beginPath();
+    context.arc(selectedOutline.screenX, selectedOutline.screenY, selectedOutline.radius + 6 * scale, 0, Math.PI * 2);
+    context.stroke();
+
+    if (terminalFocused) {
+      context.beginPath();
+      context.strokeStyle = "rgba(31, 153, 184, 0.65)";
+      context.lineWidth = 1.2;
+      context.arc(selectedOutline.screenX, selectedOutline.screenY, selectedOutline.radius + 10 * scale, 0, Math.PI * 2);
+      context.stroke();
+    }
+  }
+
+  context.restore();
+}
+
 function drawControlGroupIndicator(
   context: CanvasRenderingContext2D,
   anchorX: number,
@@ -1228,6 +1420,55 @@ function drawControlGroupIndicator(
   context.textBaseline = "alphabetic";
 }
 
+function drawWorkerNameplates(context: CanvasRenderingContext2D, nameplates: WorkerNameplate[]): void {
+  if (!nameplates.length) {
+    return;
+  }
+
+  context.save();
+  context.textAlign = "center";
+  context.font = "12px 'Trebuchet MS', sans-serif";
+
+  for (const nameplate of nameplates) {
+    if (!nameplate.visible) {
+      continue;
+    }
+
+    const labelWidth = Math.max(90, context.measureText(nameplate.label).width + 18);
+    const labelHeight = 18;
+
+    context.fillStyle = "rgba(0, 0, 0, 0.56)";
+    context.fillRect(nameplate.anchorX - labelWidth / 2, nameplate.topY, labelWidth, labelHeight);
+
+    context.fillStyle = "#f8f7e5";
+    context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 13);
+  }
+
+  context.restore();
+}
+
+function isWorkerBehindAnyOcclusionRect(position: WorkerPosition, mapData: LoadedOutpostMap): boolean {
+  const footX = position.x;
+  const footY = position.y;
+  const horizontalPadding = mapData.tileSize * 0.2;
+  const baselineBias = mapData.tileSize * 0.08;
+
+  for (const rect of mapData.occlusionRects) {
+    const rectLeft = rect.x - horizontalPadding;
+    const rectRight = rect.x + rect.width + horizontalPadding;
+    if (footX < rectLeft || footX > rectRight) {
+      continue;
+    }
+
+    const baselineY = rect.y + rect.height;
+    if (footY <= baselineY - baselineBias) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function groupControlKeysByWorker(controlGroups: Partial<Record<number, string>> | undefined): Map<string, string[]> {
   const grouped = new Map<string, string[]>();
   if (!controlGroups) {
@@ -1249,6 +1490,151 @@ function groupControlKeysByWorker(controlGroups: Partial<Record<number, string>>
   }
 
   return grouped;
+}
+
+function drawCommandFeedback(
+  context: CanvasRenderingContext2D,
+  viewport: ViewportState,
+  feedback: CommandFeedback,
+  nowMs: number
+): void {
+  const elapsed = nowMs - feedback.startedAtMs;
+  if (elapsed < 0 || elapsed > feedback.durationMs) {
+    return;
+  }
+
+  const progress = clamp(elapsed / feedback.durationMs, 0, 1);
+  const alpha = 1 - progress;
+
+  context.save();
+  context.lineJoin = "round";
+  context.lineCap = "round";
+
+  if (feedback.kind === "ok" && feedback.path && feedback.path.length >= 2) {
+    context.beginPath();
+    const start = worldToScreen(feedback.path[0].x, feedback.path[0].y, viewport);
+    context.moveTo(start.x, start.y);
+
+    for (let index = 1; index < feedback.path.length; index += 1) {
+      const point = worldToScreen(feedback.path[index].x, feedback.path[index].y, viewport);
+      context.lineTo(point.x, point.y);
+    }
+
+    context.strokeStyle = `rgba(180, 245, 215, ${0.7 * alpha})`;
+    context.lineWidth = Math.max(1.5, 2.6 * viewport.scale);
+    context.stroke();
+  }
+
+  const destination = worldToScreen(feedback.destination.x, feedback.destination.y, viewport);
+  const pulse = 0.25 + Math.sin(progress * Math.PI * 4) * 0.1;
+
+  if (feedback.kind === "ok") {
+    const outerRadius = (12 + pulse * 18) * viewport.scale;
+    const innerRadius = 6 * viewport.scale;
+
+    context.strokeStyle = `rgba(174, 244, 212, ${0.9 * alpha})`;
+    context.lineWidth = Math.max(1.2, 2.2 * viewport.scale);
+    context.beginPath();
+    context.arc(destination.x, destination.y, outerRadius, 0, Math.PI * 2);
+    context.stroke();
+
+    context.fillStyle = `rgba(201, 255, 226, ${0.55 * alpha})`;
+    context.beginPath();
+    context.arc(destination.x, destination.y, innerRadius, 0, Math.PI * 2);
+    context.fill();
+  } else {
+    const radius = (12 + progress * 10) * viewport.scale;
+    context.strokeStyle = `rgba(255, 126, 126, ${0.95 * alpha})`;
+    context.lineWidth = Math.max(1.4, 2.5 * viewport.scale);
+
+    context.beginPath();
+    context.moveTo(destination.x - radius * 0.65, destination.y - radius * 0.65);
+    context.lineTo(destination.x + radius * 0.65, destination.y + radius * 0.65);
+    context.moveTo(destination.x + radius * 0.65, destination.y - radius * 0.65);
+    context.lineTo(destination.x - radius * 0.65, destination.y + radius * 0.65);
+    context.stroke();
+
+    context.beginPath();
+    context.strokeStyle = `rgba(255, 150, 150, ${0.45 * alpha})`;
+    context.lineWidth = Math.max(1, 1.6 * viewport.scale);
+    context.arc(destination.x, destination.y, radius, 0, Math.PI * 2);
+    context.stroke();
+  }
+
+  context.restore();
+}
+
+function drawSummonEffect(
+  context: CanvasRenderingContext2D,
+  centerX: number,
+  groundY: number,
+  scale: number,
+  progress: number
+): void {
+  const alpha = (1 - progress) * 0.85;
+  if (alpha <= 0.01) {
+    return;
+  }
+
+  const ringRadius = (8 + (1 - progress) * 10) * scale;
+  const ringY = groundY + 1.5 * scale;
+
+  context.save();
+  context.strokeStyle = `rgba(172, 242, 216, ${alpha})`;
+  context.lineWidth = Math.max(1.2, 2 * scale);
+  context.beginPath();
+  context.arc(centerX, ringY, ringRadius, 0, Math.PI * 2);
+  context.stroke();
+
+  context.strokeStyle = `rgba(207, 255, 235, ${alpha * 0.75})`;
+  context.lineWidth = Math.max(0.8, 1.2 * scale);
+  for (let i = 0; i < 4; i += 1) {
+    const angle = progress * Math.PI * 2 + (Math.PI / 2) * i;
+    const dx = Math.cos(angle) * ringRadius * 0.65;
+    const dy = Math.sin(angle) * ringRadius * 0.35;
+    context.beginPath();
+    context.arc(centerX + dx, ringY + dy, 2.2 * scale, 0, Math.PI * 2);
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawDespawnEffect(
+  context: CanvasRenderingContext2D,
+  centerX: number,
+  groundY: number,
+  scale: number,
+  progress: number,
+  alpha: number
+): void {
+  const ringRadius = (9 + progress * 12) * scale;
+  const ringY = groundY + 1.5 * scale;
+  const ringAlpha = alpha * 0.55;
+  if (ringAlpha <= 0.01) {
+    return;
+  }
+
+  context.save();
+  context.strokeStyle = `rgba(139, 194, 255, ${ringAlpha})`;
+  context.lineWidth = Math.max(1, 1.8 * scale);
+  context.beginPath();
+  context.arc(centerX, ringY, ringRadius, 0, Math.PI * 2);
+  context.stroke();
+  context.restore();
+}
+
+function getWorkerSummonProgress(createdAtIso: string, nowMs: number): number | undefined {
+  const createdMs = Date.parse(createdAtIso);
+  if (!Number.isFinite(createdMs)) {
+    return undefined;
+  }
+
+  const elapsed = nowMs - createdMs;
+  if (elapsed < 0 || elapsed > summonWorkerDurationMs) {
+    return undefined;
+  }
+
+  return clamp(elapsed / summonWorkerDurationMs, 0, 1);
 }
 
 function drawOutpostTerrain(
@@ -1307,6 +1693,65 @@ function drawOutpostTerrain(
       }
     }
   }
+}
+
+function drawOutpostPreviewBackground(
+  context: CanvasRenderingContext2D,
+  viewport: ViewportState,
+  mapData: LoadedOutpostMap,
+  image: HTMLImageElement
+): void {
+  const worldWidth = mapData.width * mapData.tileSize;
+  const worldHeight = mapData.height * mapData.tileSize;
+  const topLeft = worldToScreen(0, 0, viewport);
+
+  context.save();
+  context.imageSmoothingEnabled = true;
+  context.drawImage(image, topLeft.x, topLeft.y, worldWidth * viewport.scale, worldHeight * viewport.scale);
+  context.restore();
+}
+
+function drawOutpostOcclusionOverlay(
+  context: CanvasRenderingContext2D,
+  viewport: ViewportState,
+  width: number,
+  height: number,
+  mapData: LoadedOutpostMap,
+  image: HTMLImageElement
+): void {
+  const worldWidth = mapData.width * mapData.tileSize;
+  const worldHeight = mapData.height * mapData.tileSize;
+  const sourceScaleX = image.naturalWidth / worldWidth;
+  const sourceScaleY = image.naturalHeight / worldHeight;
+
+  context.save();
+  context.imageSmoothingEnabled = true;
+
+  for (const rect of mapData.occlusionRects) {
+    const screen = worldToScreen(rect.x, rect.y, viewport);
+    const drawWidth = rect.width * viewport.scale;
+    const drawHeight = rect.height * viewport.scale;
+
+    if (screen.x > width || screen.y > height || screen.x + drawWidth < 0 || screen.y + drawHeight < 0) {
+      continue;
+    }
+
+    context.globalAlpha = occlusionOverlayAlpha;
+
+    context.drawImage(
+      image,
+      rect.x * sourceScaleX,
+      rect.y * sourceScaleY,
+      rect.width * sourceScaleX,
+      rect.height * sourceScaleY,
+      screen.x,
+      screen.y,
+      drawWidth,
+      drawHeight
+    );
+  }
+
+  context.restore();
 }
 
 function drawOutpostObjects(
@@ -1596,6 +2041,10 @@ function isWorldPositionWalkable(
 
   const tileX = clamp(Math.floor(position.x / mapData.tileSize), 0, mapData.width - 1);
   const tileY = clamp(Math.floor(position.y / mapData.tileSize), 0, mapData.height - 1);
+  if (mapData.collisionTileKeys.has(tileCoordKey(tileX, tileY))) {
+    return false;
+  }
+
   const terrainValue = mapData.terrain[tileY]?.[tileX] ?? 0;
   if (blockedTerrainValues.has(terrainValue)) {
     return false;
@@ -1663,7 +2112,7 @@ function buildBlockedTileSet(mapData: LoadedOutpostMap | undefined, collisionRec
     return new Set<string>();
   }
 
-  const blocked = new Set<string>();
+  const blocked = new Set<string>(mapData.collisionTileKeys);
   const tileSize = mapData.tileSize;
 
   for (const rect of collisionRects) {
@@ -1915,14 +2364,13 @@ function findWorkerAtScreenPoint(
   workers: Worker[],
   positions: Map<string, WorkerPosition>,
   viewport: ViewportState,
-  spriteLibrary: Partial<Record<string, CharacterSpriteSet>>,
-  fallbackSpriteSet: CharacterSpriteSet | undefined
+  spriteLibrary: Partial<Record<string, CharacterSpriteSet>>
 ): Worker | undefined {
   for (let index = workers.length - 1; index >= 0; index -= 1) {
     const worker = workers[index];
     const position = positions.get(worker.id) ?? worker.position;
     const screenPosition = worldToScreen(position.x, position.y, viewport);
-    const spriteSet = spriteLibrary[worker.avatarType] ?? fallbackSpriteSet;
+    const spriteSet = spriteLibrary[worker.avatarType];
 
     if (spriteSet?.hasSprites) {
       const bounds = spriteBoundsAtGround(screenPosition.x, screenPosition.y, viewport.scale, spriteBaseSize);

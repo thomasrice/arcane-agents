@@ -17,6 +17,7 @@ const nonShellIdleAfterMs = 10_000;
 const outputHeartbeatWorkingWindowMs = 12_000;
 const claudeStickyWorkingWindowMs = 10_000;
 const claudeActiveTextHoldWindowMs = 5 * 60_000;
+const claudeSpawnIdleGraceMs = 5_000;
 
 export class StatusMonitor {
   private intervalId: NodeJS.Timeout | undefined;
@@ -137,6 +138,36 @@ export class StatusMonitor {
         }
 
         if (
+          derivedStatus === "working" &&
+          this.shouldTreatAsSpawnGraceIdle(worker, paneState.currentCommand, parsed.activity, activeClaudeTask)
+        ) {
+          derivedStatus = "idle";
+          derivedActivityText = undefined;
+          derivedActivityTool = undefined;
+          derivedActivityPath = undefined;
+        }
+
+        if (
+          derivedStatus === "working" &&
+          this.shouldForceIdleOnOpenCodePrompt(worker, paneState.currentCommand, output, parsed.activity)
+        ) {
+          derivedStatus = "idle";
+          derivedActivityText = undefined;
+          derivedActivityTool = undefined;
+          derivedActivityPath = undefined;
+        }
+
+        if (
+          derivedStatus === "working" &&
+          this.shouldForceIdleOnClaudePrompt(worker, paneState.currentCommand, output, parsed.activity, activeClaudeTask)
+        ) {
+          derivedStatus = "idle";
+          derivedActivityText = undefined;
+          derivedActivityTool = undefined;
+          derivedActivityPath = undefined;
+        }
+
+        if (
           derivedStatus === "idle" &&
           this.shouldKeepWorkingFromHeartbeat(
             worker,
@@ -176,6 +207,12 @@ export class StatusMonitor {
       derivedStatus = "error";
       derivedActivityText = "Status check failed";
       derivedActivityTool = "unknown";
+      derivedActivityPath = undefined;
+    }
+
+    if (derivedStatus === "idle") {
+      derivedActivityText = undefined;
+      derivedActivityTool = undefined;
       derivedActivityPath = undefined;
     }
 
@@ -282,7 +319,16 @@ export class StatusMonitor {
     const now = Date.now();
     const commandLower = currentCommand.toLowerCase();
     const likelyClaudeSession = isLikelyClaudeSession(worker, commandLower);
+    const likelyOpenCodeSession = isLikelyOpenCodeSession(worker, commandLower);
     const outputQuietForMs = now - observation.lastOutputChangeAtMs;
+
+    if (likelyClaudeSession && hasClaudePromptSignal(output) && !activeClaudeTask) {
+      return false;
+    }
+
+    if (likelyOpenCodeSession && hasOpenCodePromptSignal(output) && !hasOpenCodeActiveSignal(output)) {
+      return false;
+    }
 
     if (
       likelyClaudeSession &&
@@ -316,6 +362,84 @@ export class StatusMonitor {
     }
 
     return Boolean(activity.filePath || activity.tool || activity.text);
+  }
+
+  private shouldTreatAsSpawnGraceIdle(
+    worker: Worker,
+    currentCommand: string,
+    activity: ParsedActivity,
+    activeClaudeTask: string | undefined
+  ): boolean {
+    const createdAtMs = Date.parse(worker.createdAt);
+    if (!Number.isFinite(createdAtMs)) {
+      return false;
+    }
+
+    const ageMs = Date.now() - createdAtMs;
+    if (ageMs < 0 || ageMs > claudeSpawnIdleGraceMs) {
+      return false;
+    }
+
+    if (!isLikelyClaudeSession(worker, currentCommand.toLowerCase())) {
+      return false;
+    }
+
+    if (activeClaudeTask || activity.needsInput || activity.hasError) {
+      return false;
+    }
+
+    const hasStrongActivitySignal =
+      Boolean(activity.filePath) ||
+      (Boolean(activity.tool) && activity.tool !== "terminal");
+
+    return !hasStrongActivitySignal;
+  }
+
+  private shouldForceIdleOnClaudePrompt(
+    worker: Worker,
+    currentCommand: string,
+    output: string,
+    activity: ParsedActivity,
+    activeClaudeTask: string | undefined
+  ): boolean {
+    if (!isLikelyClaudeSession(worker, currentCommand.toLowerCase())) {
+      return false;
+    }
+
+    if (!hasClaudePromptSignal(output)) {
+      return false;
+    }
+
+    if (activeClaudeTask || activity.needsInput || activity.hasError) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private shouldForceIdleOnOpenCodePrompt(
+    worker: Worker,
+    currentCommand: string,
+    output: string,
+    activity: ParsedActivity
+  ): boolean {
+    if (!isLikelyOpenCodeSession(worker, currentCommand.toLowerCase())) {
+      return false;
+    }
+
+    if (!hasOpenCodePromptSignal(output)) {
+      return false;
+    }
+
+    if (hasOpenCodeActiveSignal(output)) {
+      return false;
+    }
+
+    if (activity.needsInput || activity.hasError) {
+      return false;
+    }
+
+    return true;
   }
 
   private shouldDowngradeAttentionToWorking(
@@ -380,6 +504,19 @@ function isLikelyClaudeSession(worker: Worker, commandLower: string): boolean {
   return commandLower.includes("claude");
 }
 
+function isLikelyOpenCodeSession(worker: Worker, commandLower: string): boolean {
+  if (worker.runtimeId.toLowerCase().includes("opencode")) {
+    return true;
+  }
+
+  const runtimeBinary = worker.command[0]?.toLowerCase() ?? "";
+  if (runtimeBinary.includes("opencode")) {
+    return true;
+  }
+
+  return commandLower.includes("opencode");
+}
+
 function hasActiveWorkActivityText(activityText: string | undefined): boolean {
   if (!activityText) {
     return false;
@@ -410,4 +547,26 @@ function hasClaudePromptSignal(output: string): boolean {
     .slice(-10);
 
   return lines.some((line) => line.startsWith("❯"));
+}
+
+function hasOpenCodePromptSignal(output: string): boolean {
+  const lines = output
+    .split("\n")
+    .map((line) => line.trim().toLowerCase())
+    .filter((line) => line.length > 0)
+    .slice(-24);
+
+  const hasVariantHint = lines.some((line) => line.includes("ctrl+t variants"));
+  const hasCommandHint = lines.some((line) => line.includes("ctrl+p commands"));
+  return hasVariantHint && hasCommandHint;
+}
+
+function hasOpenCodeActiveSignal(output: string): boolean {
+  const lines = output
+    .split("\n")
+    .map((line) => line.trim().toLowerCase())
+    .filter((line) => line.length > 0)
+    .slice(-24);
+
+  return lines.some((line) => line.includes("esc interrupt"));
 }

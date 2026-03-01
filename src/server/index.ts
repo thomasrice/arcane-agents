@@ -64,6 +64,11 @@ async function bootstrap(): Promise<void> {
     app.use("/api/assets", express.static(assetsDir));
   }
 
+  const devMapPreviewDir = "/tmp/overworld-map09-variations/final";
+  if (fs.existsSync(devMapPreviewDir)) {
+    app.use("/api/dev-map09", express.static(devMapPreviewDir));
+  }
+
   app.get("/api/health", (_req, res) => {
     res.json({
       ok: true,
