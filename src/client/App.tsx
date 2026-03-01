@@ -60,6 +60,7 @@ export default function App(): JSX.Element {
   const controlGroupByDigitRef = useRef<ControlGroupMap>(controlGroups);
 
   const activeWorkers = useMemo(() => workers.filter((worker) => worker.status !== "stopped"), [workers]);
+  const idleWorkers = useMemo(() => activeWorkers.filter((worker) => worker.status === "idle"), [activeWorkers]);
 
   const selectedWorker = useMemo(
     () => activeWorkers.find((worker) => worker.id === selectedWorkerId),
@@ -425,6 +426,27 @@ export default function App(): JSX.Element {
     [activeWorkers, selectedWorkerId]
   );
 
+  const cycleIdleSelection = useCallback(
+    (direction: 1 | -1) => {
+      if (idleWorkers.length === 0) {
+        return;
+      }
+
+      const currentIndex = idleWorkers.findIndex((worker) => worker.id === selectedWorkerId);
+      const startIndex = currentIndex >= 0 ? currentIndex : direction > 0 ? -1 : 0;
+      const nextIndex = (startIndex + direction + idleWorkers.length) % idleWorkers.length;
+      const nextWorker = idleWorkers[nextIndex];
+      if (!nextWorker) {
+        return;
+      }
+
+      setSelectedWorkerId(nextWorker.id);
+      setMapCenterWorkerId(nextWorker.id);
+      setMapCenterToken((current) => current + 1);
+    },
+    [idleWorkers, selectedWorkerId]
+  );
+
   const onActivateRosterIndex = useCallback(
     (index: number) => {
       const entry = rosterEntries[index];
@@ -565,6 +587,22 @@ export default function App(): JSX.Element {
 
         event.preventDefault();
         cycleSelection(event.shiftKey ? -1 : 1);
+        return;
+      }
+
+      if (
+        event.code === "Period" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !isEditableTarget(event.target)
+      ) {
+        if (isTerminalTarget(event.target)) {
+          return;
+        }
+
+        event.preventDefault();
+        cycleIdleSelection(event.shiftKey ? -1 : 1);
         return;
       }
 
@@ -712,6 +750,7 @@ export default function App(): JSX.Element {
     activeWorkers,
     closeKillConfirm,
     closeRenameModal,
+    cycleIdleSelection,
     cycleSelection,
     escapeTerminalFocus,
     firstSummonEntryIndex,
@@ -971,6 +1010,10 @@ export default function App(): JSX.Element {
                 <span>Select previous agent</span>
               </div>
               <div className="shortcut-row">
+                <kbd>. / Shift+.</kbd>
+                <span>Cycle idle agents only</span>
+              </div>
+              <div className="shortcut-row">
                 <kbd>J / K</kbd>
                 <span>Move selection in roster and summon list</span>
               </div>
@@ -979,8 +1022,12 @@ export default function App(): JSX.Element {
                 <span>Jump to summon list</span>
               </div>
               <div className="shortcut-row">
+                <kbd>W/A/S/D</kbd>
+                <span>Move selected agent (hold)</span>
+              </div>
+              <div className="shortcut-row">
                 <kbd>Shift+W/A/S/D</kbd>
-                <span>Nudge selected agent on the map</span>
+                <span>Pan map</span>
               </div>
               <div className="shortcut-row">
                 <kbd>[ / ] / =</kbd>
@@ -995,7 +1042,7 @@ export default function App(): JSX.Element {
                 <span>Insert newline in OpenCode prompt</span>
               </div>
               <div className="shortcut-row">
-                <kbd>Ctrl+]</kbd>
+                <kbd>Ctrl+] / Ctrl+D</kbd>
                 <span>Leave terminal focus, then deselect agent</span>
               </div>
               <div className="shortcut-row">
@@ -1251,5 +1298,5 @@ function isTerminalEscapeShortcut(event: KeyboardEvent): boolean {
     return false;
   }
 
-  return event.key === "]" || event.code === "BracketRight";
+  return event.key === "]" || event.code === "BracketRight" || event.key.toLowerCase() === "d" || event.code === "KeyD";
 }

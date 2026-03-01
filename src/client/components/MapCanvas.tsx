@@ -204,7 +204,8 @@ export function MapCanvas({
 
   const spriteTypes = useMemo(() => Array.from(new Set(workers.map((worker) => worker.avatarType))), [workers]);
   const spriteLibrary = useCharacterSpriteLibrary(spriteTypes);
-  const mapCollisionRects = useMemo(() => buildObjectCollisionRects(mapData), [mapData]);
+  const useLegacyMapBlockers = !mapData?.backgroundImageUrl;
+  const mapCollisionRects = useMemo(() => buildObjectCollisionRects(mapData, useLegacyMapBlockers), [mapData, useLegacyMapBlockers]);
   const blockedTileKeys = useMemo(() => buildBlockedTileSet(mapData, mapCollisionRects), [mapCollisionRects, mapData]);
 
   useEffect(() => {
@@ -1452,6 +1453,12 @@ function isWorkerBehindAnyOcclusionRect(position: WorkerPosition, mapData: Loade
   const footY = position.y;
   const horizontalPadding = mapData.tileSize * 0.2;
   const baselineBias = mapData.tileSize * 0.08;
+  const workerBounds: CollisionRect = {
+    left: footX - mapData.tileSize * 0.48,
+    top: footY - mapData.tileSize * 1.46,
+    right: footX + mapData.tileSize * 0.48,
+    bottom: footY + mapData.tileSize * 0.24
+  };
 
   for (const rect of mapData.occlusionRects) {
     const rectLeft = rect.x - horizontalPadding;
@@ -1461,9 +1468,22 @@ function isWorkerBehindAnyOcclusionRect(position: WorkerPosition, mapData: Loade
     }
 
     const baselineY = rect.y + rect.height;
-    if (footY <= baselineY - baselineBias) {
-      return true;
+    if (footY > baselineY - baselineBias) {
+      continue;
     }
+
+    const occlusionRect: CollisionRect = {
+      left: rect.x,
+      top: rect.y,
+      right: rect.x + rect.width,
+      bottom: rect.y + rect.height
+    };
+
+    if (!intersectsRect(workerBounds, occlusionRect)) {
+      continue;
+    }
+
+    return true;
   }
 
   return false;
@@ -1974,8 +1994,8 @@ function randomWanderTarget(
   return findNearestWalkablePosition(fallback, mapData, collisionRects) ?? anchor;
 }
 
-function buildObjectCollisionRects(mapData: LoadedOutpostMap | undefined): CollisionRect[] {
-  if (!mapData) {
+function buildObjectCollisionRects(mapData: LoadedOutpostMap | undefined, includeLegacyObjectBlockers: boolean): CollisionRect[] {
+  if (!mapData || !includeLegacyObjectBlockers) {
     return [];
   }
 
@@ -2046,7 +2066,7 @@ function isWorldPositionWalkable(
   }
 
   const terrainValue = mapData.terrain[tileY]?.[tileX] ?? 0;
-  if (blockedTerrainValues.has(terrainValue)) {
+  if (blockedTerrainValues.has(terrainValue) && !mapData.backgroundImageUrl) {
     return false;
   }
 
@@ -2151,7 +2171,7 @@ function isTileWalkable(tileX: number, tileY: number, mapData: LoadedOutpostMap,
   }
 
   const terrainValue = mapData.terrain[tileY]?.[tileX] ?? 0;
-  if (blockedTerrainValues.has(terrainValue)) {
+  if (blockedTerrainValues.has(terrainValue) && !mapData.backgroundImageUrl) {
     return false;
   }
 
