@@ -15,6 +15,8 @@
       --danger: #f08e8e;
       --collision: #ff6d6d;
       --occlusion: #56b6ff;
+      --occlusion-hard: #8b6bff;
+      --flame: #ffb15f;
     }
 
     * {
@@ -171,7 +173,7 @@
 
     .layer-toggle {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 8px;
     }
 
@@ -203,6 +205,16 @@
     .layer-chip.occlusion {
       background: var(--occlusion);
       box-shadow: 0 0 0 1px rgba(86, 182, 255, 0.35);
+    }
+
+    .layer-chip.occlusion-hard {
+      background: var(--occlusion-hard);
+      box-shadow: 0 0 0 1px rgba(139, 107, 255, 0.35);
+    }
+
+    .layer-chip.flame {
+      background: var(--flame);
+      box-shadow: 0 0 0 1px rgba(255, 177, 95, 0.38);
     }
 
     .status {
@@ -296,6 +308,14 @@
       background: var(--occlusion);
     }
 
+    .dot.occlusion-hard {
+      background: var(--occlusion-hard);
+    }
+
+    .dot.flame {
+      background: var(--flame);
+    }
+
     @media (max-width: 1100px) {
       .shell {
         grid-template-columns: 1fr;
@@ -313,7 +333,7 @@
     <aside class="controls">
       <h1>Map Mask Editor</h1>
       <p class="subtitle">
-        Paint collision and occlusion over a background map. Left click paints, right click erases.
+        Paint collision, soft/hard occlusion, and flame squares over a background map. Left click paints, right click erases.
       </p>
 
       <section class="group">
@@ -368,6 +388,16 @@
             <option value="2">2</option>
           </select>
         </label>
+        <label>
+          Flame cell px
+          <select id="flame-cell-size">
+            <option value="32">32 (tile)</option>
+            <option value="16" selected>16 (recommended)</option>
+            <option value="8">8</option>
+            <option value="4">4</option>
+            <option value="2">2</option>
+          </select>
+        </label>
         <div class="row">
           <button id="apply-grid" type="button">Apply grid size</button>
           <label style="flex-direction: row; align-items: center; gap: 6px;">
@@ -382,6 +412,8 @@
         <div class="layer-toggle">
           <label class="layer-option"><input type="radio" name="layer" value="collision" checked><span class="layer-chip collision"></span>Collision</label>
           <label class="layer-option"><input type="radio" name="layer" value="occlusion"><span class="layer-chip occlusion"></span>Occlusion</label>
+          <label class="layer-option"><input type="radio" name="layer" value="occlusion-hard"><span class="layer-chip occlusion-hard"></span>Hard Occ.</label>
+          <label class="layer-option"><input type="radio" name="layer" value="flame"><span class="layer-chip flame"></span>Flame</label>
         </div>
         <label>
           Brush size (cells)
@@ -395,6 +427,14 @@
         <label>
           Occlusion opacity
           <input id="occlusion-opacity" type="range" min="0" max="1" step="0.05" value="0.36">
+        </label>
+        <label>
+          Hard occlusion opacity
+          <input id="occlusion-hard-opacity" type="range" min="0" max="1" step="0.05" value="0.4">
+        </label>
+        <label>
+          Flame opacity
+          <input id="flame-opacity" type="range" min="0" max="1" step="0.05" value="0.45">
         </label>
         <div class="row">
           <button id="clear-layer" class="secondary" type="button">Clear active layer</button>
@@ -426,9 +466,11 @@
         <div class="legend">
           <span class="legend-item"><span class="dot collision"></span>Collision</span>
           <span class="legend-item"><span class="dot occlusion"></span>Occlusion</span>
+          <span class="legend-item"><span class="dot occlusion-hard"></span>Hard Occlusion</span>
+          <span class="legend-item"><span class="dot flame"></span>Flame</span>
         </div>
         <div id="zoom-readout">Zoom: 100%</div>
-        <div id="count-readout">Collision: 0 | Occlusion: 0</div>
+        <div id="count-readout">Collision: 0 | Occlusion: 0 | Flames: 0</div>
       </div>
     </main>
   </div>
@@ -452,11 +494,14 @@
     const mapHeightInput = document.getElementById("map-height");
     const tileSizeInput = document.getElementById("tile-size");
     const occlusionCellSizeInput = document.getElementById("occlusion-cell-size");
+    const flameCellSizeInput = document.getElementById("flame-cell-size");
     const applyGridButton = document.getElementById("apply-grid");
     const showGridInput = document.getElementById("show-grid");
 
     const collisionOpacityInput = document.getElementById("collision-opacity");
     const occlusionOpacityInput = document.getElementById("occlusion-opacity");
+    const occlusionHardOpacityInput = document.getElementById("occlusion-hard-opacity");
+    const flameOpacityInput = document.getElementById("flame-opacity");
     const brushSizeInput = document.getElementById("brush-size");
     const brushReadout = document.getElementById("brush-readout");
     const clearLayerButton = document.getElementById("clear-layer");
@@ -482,14 +527,19 @@
       mapHeight: 30,
       tileSize: 32,
       occlusionCellSize: 8,
+      flameCellSize: 16,
       zoom: 1,
       showGrid: true,
       activeLayer: "collision",
       brushSizeCells: 1,
       collisionOpacity: 0.42,
       occlusionOpacity: 0.36,
+      occlusionHardOpacity: 0.4,
+      flameOpacity: 0.45,
       collisionMask: createGrid(40, 30),
       occlusionMask: createOcclusionGrid(40, 30, 32, 8),
+      occlusionHardMask: createOcclusionGrid(40, 30, 32, 8),
+      flameMask: createOcclusionGrid(40, 30, 32, 16),
       backgroundImage: null,
       backgroundImageUrl: initialImageUrl,
       hoverInfo: null,
@@ -535,24 +585,29 @@
     });
 
     applyGridButton.addEventListener("click", () => {
-      const previousState = {
-        mapWidth: state.mapWidth,
-        mapHeight: state.mapHeight,
-        tileSize: state.tileSize,
-        occlusionCellSize: state.occlusionCellSize,
-        occlusionMask: state.occlusionMask
-      };
+        const previousState = {
+          mapWidth: state.mapWidth,
+          mapHeight: state.mapHeight,
+          tileSize: state.tileSize,
+          occlusionCellSize: state.occlusionCellSize,
+          occlusionMask: state.occlusionMask,
+          occlusionHardMask: state.occlusionHardMask,
+          flameCellSize: state.flameCellSize,
+          flameMask: state.flameMask
+        };
 
       const nextWidth = clampInt(mapWidthInput.value, 8, 200, state.mapWidth);
       const nextHeight = clampInt(mapHeightInput.value, 8, 200, state.mapHeight);
       const nextTileSize = clampInt(tileSizeInput.value, 8, 128, state.tileSize);
       const nextOcclusionCellSize = clampOcclusionCellSize(occlusionCellSizeInput.value, nextTileSize, state.occlusionCellSize);
+      const nextFlameCellSize = clampOcclusionCellSize(flameCellSizeInput.value, nextTileSize, state.flameCellSize);
 
       state.collisionMask = resizeGrid(state.collisionMask, nextWidth, nextHeight);
       state.mapWidth = nextWidth;
       state.mapHeight = nextHeight;
       state.tileSize = nextTileSize;
       state.occlusionCellSize = nextOcclusionCellSize;
+      state.flameCellSize = nextFlameCellSize;
       state.occlusionMask = resampleOcclusionGrid(
         previousState.occlusionMask,
         previousState.mapWidth,
@@ -564,18 +619,41 @@
         nextTileSize,
         nextOcclusionCellSize
       );
+      state.occlusionHardMask = resampleOcclusionGrid(
+        previousState.occlusionHardMask,
+        previousState.mapWidth,
+        previousState.mapHeight,
+        previousState.tileSize,
+        previousState.occlusionCellSize,
+        nextWidth,
+        nextHeight,
+        nextTileSize,
+        nextOcclusionCellSize
+      );
+      state.flameMask = resampleOcclusionGrid(
+        previousState.flameMask,
+        previousState.mapWidth,
+        previousState.mapHeight,
+        previousState.tileSize,
+        previousState.flameCellSize,
+        nextWidth,
+        nextHeight,
+        nextTileSize,
+        nextFlameCellSize
+      );
 
       mapWidthInput.value = String(nextWidth);
       mapHeightInput.value = String(nextHeight);
       tileSizeInput.value = String(nextTileSize);
       occlusionCellSizeInput.value = String(nextOcclusionCellSize);
+      flameCellSizeInput.value = String(nextFlameCellSize);
 
       resizeCanvas();
       updateBrushReadout();
       draw();
       refreshJsonOutput();
       setStatus(
-        `Grid set to ${nextWidth}x${nextHeight} tiles, tile ${nextTileSize}px, occlusion cell ${nextOcclusionCellSize}px.`,
+        `Grid set to ${nextWidth}x${nextHeight} tiles, tile ${nextTileSize}px, occlusion ${nextOcclusionCellSize}px, flame ${nextFlameCellSize}px.`,
         "ok"
       );
     });
@@ -598,6 +676,17 @@
         state.tileSize,
         nextOcclusionCellSize
       );
+      state.occlusionHardMask = resampleOcclusionGrid(
+        state.occlusionHardMask,
+        state.mapWidth,
+        state.mapHeight,
+        state.tileSize,
+        state.occlusionCellSize,
+        state.mapWidth,
+        state.mapHeight,
+        state.tileSize,
+        nextOcclusionCellSize
+      );
       state.occlusionCellSize = nextOcclusionCellSize;
       occlusionCellSizeInput.value = String(nextOcclusionCellSize);
 
@@ -605,6 +694,33 @@
       draw();
       refreshJsonOutput();
       setStatus(`Occlusion cell size set to ${nextOcclusionCellSize}px.`, "ok");
+    });
+
+    flameCellSizeInput.addEventListener("change", () => {
+      const nextFlameCellSize = clampOcclusionCellSize(flameCellSizeInput.value, state.tileSize, state.flameCellSize);
+      if (nextFlameCellSize === state.flameCellSize) {
+        flameCellSizeInput.value = String(state.flameCellSize);
+        return;
+      }
+
+      state.flameMask = resampleOcclusionGrid(
+        state.flameMask,
+        state.mapWidth,
+        state.mapHeight,
+        state.tileSize,
+        state.flameCellSize,
+        state.mapWidth,
+        state.mapHeight,
+        state.tileSize,
+        nextFlameCellSize
+      );
+      state.flameCellSize = nextFlameCellSize;
+      flameCellSizeInput.value = String(nextFlameCellSize);
+
+      updateBrushReadout();
+      draw();
+      refreshJsonOutput();
+      setStatus(`Flame cell size set to ${nextFlameCellSize}px.`, "ok");
     });
 
     showGridInput.addEventListener("change", () => {
@@ -622,6 +738,16 @@
       draw();
     });
 
+    occlusionHardOpacityInput.addEventListener("input", () => {
+      state.occlusionHardOpacity = clampNumber(Number(occlusionHardOpacityInput.value), 0, 1);
+      draw();
+    });
+
+    flameOpacityInput.addEventListener("input", () => {
+      state.flameOpacity = clampNumber(Number(flameOpacityInput.value), 0, 1);
+      draw();
+    });
+
     brushSizeInput.addEventListener("input", () => {
       const nextBrushSize = clampInt(brushSizeInput.value, 1, 32, state.brushSizeCells);
       state.brushSizeCells = nextBrushSize;
@@ -631,7 +757,7 @@
     });
 
     clearLayerButton.addEventListener("click", () => {
-      const label = state.activeLayer === "collision" ? "collision" : "occlusion";
+      const label = state.activeLayer;
       if (!window.confirm(`Clear all ${label} tiles?`)) {
         return;
       }
@@ -643,12 +769,14 @@
     });
 
     clearAllButton.addEventListener("click", () => {
-      if (!window.confirm("Clear both collision and occlusion layers?")) {
+      if (!window.confirm("Clear collision, soft/hard occlusion, and flame layers?")) {
         return;
       }
 
       clearLayer("collision");
       clearLayer("occlusion");
+      clearLayer("occlusion-hard");
+      clearLayer("flame");
       draw();
       refreshJsonOutput();
       setStatus("Cleared all masks.", "ok");
@@ -697,7 +825,9 @@
     downloadMasksButton.addEventListener("click", async () => {
       await downloadMaskPng("collision-mask.png", state.collisionMask, state.tileSize, "#000000");
       await downloadMaskPng("occlusion-mask.png", state.occlusionMask, state.occlusionCellSize, "#000000");
-      setStatus("Downloaded collision-mask.png and occlusion-mask.png.", "ok");
+      await downloadMaskPng("occlusion-hard-mask.png", state.occlusionHardMask, state.occlusionCellSize, "#000000");
+      await downloadMaskPng("flame-mask.png", state.flameMask, state.flameCellSize, "#000000");
+      setStatus("Downloaded collision-mask.png, occlusion-mask.png, occlusion-hard-mask.png, and flame-mask.png.", "ok");
     });
 
     canvas.addEventListener("pointerdown", (event) => {
@@ -775,6 +905,12 @@
       } else if (key === "o") {
         setActiveLayer("occlusion");
         event.preventDefault();
+      } else if (key === "h") {
+        setActiveLayer("occlusion-hard");
+        event.preventDefault();
+      } else if (key === "f") {
+        setActiveLayer("flame");
+        event.preventDefault();
       } else if (key === "g") {
         state.showGrid = !state.showGrid;
         showGridInput.checked = state.showGrid;
@@ -832,6 +968,20 @@
         };
       }
 
+      if (layer === "flame") {
+        return {
+          grid: state.flameMask,
+          cellSize: state.flameCellSize
+        };
+      }
+
+      if (layer === "occlusion-hard") {
+        return {
+          grid: state.occlusionHardMask,
+          cellSize: state.occlusionCellSize
+        };
+      }
+
       return {
         grid: state.occlusionMask,
         cellSize: state.occlusionCellSize
@@ -843,7 +993,8 @@
       const activePixels = state.brushSizeCells * activeLayerConfig.cellSize;
       const collisionPixels = state.brushSizeCells * state.tileSize;
       const occlusionPixels = state.brushSizeCells * state.occlusionCellSize;
-      brushReadout.textContent = `Active ${state.activeLayer}: ${state.brushSizeCells} cells (${activePixels}px). Collision ${collisionPixels}px | Occlusion ${occlusionPixels}px.`;
+      const flamePixels = state.brushSizeCells * state.flameCellSize;
+      brushReadout.textContent = `Active ${state.activeLayer}: ${state.brushSizeCells} cells (${activePixels}px). Collision ${collisionPixels}px | Occlusion ${occlusionPixels}px | Flame ${flamePixels}px.`;
     }
 
     function createGrid(width, height) {
@@ -1101,7 +1252,9 @@
         tileX: Math.floor(pointer.canvasX / state.tileSize),
         tileY: Math.floor(pointer.canvasY / state.tileSize),
         occlusionX: Math.floor(pointer.canvasX / state.occlusionCellSize),
-        occlusionY: Math.floor(pointer.canvasY / state.occlusionCellSize)
+        occlusionY: Math.floor(pointer.canvasY / state.occlusionCellSize),
+        flameX: Math.floor(pointer.canvasX / state.flameCellSize),
+        flameY: Math.floor(pointer.canvasY / state.flameCellSize)
       };
     }
 
@@ -1202,7 +1355,7 @@
     }
 
     function setMaskTile(layer, coordinateX, coordinateY, value) {
-      const target = layer === "collision" ? state.collisionMask : state.occlusionMask;
+      const { grid: target } = getLayerConfig(layer);
       if (!isGridCoordinateInBounds(target, coordinateX, coordinateY)) {
         return false;
       }
@@ -1217,7 +1370,7 @@
     }
 
     function clearLayer(layer) {
-      const target = layer === "collision" ? state.collisionMask : state.occlusionMask;
+      const { grid: target } = getLayerConfig(layer);
       clearGrid(target);
     }
 
@@ -1233,11 +1386,16 @@
 
       drawMaskLayer(state.collisionMask, state.tileSize, `rgba(255, 109, 109, ${state.collisionOpacity})`);
       drawMaskLayer(state.occlusionMask, state.occlusionCellSize, `rgba(86, 182, 255, ${state.occlusionOpacity})`);
+      drawMaskLayer(state.occlusionHardMask, state.occlusionCellSize, `rgba(139, 107, 255, ${state.occlusionHardOpacity})`);
+      drawMaskLayer(state.flameMask, state.flameCellSize, `rgba(255, 177, 95, ${state.flameOpacity})`);
 
       if (state.showGrid) {
         drawGrid(state.tileSize, "rgba(233, 241, 224, 0.2)");
-        if (state.activeLayer === "occlusion" && state.occlusionCellSize < state.tileSize) {
+        if ((state.activeLayer === "occlusion" || state.activeLayer === "occlusion-hard") && state.occlusionCellSize < state.tileSize) {
           drawGrid(state.occlusionCellSize, "rgba(129, 207, 255, 0.18)");
+        }
+        if (state.activeLayer === "flame" && state.flameCellSize < state.tileSize) {
+          drawGrid(state.flameCellSize, "rgba(255, 185, 118, 0.22)");
         }
       }
 
@@ -1259,6 +1417,15 @@
           state.hoverInfo.occlusionY * state.occlusionCellSize + 0.75,
           state.occlusionCellSize - 1.5,
           state.occlusionCellSize - 1.5
+        );
+
+        context.strokeStyle = "rgba(255, 177, 95, 0.95)";
+        context.lineWidth = 1.5;
+        context.strokeRect(
+          state.hoverInfo.flameX * state.flameCellSize + 0.75,
+          state.hoverInfo.flameY * state.flameCellSize + 0.75,
+          state.flameCellSize - 1.5,
+          state.flameCellSize - 1.5
         );
 
         const brushRange = computeBrushCellRange(state.activeLayer, state.hoverInfo.canvasX, state.hoverInfo.canvasY);
@@ -1339,13 +1506,13 @@
       context.restore();
     }
 
-    function collectOcclusionTilesFromCells() {
+    function collectOcclusionTilesFromCells(maskGrid = state.occlusionMask) {
       const tiles = [];
       const seen = new Set();
 
-      for (let cellY = 0; cellY < state.occlusionMask.length; cellY += 1) {
-        for (let cellX = 0; cellX < (state.occlusionMask[cellY]?.length ?? 0); cellX += 1) {
-          if (!state.occlusionMask[cellY][cellX]) {
+      for (let cellY = 0; cellY < maskGrid.length; cellY += 1) {
+        for (let cellX = 0; cellX < (maskGrid[cellY]?.length ?? 0); cellX += 1) {
+          if (!maskGrid[cellY][cellX]) {
             continue;
           }
 
@@ -1372,18 +1539,22 @@
 
     function updateHud() {
       if (state.hoverInfo) {
-        tileReadout.textContent = `Tile: ${state.hoverInfo.tileX},${state.hoverInfo.tileY} | O-cell: ${state.hoverInfo.occlusionX},${state.hoverInfo.occlusionY}`;
+        tileReadout.textContent = `Tile: ${state.hoverInfo.tileX},${state.hoverInfo.tileY} | O-cell: ${state.hoverInfo.occlusionX},${state.hoverInfo.occlusionY} | F-cell: ${state.hoverInfo.flameX},${state.hoverInfo.flameY}`;
       } else {
         tileReadout.textContent = "Tile: -";
       }
 
       const collisionCount = countGridActive(state.collisionMask);
       const occlusionCount = countGridActive(state.occlusionMask);
-      countReadout.textContent = `Collision: ${collisionCount} | Occlusion: ${occlusionCount}`;
+      const occlusionHardCount = countGridActive(state.occlusionHardMask);
+      const flameCount = countGridActive(state.flameMask);
+      countReadout.textContent = `Collision: ${collisionCount} | Occlusion: ${occlusionCount} | Hard Occ: ${occlusionHardCount} | Flames: ${flameCount}`;
     }
 
     function serializeLogic() {
       const occlusionCells = collectGridActive(state.occlusionMask);
+      const occlusionHardCells = collectGridActive(state.occlusionHardMask);
+      const ambientFlameCells = collectGridActive(state.flameMask);
       return {
         version: 1,
         width: state.mapWidth,
@@ -1393,7 +1564,11 @@
         collisionTiles: collectGridActive(state.collisionMask),
         occlusionCellSize: state.occlusionCellSize,
         occlusionCells,
-        occlusionTiles: collectOcclusionTilesFromCells()
+        occlusionTiles: collectOcclusionTilesFromCells(),
+        occlusionHardCells,
+        occlusionHardTiles: collectOcclusionTilesFromCells(state.occlusionHardMask),
+        ambientFlameCellSize: state.flameCellSize,
+        ambientFlameCells
       };
     }
 
@@ -1410,20 +1585,28 @@
       const height = clampInt(serialized.height, 8, 200, state.mapHeight);
       const tileSize = clampInt(serialized.tileSize, 8, 128, state.tileSize);
       const hasOcclusionCells = Array.isArray(serialized.occlusionCells);
-      const defaultOcclusionCellSize = hasOcclusionCells ? state.occlusionCellSize : tileSize;
+      const hasOcclusionHardCells = Array.isArray(serialized.occlusionHardCells);
+      const defaultOcclusionCellSize = hasOcclusionCells || hasOcclusionHardCells ? state.occlusionCellSize : tileSize;
       const occlusionCellSize = clampOcclusionCellSize(serialized.occlusionCellSize, tileSize, defaultOcclusionCellSize);
+      const hasFlameCells = Array.isArray(serialized.ambientFlameCells);
+      const defaultFlameCellSize = hasFlameCells ? state.flameCellSize : Math.max(2, Math.min(tileSize, 16));
+      const flameCellSize = clampOcclusionCellSize(serialized.ambientFlameCellSize, tileSize, defaultFlameCellSize);
 
       state.mapWidth = width;
       state.mapHeight = height;
       state.tileSize = tileSize;
       state.occlusionCellSize = occlusionCellSize;
+      state.flameCellSize = flameCellSize;
       mapWidthInput.value = String(width);
       mapHeightInput.value = String(height);
       tileSizeInput.value = String(tileSize);
       occlusionCellSizeInput.value = String(occlusionCellSize);
+      flameCellSizeInput.value = String(flameCellSize);
 
       state.collisionMask = createGrid(width, height);
       state.occlusionMask = createOcclusionGrid(width, height, tileSize, occlusionCellSize);
+      state.occlusionHardMask = createOcclusionGrid(width, height, tileSize, occlusionCellSize);
+      state.flameMask = createOcclusionGrid(width, height, tileSize, flameCellSize);
 
       if (Array.isArray(serialized.collisionTiles)) {
         for (const entry of serialized.collisionTiles) {
@@ -1482,6 +1665,67 @@
               }
               state.occlusionMask[cellY][cellX] = true;
             }
+          }
+        }
+      }
+
+      if (hasOcclusionHardCells) {
+        for (const entry of serialized.occlusionHardCells) {
+          if (!Array.isArray(entry) || entry.length < 2) {
+            continue;
+          }
+
+          const x = clampInt(entry[0], 0, (state.occlusionHardMask[0]?.length ?? 1) - 1, -1);
+          const y = clampInt(entry[1], 0, state.occlusionHardMask.length - 1, -1);
+          if (x >= 0 && y >= 0) {
+            state.occlusionHardMask[y][x] = true;
+          }
+        }
+      } else if (Array.isArray(serialized.occlusionHardTiles)) {
+        for (const entry of serialized.occlusionHardTiles) {
+          if (!Array.isArray(entry) || entry.length < 2) {
+            continue;
+          }
+
+          const tileX = clampInt(entry[0], 0, width - 1, -1);
+          const tileY = clampInt(entry[1], 0, height - 1, -1);
+          if (tileX < 0 || tileY < 0) {
+            continue;
+          }
+
+          const left = tileX * tileSize;
+          const top = tileY * tileSize;
+          const right = left + tileSize;
+          const bottom = top + tileSize;
+          const minCellX = Math.floor(left / occlusionCellSize);
+          const maxCellX = Math.floor((right - 0.001) / occlusionCellSize);
+          const minCellY = Math.floor(top / occlusionCellSize);
+          const maxCellY = Math.floor((bottom - 0.001) / occlusionCellSize);
+
+          for (let cellY = minCellY; cellY <= maxCellY; cellY += 1) {
+            if (cellY < 0 || cellY >= state.occlusionHardMask.length) {
+              continue;
+            }
+            for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
+              if (cellX < 0 || cellX >= state.occlusionHardMask[cellY].length) {
+                continue;
+              }
+              state.occlusionHardMask[cellY][cellX] = true;
+            }
+          }
+        }
+      }
+
+      if (hasFlameCells) {
+        for (const entry of serialized.ambientFlameCells) {
+          if (!Array.isArray(entry) || entry.length < 2) {
+            continue;
+          }
+
+          const x = clampInt(entry[0], 0, (state.flameMask[0]?.length ?? 1) - 1, -1);
+          const y = clampInt(entry[1], 0, state.flameMask.length - 1, -1);
+          if (x >= 0 && y >= 0) {
+            state.flameMask[y][x] = true;
           }
         }
       }

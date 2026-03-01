@@ -606,6 +606,22 @@ export default function App(): JSX.Element {
         return;
       }
 
+      if (
+        event.code === "Comma" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !isEditableTarget(event.target)
+      ) {
+        if (isTerminalTarget(event.target)) {
+          return;
+        }
+
+        event.preventDefault();
+        cycleIdleSelection(-1);
+        return;
+      }
+
       const groupDigit = parseControlGroupDigit(event);
       if (groupDigit !== undefined) {
         if ((event.ctrlKey || event.metaKey) && !event.altKey && selectedWorkerId) {
@@ -614,7 +630,9 @@ export default function App(): JSX.Element {
             const existingForSelected = Object.entries(current).find(([, workerId]) => workerId === selectedWorkerId)?.[0];
             const existingDigit = existingForSelected !== undefined ? Number(existingForSelected) : undefined;
             if (current[groupDigit] === selectedWorkerId && existingDigit === groupDigit) {
-              return current;
+              const next = { ...current };
+              delete next[groupDigit];
+              return next;
             }
 
             const next: ControlGroupMap = {};
@@ -1010,7 +1028,7 @@ export default function App(): JSX.Element {
                 <span>Select previous agent</span>
               </div>
               <div className="shortcut-row">
-                <kbd>. / Shift+.</kbd>
+                <kbd>. / , / Shift+.</kbd>
                 <span>Cycle idle agents only</span>
               </div>
               <div className="shortcut-row">

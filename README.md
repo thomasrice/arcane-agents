@@ -74,6 +74,9 @@ If you are running `npm run dev` in a terminal, the simplest restart is:
 1. Press `Ctrl+C`
 2. Run `npm run dev` again
 
+`npm run dev` now automatically clears existing listeners on ports `7600` and `7601`
+before starting Vite and the backend.
+
 If you need to restart backend only (port `7601`) from another shell:
 
 ```bash

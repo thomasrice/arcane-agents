@@ -18,6 +18,10 @@ const outputHeartbeatWorkingWindowMs = 12_000;
 const claudeStickyWorkingWindowMs = 10_000;
 const claudeActiveTextHoldWindowMs = 5 * 60_000;
 const claudeSpawnIdleGraceMs = 5_000;
+const defaultCapturePaneLines = 35;
+const claudeCapturePaneLines = 60;
+const openCodeCapturePaneLines = 420;
+const openCodeThinkingContinuationMaxLines = 3;
 
 export class StatusMonitor {
   private intervalId: NodeJS.Timeout | undefined;
@@ -90,7 +94,8 @@ export class StatusMonitor {
 
     try {
       const paneState = await this.tmux.getPaneState(worker.tmuxRef);
-      const output = await this.tmux.capturePane(worker.tmuxRef, 35);
+      const currentCommandLower = paneState.currentCommand.toLowerCase();
+      const output = await this.tmux.capturePane(worker.tmuxRef, capturePaneLineCount(worker, currentCommandLower));
       if (paneState.isDead) {
         const removed = this.workers.deleteWorker(worker.id);
         if (removed) {
@@ -104,10 +109,11 @@ export class StatusMonitor {
         const transcriptSnapshot = this.claudeTranscript.poll(worker, paneState.currentCommand, paneState.currentPath);
         const observation = this.observePane(worker.id, paneState.currentCommand, output);
         const activeClaudeTask = extractClaudeActiveTask(output);
+        const runtimeActivityText = extractRuntimeActivityText(worker, paneState.currentCommand, output);
 
         if (transcriptSnapshot) {
           derivedStatus = transcriptSnapshot.status;
-          derivedActivityText = transcriptSnapshot.activityText ?? parsed.activity.text;
+          derivedActivityText = transcriptSnapshot.activityText ?? runtimeActivityText ?? parsed.activity.text;
           derivedActivityTool = transcriptSnapshot.activityTool ?? parsed.activity.tool;
           derivedActivityPath = transcriptSnapshot.activityPath ?? parsed.activity.filePath;
 
@@ -131,7 +137,7 @@ export class StatusMonitor {
             derivedActivityTool = undefined;
             derivedActivityPath = undefined;
           } else {
-            derivedActivityText = parsed.activity.text;
+            derivedActivityText = runtimeActivityText ?? parsed.activity.text;
             derivedActivityTool = parsed.activity.tool;
             derivedActivityPath = parsed.activity.filePath;
           }
@@ -148,18 +154,8 @@ export class StatusMonitor {
         }
 
         if (
-          derivedStatus === "working" &&
+          (derivedStatus === "working" || derivedStatus === "error") &&
           this.shouldForceIdleOnOpenCodePrompt(worker, paneState.currentCommand, output, parsed.activity)
-        ) {
-          derivedStatus = "idle";
-          derivedActivityText = undefined;
-          derivedActivityTool = undefined;
-          derivedActivityPath = undefined;
-        }
-
-        if (
-          derivedStatus === "working" &&
-          this.shouldForceIdleOnClaudePrompt(worker, paneState.currentCommand, output, parsed.activity, activeClaudeTask)
         ) {
           derivedStatus = "idle";
           derivedActivityText = undefined;
@@ -180,7 +176,7 @@ export class StatusMonitor {
           )
         ) {
           derivedStatus = "working";
-          derivedActivityText = activeClaudeTask ?? derivedActivityText ?? parsed.activity.text ?? worker.activityText;
+          derivedActivityText = derivedActivityText ?? runtimeActivityText ?? activeClaudeTask ?? parsed.activity.text ?? worker.activityText;
           derivedActivityTool = derivedActivityTool ?? parsed.activity.tool ?? "terminal";
           derivedActivityPath = derivedActivityPath ?? parsed.activity.filePath;
         }
@@ -198,9 +194,13 @@ export class StatusMonitor {
           )
         ) {
           derivedStatus = "working";
-          derivedActivityText = activeClaudeTask ?? derivedActivityText ?? parsed.activity.text ?? worker.activityText;
+          derivedActivityText = derivedActivityText ?? runtimeActivityText ?? activeClaudeTask ?? parsed.activity.text ?? worker.activityText;
           derivedActivityTool = derivedActivityTool ?? parsed.activity.tool ?? "terminal";
           derivedActivityPath = derivedActivityPath ?? parsed.activity.filePath;
+        }
+
+        if (derivedStatus === "working" && isLikelyOpenCodeSession(worker, currentCommandLower)) {
+          derivedActivityText = preferOpenCodeSpecificActivityText(worker.activityText, derivedActivityText);
         }
       }
     } catch {
@@ -321,10 +321,7 @@ export class StatusMonitor {
     const likelyClaudeSession = isLikelyClaudeSession(worker, commandLower);
     const likelyOpenCodeSession = isLikelyOpenCodeSession(worker, commandLower);
     const outputQuietForMs = now - observation.lastOutputChangeAtMs;
-
-    if (likelyClaudeSession && hasClaudePromptSignal(output) && !activeClaudeTask) {
-      return false;
-    }
+    const hasClaudeProgressSignal = likelyClaudeSession && hasClaudeLiveProgressSignal(output);
 
     if (likelyOpenCodeSession && hasOpenCodePromptSignal(output) && !hasOpenCodeActiveSignal(output)) {
       return false;
@@ -334,7 +331,7 @@ export class StatusMonitor {
       likelyClaudeSession &&
       hasActiveWorkActivityText(activityText) &&
       !hasWaitingActivityText(activityText) &&
-      !hasClaudePromptSignal(output) &&
+      (Boolean(activeClaudeTask) || hasClaudeProgressSignal) &&
       outputQuietForMs <= claudeActiveTextHoldWindowMs
     ) {
       return true;
@@ -395,28 +392,6 @@ export class StatusMonitor {
     return !hasStrongActivitySignal;
   }
 
-  private shouldForceIdleOnClaudePrompt(
-    worker: Worker,
-    currentCommand: string,
-    output: string,
-    activity: ParsedActivity,
-    activeClaudeTask: string | undefined
-  ): boolean {
-    if (!isLikelyClaudeSession(worker, currentCommand.toLowerCase())) {
-      return false;
-    }
-
-    if (!hasClaudePromptSignal(output)) {
-      return false;
-    }
-
-    if (activeClaudeTask || activity.needsInput || activity.hasError) {
-      return false;
-    }
-
-    return true;
-  }
-
   private shouldForceIdleOnOpenCodePrompt(
     worker: Worker,
     currentCommand: string,
@@ -435,7 +410,7 @@ export class StatusMonitor {
       return false;
     }
 
-    if (activity.needsInput || activity.hasError) {
+    if (activity.needsInput) {
       return false;
     }
 
@@ -451,13 +426,20 @@ export class StatusMonitor {
     activityText: string | undefined,
     output: string
   ): boolean {
-    if (activity.needsInput) {
+    const normalizedActivityText = (activityText ?? "").toLowerCase();
+    if (normalizedActivityText.includes("waiting for your answer") || normalizedActivityText.includes("waiting for approval")) {
       return false;
     }
 
-    const normalizedActivityText = (activityText ?? "").toLowerCase();
-    if (normalizedActivityText.includes("waiting for your answer")) {
+    const likelyClaudeSession = isLikelyClaudeSession(worker, currentCommand.toLowerCase());
+    const hasClaudeProgressSignal = likelyClaudeSession && hasClaudeLiveProgressSignal(output);
+
+    if (activity.needsInput && !hasClaudeProgressSignal) {
       return false;
+    }
+
+    if (likelyClaudeSession && (Boolean(activeClaudeTask) || hasClaudeProgressSignal)) {
+      return true;
     }
 
     return this.shouldKeepWorkingFromHeartbeat(worker, currentCommand, observation, activity, activeClaudeTask, activityText, output);
@@ -469,7 +451,7 @@ function outputSignature(output: string): string {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .slice(-16)
+    .slice(-40)
     .join("\n");
 }
 
@@ -482,9 +464,15 @@ function extractClaudeActiveTask(output: string): string | undefined {
     .reverse();
 
   for (const line of linesNewestFirst) {
-    const match = line.match(/^(?:\*|•|·|✶)\s+(.+?)\s+\((?:[^)]*(?:thinking|thought\s+for)[^)]*)\)\s*$/i);
-    if (match?.[1]) {
-      return match[1].trim();
+    const parentheticalMatch = line.match(/^(?:\*|•|·|✶|✻|✢|✽)\s+(.+?)\s+\((?:[^)]*(?:thinking|thought\s+for)[^)]*)\)\s*$/i);
+    const plainProgressMatch = line.match(/^(?:\*|•|·|✶|✻|✢|✽)\s+(.+?)\s*$/);
+    const task = parentheticalMatch?.[1]?.trim() ?? plainProgressMatch?.[1]?.trim();
+    if (task) {
+      if (isGenericClaudeProgressLabel(task)) {
+        continue;
+      }
+
+      return task;
     }
   }
 
@@ -527,7 +515,7 @@ function hasActiveWorkActivityText(activityText: string | undefined): boolean {
     return false;
   }
 
-  return /^(reading|editing|writing|running:|searching|subtask:|using|fetching|planning|responding)/.test(normalized);
+  return /^(reading|editing|writing|running:?|searching|searched|subtask:|using|fetching|planning|responding|let me|fixing)/.test(normalized);
 }
 
 function hasWaitingActivityText(activityText: string | undefined): boolean {
@@ -539,14 +527,43 @@ function hasWaitingActivityText(activityText: string | undefined): boolean {
   return normalized.includes("waiting for your answer") || normalized.includes("waiting for approval");
 }
 
-function hasClaudePromptSignal(output: string): boolean {
+function hasClaudeLiveProgressSignal(output: string): boolean {
   const lines = output
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .slice(-10);
+    .slice(-60);
 
-  return lines.some((line) => line.startsWith("❯"));
+  for (const line of lines) {
+    const progressMatch = line.match(/^(?:\*|•|·|✶|✻|✢|✽)\s+(.+?)\s*$/);
+    if (!progressMatch?.[1]) {
+      continue;
+    }
+
+    const progressText = progressMatch[1].trim();
+    if (!progressText) {
+      continue;
+    }
+
+    if (!isGenericClaudeProgressLabel(progressText)) {
+      return true;
+    }
+
+    if (/\bfor\s+\d+[ms]\b/i.test(progressText) || /\((?:[^)]*(?:thinking|thought\s+for)[^)]*)\)/i.test(line)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isGenericClaudeProgressLabel(text: string): boolean {
+  const normalized = text
+    .trim()
+    .replace(/[.…]+$/, "")
+    .toLowerCase();
+
+  return /^(?:whirring|thinking|saut[eé]ed)\b/.test(normalized);
 }
 
 function hasOpenCodePromptSignal(output: string): boolean {
@@ -569,4 +586,273 @@ function hasOpenCodeActiveSignal(output: string): boolean {
     .slice(-24);
 
   return lines.some((line) => line.includes("esc interrupt"));
+}
+
+function capturePaneLineCount(worker: Worker, commandLower: string): number {
+  if (isLikelyOpenCodeSession(worker, commandLower)) {
+    return openCodeCapturePaneLines;
+  }
+
+  if (isLikelyClaudeSession(worker, commandLower)) {
+    return claudeCapturePaneLines;
+  }
+
+  return defaultCapturePaneLines;
+}
+
+function extractRuntimeActivityText(worker: Worker, currentCommand: string, output: string): string | undefined {
+  const commandLower = currentCommand.toLowerCase();
+  if (isLikelyClaudeSession(worker, commandLower)) {
+    return extractClaudeRuntimeActivityText(output);
+  }
+
+  if (isLikelyOpenCodeSession(worker, commandLower)) {
+    return extractOpenCodeRuntimeActivityText(output);
+  }
+
+  return undefined;
+}
+
+function extractClaudeRuntimeActivityText(output: string): string | undefined {
+  const linesNewestFirst = recentLinesNewestFirst(output, 100);
+
+  for (const line of linesNewestFirst) {
+    const normalized = line.trim();
+    const bulletActivity = extractClaudeBulletActivityText(normalized);
+    if (bulletActivity) {
+      return truncateActivityText(bulletActivity, 72);
+    }
+  }
+
+  for (const line of linesNewestFirst) {
+    const normalized = line.trim();
+    if (/^✻\s+.+\bfor\s+\d+s\s*$/i.test(normalized)) {
+      return "Thinking";
+    }
+  }
+
+  return undefined;
+}
+
+function extractClaudeBulletActivityText(line: string): string | undefined {
+  const bulletMatch = line.match(/^●\s+(.+)$/);
+  if (!bulletMatch?.[1]) {
+    return undefined;
+  }
+
+  let activityText = bulletMatch[1].replace(/\s+/g, " ").trim();
+  if (!activityText) {
+    return undefined;
+  }
+
+  if (/^Bash\(/i.test(activityText)) {
+    return undefined;
+  }
+
+  activityText = activityText.replace(/\s*\(ctrl\+o to expand\)\s*$/i, "").trim();
+  if (!activityText) {
+    return undefined;
+  }
+
+  const updateMatch = activityText.match(/^Update\((.+)\)$/i);
+  if (updateMatch?.[1]) {
+    return `Editing ${updateMatch[1].trim()}`;
+  }
+
+  return activityText;
+}
+
+function extractOpenCodeRuntimeActivityText(output: string): string | undefined {
+  const latestThinkingText = extractLatestOpenCodeThinkingActivity(output);
+  if (latestThinkingText) {
+    return latestThinkingText;
+  }
+
+  const linesNewestFirst = recentLinesNewestFirst(output, openCodeCapturePaneLines);
+  let hasActiveSignal = false;
+
+  for (const line of linesNewestFirst) {
+    const normalized = normalizeOpenCodeRuntimeLine(line);
+    if (!normalized) {
+      continue;
+    }
+
+    const thinkingMatch = normalized.match(/\bThinking:\s+(.+)$/i);
+    if (thinkingMatch?.[1]) {
+      return `Thinking: ${truncateActivityText(thinkingMatch[1].trim(), 72)}`;
+    }
+
+    const patchedMatch = normalized.match(/^←\s+Patched\s+(.+)$/i);
+    if (patchedMatch?.[1]) {
+      return `Editing ${patchedMatch[1].trim()}`;
+    }
+
+    const commandMatch = normalized.match(/^\$\s+(.+)$/);
+    if (commandMatch?.[1]) {
+      return `Running ${summarizeCommand(commandMatch[1])}`;
+    }
+
+    const headerMatch = normalized.match(/^#\s+(.+)$/);
+    if (headerMatch?.[1]) {
+      return truncateActivityText(headerMatch[1], 52);
+    }
+
+    if (normalized.toLowerCase().includes("esc interrupt")) {
+      hasActiveSignal = true;
+    }
+  }
+
+  if (hasActiveSignal) {
+    return "Responding";
+  }
+
+  return undefined;
+}
+
+function extractLatestOpenCodeThinkingActivity(output: string): string | undefined {
+  const normalizedLines = output
+    .split("\n")
+    .slice(-openCodeCapturePaneLines)
+    .map((line) => normalizeOpenCodeRuntimeLine(line));
+
+  for (let index = normalizedLines.length - 1; index >= 0; index -= 1) {
+    const line = normalizedLines[index];
+    if (!line) {
+      continue;
+    }
+
+    const thinkingMatch = line.match(/\bThinking:\s+(.+)$/i);
+    if (!thinkingMatch?.[1]) {
+      continue;
+    }
+
+    const fragments: string[] = [thinkingMatch[1].trim()];
+
+    for (
+      let continuationIndex = index + 1, continuationCount = 0;
+      continuationIndex < normalizedLines.length && continuationCount < openCodeThinkingContinuationMaxLines;
+      continuationIndex += 1
+    ) {
+      const continuation = normalizedLines[continuationIndex];
+      if (!continuation || isOpenCodeRuntimeBoundaryLine(continuation)) {
+        break;
+      }
+
+      fragments.push(continuation);
+      continuationCount += 1;
+    }
+
+    const combined = fragments.join(" ").replace(/\s+/g, " ").trim();
+    if (!combined) {
+      return undefined;
+    }
+
+    return `Thinking: ${truncateActivityText(combined, 72)}`;
+  }
+
+  return undefined;
+}
+
+function isOpenCodeRuntimeBoundaryLine(line: string): boolean {
+  const normalized = line.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  if (normalized.includes("ctrl+t variants") || normalized.includes("ctrl+p commands") || normalized.includes("tab agents")) {
+    return true;
+  }
+
+  if (normalized.includes("esc interrupt")) {
+    return true;
+  }
+
+  if (/^thinking:\s+/i.test(line)) {
+    return true;
+  }
+
+  if (/^#\s+/.test(line)) {
+    return true;
+  }
+
+  if (/^\$\s+/.test(line)) {
+    return true;
+  }
+
+  if (/^←\s+patched\s+/i.test(line)) {
+    return true;
+  }
+
+  if (/^▣\s+/.test(line) || /^build\s+gpt/i.test(line)) {
+    return true;
+  }
+
+  return false;
+}
+
+function preferOpenCodeSpecificActivityText(previousActivityText: string | undefined, nextActivityText: string | undefined): string | undefined {
+  if (!nextActivityText || nextActivityText.trim().toLowerCase() !== "responding") {
+    return nextActivityText;
+  }
+
+  if (!previousActivityText) {
+    return nextActivityText;
+  }
+
+  const previousThinkingMatch = previousActivityText.trim().match(/^Thinking:\s+(.+)$/i);
+  if (previousThinkingMatch?.[1]) {
+    return previousActivityText;
+  }
+
+  return nextActivityText;
+}
+
+function normalizeOpenCodeRuntimeLine(line: string): string {
+  const normalized = line
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/[\u0000-\u0008\u000b-\u001a\u001c-\u001f\u007f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  const withoutFrame = normalized.replace(/^[│┃]\s*/, "").trim();
+  if (/^╹?▀+$/.test(withoutFrame)) {
+    return "";
+  }
+
+  return withoutFrame;
+}
+
+function recentLinesNewestFirst(output: string, limit: number): string[] {
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(-limit)
+    .reverse();
+}
+
+function summarizeCommand(command: string): string {
+  const compact = command.replace(/\s+/g, " ").trim();
+  if (!compact) {
+    return "command";
+  }
+
+  return truncateActivityText(compact, 46);
+}
+
+function truncateActivityText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  if (maxLength <= 1) {
+    return text.slice(0, Math.max(0, maxLength));
+  }
+
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }

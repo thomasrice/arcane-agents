@@ -25,6 +25,18 @@ export interface LoadedOutpostMap {
     y: number;
     width: number;
     height: number;
+    mode: "soft" | "hard";
+  }>;
+  ambientFlameRects: Array<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    clusterCenterX: number;
+    clusterCenterY: number;
+    clusterRadius: number;
+    isCluster: boolean;
+    cellCount: number;
   }>;
   spawnArea?: {
     x1: number;
@@ -127,6 +139,10 @@ interface RawMapLogicData {
   occlusionCellSize?: number;
   occlusionCells?: unknown;
   occlusionTiles?: unknown;
+  occlusionHardCells?: unknown;
+  occlusionHardTiles?: unknown;
+  ambientFlameCellSize?: number;
+  ambientFlameCells?: unknown;
 }
 
 export function useOutpostMap(): {
@@ -173,6 +189,7 @@ async function loadOutpostMap(): Promise<LoadedOutpostMap> {
   const logicGridSpec = deriveLogicGridSpec(rawMapLogic, rawMap.width, rawMap.height, rawMap.tileSize);
   const collisionTileKeys = parseLogicTileKeySet(rawMapLogic?.collisionTiles, logicGridSpec, rawMap.width, rawMap.height);
   const occlusionRects = parseLogicOcclusionRects(rawMapLogic, logicGridSpec, rawMap.width, rawMap.height, rawMap.tileSize);
+  const ambientFlameRects = parseLogicAmbientFlameRects(rawMapLogic, logicGridSpec, rawMap.width, rawMap.height, rawMap.tileSize);
   const backgroundImageUrl =
     typeof rawMapLogic?.backgroundImage === "string" && rawMapLogic.backgroundImage.trim().length > 0
       ? rawMapLogic.backgroundImage.trim()
@@ -193,6 +210,7 @@ async function loadOutpostMap(): Promise<LoadedOutpostMap> {
     backgroundImageUrl,
     collisionTileKeys,
     occlusionRects,
+    ambientFlameRects,
     spawnArea: rawMap.spawnArea,
     objects: rawMap.objects,
     objectDefinitions: loadedObjectDefinitions,
@@ -418,6 +436,40 @@ function parseLogicOcclusionRects(
   mapHeight: number,
   tileSize: number
 ): LoadedOutpostMap["occlusionRects"] {
+  const softRects = parseLogicOcclusionRectsForMode(
+    rawMapLogic,
+    logicGrid,
+    mapWidth,
+    mapHeight,
+    tileSize,
+    rawMapLogic?.occlusionCells,
+    rawMapLogic?.occlusionTiles,
+    "soft"
+  );
+  const hardRects = parseLogicOcclusionRectsForMode(
+    rawMapLogic,
+    logicGrid,
+    mapWidth,
+    mapHeight,
+    tileSize,
+    rawMapLogic?.occlusionHardCells,
+    rawMapLogic?.occlusionHardTiles,
+    "hard"
+  );
+
+  return [...softRects, ...hardRects];
+}
+
+function parseLogicOcclusionRectsForMode(
+  rawMapLogic: RawMapLogicData | undefined,
+  logicGrid: LogicGridSpec,
+  mapWidth: number,
+  mapHeight: number,
+  tileSize: number,
+  rawOcclusionCellsInput: unknown,
+  rawOcclusionTilesInput: unknown,
+  mode: "soft" | "hard"
+): LoadedOutpostMap["occlusionRects"] {
   const mapWorldWidth = mapWidth * tileSize;
   const mapWorldHeight = mapHeight * tileSize;
   const logicWorldWidth = Math.max(1, logicGrid.worldWidth);
@@ -468,11 +520,12 @@ function parseLogicOcclusionRects(
       x: left,
       y: top,
       width: clampedWidth,
-      height: clampedHeight
+      height: clampedHeight,
+      mode
     });
   };
 
-  const rawOcclusionCells = rawMapLogic?.occlusionCells;
+  const rawOcclusionCells = rawOcclusionCellsInput;
   if (Array.isArray(rawOcclusionCells)) {
     const maxCellSize = Math.max(2, logicGrid.tileSize);
     const cellSize = clampLogicInt(rawMapLogic?.occlusionCellSize, 2, maxCellSize, Math.min(8, maxCellSize));
@@ -497,7 +550,7 @@ function parseLogicOcclusionRects(
     }
   }
 
-  const rawOcclusionTiles = rawMapLogic?.occlusionTiles;
+  const rawOcclusionTiles = rawOcclusionTilesInput;
   if (Array.isArray(rawOcclusionTiles)) {
     for (const entry of rawOcclusionTiles) {
       if (!Array.isArray(entry) || entry.length < 2) {
@@ -522,6 +575,146 @@ function parseLogicOcclusionRects(
       );
       pushRect(mappedRect.x, mappedRect.y, mappedRect.width, mappedRect.height);
     }
+  }
+
+  return rects;
+}
+
+function parseLogicAmbientFlameRects(
+  rawMapLogic: RawMapLogicData | undefined,
+  logicGrid: LogicGridSpec,
+  mapWidth: number,
+  mapHeight: number,
+  tileSize: number
+): LoadedOutpostMap["ambientFlameRects"] {
+  const mapWorldWidth = mapWidth * tileSize;
+  const mapWorldHeight = mapHeight * tileSize;
+  const logicWorldWidth = Math.max(1, logicGrid.worldWidth);
+  const logicWorldHeight = Math.max(1, logicGrid.worldHeight);
+
+  const rawFlameCells = rawMapLogic?.ambientFlameCells;
+  if (!Array.isArray(rawFlameCells)) {
+    return [];
+  }
+
+  const maxCellSize = Math.max(2, logicGrid.tileSize);
+  const cellSize = clampLogicInt(rawMapLogic?.ambientFlameCellSize, 2, maxCellSize, Math.min(16, maxCellSize));
+
+  // Parse all cells into world coordinates
+  type FlameCell = { x: number; y: number; width: number; height: number; key: string };
+  const cells: FlameCell[] = [];
+  const cellKeys = new Set<string>();
+
+  for (const entry of rawFlameCells) {
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+
+    const cellX = Number(entry[0]);
+    const cellY = Number(entry[1]);
+    if (!Number.isInteger(cellX) || !Number.isInteger(cellY)) continue;
+
+    const logicX = cellX * cellSize;
+    const logicY = cellY * cellSize;
+    const mappedX = (logicX / logicWorldWidth) * mapWorldWidth;
+    const mappedY = (logicY / logicWorldHeight) * mapWorldHeight;
+    const mappedSize = (cellSize / logicWorldWidth) * mapWorldWidth;
+
+    const left = Math.max(0, mappedX);
+    const top = Math.max(0, mappedY);
+    const clampedSize = Math.min(mappedSize, mapWorldWidth - left, mapWorldHeight - top);
+
+    if (clampedSize <= 0) continue;
+
+    const key = `${left},${top}`;
+    if (cellKeys.has(key)) continue;
+
+    cellKeys.add(key);
+    cells.push({ x: left, y: top, width: clampedSize, height: clampedSize, key });
+  }
+
+  if (cells.length === 0) return [];
+
+  // Cluster adjacent cells using flood-fill
+  const visited = new Set<string>();
+  const clusters: FlameCell[][] = [];
+
+  const getNeighbors = (cell: FlameCell): FlameCell[] => {
+    const neighbors: FlameCell[] = [];
+    for (const other of cells) {
+      if (other.key === cell.key) continue;
+      const dx = Math.abs(other.x - cell.x);
+      const dy = Math.abs(other.y - cell.y);
+      // Adjacent if within 1.5 cell sizes (diagonal included)
+      const threshold = cellSize * 1.5;
+      if (dx <= threshold && dy <= threshold) {
+        neighbors.push(other);
+      }
+    }
+    return neighbors;
+  };
+
+  for (const cell of cells) {
+    if (visited.has(cell.key)) continue;
+
+    const cluster: FlameCell[] = [];
+    const queue: FlameCell[] = [cell];
+    visited.add(cell.key);
+
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      cluster.push(current);
+
+      for (const neighbor of getNeighbors(current)) {
+        if (!visited.has(neighbor.key)) {
+          visited.add(neighbor.key);
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    clusters.push(cluster);
+  }
+
+  // Convert clusters to rects with unified properties
+  const rects: LoadedOutpostMap["ambientFlameRects"] = [];
+
+  for (const cluster of clusters) {
+    // Compute center of mass
+    let centerX = 0, centerY = 0, totalArea = 0;
+    for (const cell of cluster) {
+      const area = cell.width * cell.height;
+      centerX += (cell.x + cell.width * 0.5) * area;
+      centerY += (cell.y + cell.height * 0.5) * area;
+      totalArea += area;
+    }
+    centerX /= totalArea;
+    centerY /= totalArea;
+
+    // Find max distance from center to determine cluster radius
+    let maxDist = 0;
+    for (const cell of cluster) {
+      const cellCenterX = cell.x + cell.width * 0.5;
+      const cellCenterY = cell.y + cell.height * 0.5;
+      const dx = cellCenterX - centerX;
+      const dy = cellCenterY - centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy) + Math.max(cell.width, cell.height) * 0.5;
+      maxDist = Math.max(maxDist, dist);
+    }
+
+    // Add padding for glow
+    const padding = maxDist * 0.3;
+    const boundsSize = (maxDist + padding) * 2;
+
+    rects.push({
+      x: centerX - maxDist - padding,
+      y: centerY - maxDist - padding,
+      width: boundsSize,
+      height: boundsSize,
+      clusterCenterX: centerX,
+      clusterCenterY: centerY,
+      clusterRadius: maxDist,
+      isCluster: cluster.length > 1,
+      cellCount: cluster.length
+    });
   }
 
   return rects;

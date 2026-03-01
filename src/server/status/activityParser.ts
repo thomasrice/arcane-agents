@@ -34,7 +34,20 @@ const inputPromptLineMatchers: RegExp[] = [
   /\b(?:select (?:an )?option|enter choice|choose (?:an )?option)\b[:?]?\s*$/i,
   /\b(?:allow|approve|confirm|continue|proceed)\b[^\n]{0,40}\?\s*$/i
 ];
-const errorRegex = /(traceback|exception|\berror\b|fatal|sigterm|command not found|panic|failed)/i;
+const errorLineMatchers: RegExp[] = [
+  /\btraceback\b/i,
+  /\bexception\b/i,
+  /\berror:\b/i,
+  /^\s*(?:error|err)\b/i,
+  /\bnpm err!\b/i,
+  /\bcommand not found\b/i,
+  /\bno such file or directory\b/i,
+  /\bpermission denied\b/i,
+  /\bsigterm\b/i,
+  /\bpanic\b/i,
+  /\bfatal\b/i,
+  /\bfailed\b(?:\s+with|\s+to|:)/i
+];
 
 const filePathRegex =
   /(?:^|\s|"|')((?:~|\.|\.\.|\/)?(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.[A-Za-z][A-Za-z0-9_-]{0,7})(?=$|\s|"|'|:|,|\))/;
@@ -51,13 +64,14 @@ export function parseActivity(currentCommand: string, output: string): {
     .slice(-80);
 
   const newestFirst = [...lines].reverse();
-  const recentForStatus = newestFirst.slice(0, 14).join("\n");
   const needsInput = hasInputPromptSignal(newestFirst);
-  const hasError = errorRegex.test(recentForStatus);
+  const hasError = hasErrorSignal(newestFirst);
 
   const toolResult = findTool(newestFirst);
   const filePath = findFilePath(newestFirst);
-  const fallbackLine = newestFirst.find((line) => line.length > 3 && !line.startsWith("["));
+  const fallbackLine = newestFirst.find(
+    (line) => line.length > 3 && !line.startsWith("[") && !isRuntimeHintLine(line)
+  );
 
   const activityText =
     toolResult && filePath
@@ -133,6 +147,30 @@ function findFilePath(linesNewestFirst: string[]): string | undefined {
   }
 
   return undefined;
+}
+
+function isRuntimeHintLine(line: string): boolean {
+  const normalized = line.trim().toLowerCase();
+  return normalized.includes("ctrl+t variants") || normalized.includes("ctrl+p commands") || normalized.includes("tab agents");
+}
+
+function hasErrorSignal(linesNewestFirst: string[]): boolean {
+  for (const line of linesNewestFirst.slice(0, 20)) {
+    const normalized = normalizeStatusLine(line);
+    if (!normalized || isRuntimeHintLine(normalized)) {
+      continue;
+    }
+
+    if (errorLineMatchers.some((matcher) => matcher.test(normalized))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function normalizeStatusLine(line: string): string {
+  return line.replace(/^[\s│┃╹▀▣⬝■]+/, "").trim();
 }
 
 function deriveStatus(

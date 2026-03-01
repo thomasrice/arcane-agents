@@ -4,7 +4,8 @@
   "private": true,
   "description": "Local-first visual control room for tmux-backed coding agents",
   "scripts": {
-    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev": "npm run dev:clean && concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:clean": "node ./kill-dev-ports.mjs 7600 7601",
     "dev:server": "OVERWORLD_API_PORT=7601 tsx watch src/server/index.ts",
     "dev:client": "vite --host 127.0.0.1 --port 7600",
     "build": "vite build && tsc -p tsconfig.server.json",

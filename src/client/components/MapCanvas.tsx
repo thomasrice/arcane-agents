@@ -38,6 +38,19 @@ interface WorkerMotion {
   facing: SpriteDirection;
 }
 
+interface ActivityOverlayAnimationState {
+  text: string;
+  animate: boolean;
+  revealedLength: number;
+  lastRevealAtMs: number;
+  fullyRevealedAtMs: number | undefined;
+}
+
+interface ActivityOverlayRenderState {
+  text: string;
+  shimmerPhase: number | undefined;
+}
+
 interface MoveOrder {
   waypoints: WorkerPosition[];
   waypointIndex: number;
@@ -58,6 +71,7 @@ interface PanDragState {
   lastX: number;
   lastY: number;
   moved: boolean;
+  deselectOnClick: boolean;
 }
 
 interface SpriteBounds {
@@ -111,12 +125,19 @@ const fadingWorkerDurationMs = 420;
 const summonWorkerDurationMs = 520;
 const commandFeedbackDurationMs = 900;
 const blockedFeedbackDurationMs = 750;
+const workerPersonalSpacePx = 26;
 const blockedTerrainValues = new Set([3]);
 const nonBlockingObjectTypes = new Set(["torch", "signpost", "barrel", "crate", "bush"]);
 const fullBodyCollisionObjectTypes = new Set(["oak-tree", "pine-tree", "tent"]);
 const defaultMapPreviewImageUrl = "/api/assets/maps/backgrounds/outpost-v1-2x.png";
 const occlusionOverlayAlpha = 0.98;
 const occludedGhostAlpha = 0.44;
+const activityOverlayTypingCharIntervalMs = 30;
+const activityOverlayTextMaxLength = 64;
+const activityOverlayMaxBadgeWidth = 320;
+const activityOverlayShimmerStartDelayMs = 1500;
+const activityOverlayShimmerCycleMs = 1800;
+const activityOverlayShimmerBandChars = 3.4;
 
 const avatarColor: Record<string, string> = {
   knight: "#8ca1c8",
@@ -160,6 +181,7 @@ export function MapCanvas({
   const pressedPanKeysRef = useRef<Set<PanDirection>>(new Set());
   const panRafRef = useRef<number | null>(null);
   const lastPanFrameRef = useRef<number | null>(null);
+  const activityOverlayAnimationRef = useRef<Record<string, ActivityOverlayAnimationState>>({});
 
   const [canvasSize, setCanvasSize] = useState({ width: 1000, height: 640 });
   const [viewport, setViewport] = useState<ViewportState>({
@@ -236,6 +258,7 @@ export function MapCanvas({
 
   useEffect(() => {
     const activeWorkerIds = new Set(workers.map((worker) => worker.id));
+    const fadingWorkerIds = new Set((fadingWorkers ?? []).map((item) => item.worker.id));
     const now = performance.now();
 
     for (const workerId of Object.keys(moveOrdersRef.current)) {
@@ -270,7 +293,7 @@ export function MapCanvas({
       const next = { ...previous };
 
       for (const workerId of Object.keys(next)) {
-        if (!activeWorkerIds.has(workerId)) {
+        if (!activeWorkerIds.has(workerId) && !fadingWorkerIds.has(workerId)) {
           delete next[workerId];
           changed = true;
         }
@@ -278,7 +301,7 @@ export function MapCanvas({
 
       return changed ? next : previous;
     });
-  }, [workers]);
+  }, [fadingWorkers, workers]);
 
   useEffect(() => {
     const animationInterval = window.setInterval(() => {
@@ -359,6 +382,21 @@ export function MapCanvas({
       }
 
       if (Object.keys(orders).length > 0) {
+        const isCrowdedByOtherWorker = (workerId: string, position: WorkerPosition): boolean => {
+          for (const [otherWorkerId, otherWorker] of workersById.entries()) {
+            if (otherWorkerId === workerId) {
+              continue;
+            }
+
+            const otherPosition = nextPositions[otherWorkerId] ?? otherWorker.position;
+            if (Math.hypot(position.x - otherPosition.x, position.y - otherPosition.y) < workerPersonalSpacePx) {
+              return true;
+            }
+          }
+
+          return false;
+        };
+
         for (const [workerId, order] of Object.entries(orders)) {
           const worker = workersById.get(workerId);
           if (!worker) {
@@ -386,6 +424,15 @@ export function MapCanvas({
             x: targetWaypoint.x,
             y: targetWaypoint.y
           };
+
+          if (order.source === "wander" && isCrowdedByOtherWorker(workerId, finalPosition)) {
+            delete orders[workerId];
+            const wanderState = wanderStateRef.current[workerId];
+            if (wanderState) {
+              wanderState.nextMoveAfterMs = now + randomRange(900, 1800);
+            }
+            continue;
+          }
 
           if (!isWorldPositionWalkable(finalPosition, mapData, collisionRects)) {
             delete orders[workerId];
@@ -426,6 +473,15 @@ export function MapCanvas({
           x: currentPosition.x + (dx / distance) * order.speedPerTick,
           y: currentPosition.y + (dy / distance) * order.speedPerTick
         };
+
+        if (order.source === "wander" && isCrowdedByOtherWorker(workerId, proposedPosition)) {
+          delete orders[workerId];
+          const wanderState = wanderStateRef.current[workerId];
+          if (wanderState) {
+            wanderState.nextMoveAfterMs = now + randomRange(900, 1800);
+          }
+          continue;
+        }
 
         if (!isWorldPositionWalkable(proposedPosition, mapData, collisionRects)) {
           delete orders[workerId];
@@ -567,6 +623,11 @@ export function MapCanvas({
       workerFacingRef.current,
       performance.now()
     );
+    const activityOverlayStateByWorker = deriveActivityOverlayStateByWorker(
+      workers,
+      activityOverlayAnimationRef.current,
+      Date.now()
+    );
 
     drawScene({
       context,
@@ -584,7 +645,8 @@ export function MapCanvas({
       spriteLibrary,
       animationTick,
       commandFeedback,
-      mapPreviewImage
+      mapPreviewImage,
+      activityOverlayStateByWorker
     });
   }, [
     animatedPositions,
@@ -771,7 +833,9 @@ export function MapCanvas({
         return;
       }
 
-      if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && isWasdKey(event.key)) {
+      const wasdKey = isWasdKey(event.key);
+
+      if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && wasdKey) {
         if (terminalFocusedSelected || !selectedWorkerId) {
           return;
         }
@@ -781,12 +845,16 @@ export function MapCanvas({
           return;
         }
 
+        event.preventDefault();
+
         const currentPosition = animatedPositionsRef.current[selectedWorker.id] ?? selectedWorker.position;
         const stepSize = (mapData?.tileSize ?? 32) * keyboardMoveStepTiles;
         const targetPosition = offsetPositionByDirection(currentPosition, direction, stepSize);
-        if (issueManualMoveToWorld(selectedWorker, targetPosition)) {
-          event.preventDefault();
-        }
+        issueManualMoveToWorld(selectedWorker, targetPosition);
+        return;
+      }
+
+      if (wasdKey && !event.shiftKey) {
         return;
       }
 
@@ -872,7 +940,8 @@ export function MapCanvas({
       startY: point.y,
       lastX: point.x,
       lastY: point.y,
-      moved: false
+      moved: false,
+      deselectOnClick: Boolean(selectedWorkerId)
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -931,6 +1000,10 @@ export function MapCanvas({
 
     if (panDrag.moved) {
       return;
+    }
+
+    if (panDrag.deselectOnClick && selectedWorkerId) {
+      onSelect(undefined);
     }
   };
 
@@ -1043,6 +1116,7 @@ interface DrawSceneInput {
   animationTick: number;
   commandFeedback: CommandFeedback | null;
   mapPreviewImage: HTMLImageElement | undefined;
+  activityOverlayStateByWorker: Record<string, ActivityOverlayRenderState | undefined>;
 }
 
 function drawScene({
@@ -1061,7 +1135,8 @@ function drawScene({
   spriteLibrary,
   animationTick,
   commandFeedback,
-  mapPreviewImage
+  mapPreviewImage,
+  activityOverlayStateByWorker
 }: DrawSceneInput): void {
   context.clearRect(0, 0, width, height);
   const nowMs = Date.now();
@@ -1163,9 +1238,11 @@ function drawScene({
       return;
     }
 
-    const activityBadge = getActivityBadge(worker);
-    if (activityBadge) {
-      const badgeWidth = 42;
+    const activityOverlay = activityOverlayStateByWorker[worker.id];
+    if (activityOverlay?.text) {
+      context.font = "10px 'Trebuchet MS', sans-serif";
+      const badgeTextWidth = Math.ceil(context.measureText(activityOverlay.text).width);
+      const badgeWidth = Math.max(44, Math.min(activityOverlayMaxBadgeWidth, badgeTextWidth + 16));
       const badgeHeight = 16;
       const badgeY = spriteBounds ? spriteBounds.y - 20 * viewport.scale : screen.y - radius - 28 * viewport.scale;
 
@@ -1175,9 +1252,7 @@ function drawScene({
       context.lineWidth = 1;
       context.strokeRect(screen.x - badgeWidth / 2, badgeY, badgeWidth, badgeHeight);
 
-      context.fillStyle = "#eff3d8";
-      context.font = "10px 'Trebuchet MS', sans-serif";
-      context.fillText(activityBadge, screen.x, badgeY + 11);
+      drawActivityOverlayLabel(context, activityOverlay, screen.x, badgeY + 11);
     }
 
     if (worker.status === "attention") {
@@ -1197,7 +1272,7 @@ function drawScene({
     if (controlKeys.length > 0) {
       const indicatorAnchorX = spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x;
       let indicatorY = spriteBounds ? spriteBounds.y - 18 * viewport.scale : screen.y - radius - 24 * viewport.scale;
-      if (activityBadge) {
+      if (activityOverlay?.text) {
         indicatorY -= 18 * viewport.scale;
       }
 
@@ -1224,6 +1299,7 @@ function drawScene({
     }
 
     drawOutpostOcclusionOverlay(context, viewport, width, height, mapData, mapPreviewImage);
+    drawAmbientFlameEffects(context, viewport, width, height, mapData, mapPreviewImage, nowMs);
 
     for (const worker of workers) {
       if (!occludedWorkerIds.has(worker.id)) {
@@ -1245,6 +1321,10 @@ function drawScene({
       });
     }
   } else {
+    if (mapData && mapPreviewImage) {
+      drawAmbientFlameEffects(context, viewport, width, height, mapData, mapPreviewImage, nowMs);
+    }
+
     for (const worker of workers) {
       drawWorker(worker, {
         queueNameplate: true
@@ -1266,7 +1346,7 @@ function drawScene({
       }
       const fadeProgress = clamp(elapsed / fadingWorkerDurationMs, 0, 1);
 
-      const worldPosition = fading.worker.position;
+      const worldPosition = displayedPositions[fading.worker.id] ?? fading.worker.position;
       const screen = worldToScreen(worldPosition.x, worldPosition.y, viewport);
       const radius = workerRadius * viewport.scale;
       const spriteSet = spriteLibrary[fading.worker.avatarType];
@@ -1361,29 +1441,10 @@ function drawSelectedWorkerOutline(
       bounds.width + 4 * scale,
       bounds.height + 4 * scale
     );
-
-    if (terminalFocused) {
-      context.strokeStyle = "rgba(31, 153, 184, 0.65)";
-      context.lineWidth = 1.4;
-      context.strokeRect(
-        bounds.x - 5 * scale,
-        bounds.y - 5 * scale,
-        bounds.width + 10 * scale,
-        bounds.height + 10 * scale
-      );
-    }
   } else {
     context.beginPath();
     context.arc(selectedOutline.screenX, selectedOutline.screenY, selectedOutline.radius + 6 * scale, 0, Math.PI * 2);
     context.stroke();
-
-    if (terminalFocused) {
-      context.beginPath();
-      context.strokeStyle = "rgba(31, 153, 184, 0.65)";
-      context.lineWidth = 1.2;
-      context.arc(selectedOutline.screenX, selectedOutline.screenY, selectedOutline.radius + 10 * scale, 0, Math.PI * 2);
-      context.stroke();
-    }
   }
 
   context.restore();
@@ -1419,6 +1480,46 @@ function drawControlGroupIndicator(
   });
 
   context.textBaseline = "alphabetic";
+}
+
+function drawActivityOverlayLabel(
+  context: CanvasRenderingContext2D,
+  overlay: ActivityOverlayRenderState,
+  centerX: number,
+  baselineY: number
+): void {
+  context.fillStyle = "#eff3d8";
+  context.fillText(overlay.text, centerX, baselineY);
+
+  if (overlay.shimmerPhase === undefined) {
+    return;
+  }
+
+  const characters = Array.from(overlay.text);
+  if (characters.length < 2) {
+    return;
+  }
+
+  const characterWidths = characters.map((character) => context.measureText(character).width);
+  const totalWidth = characterWidths.reduce((sum, width) => sum + width, 0);
+  if (totalWidth <= 0) {
+    return;
+  }
+
+  const shimmerHead = overlay.shimmerPhase * (characters.length + activityOverlayShimmerBandChars * 2) - activityOverlayShimmerBandChars;
+  let cursorX = centerX - totalWidth / 2;
+
+  for (let index = 0; index < characters.length; index += 1) {
+    const charWidth = characterWidths[index] ?? 0;
+    const intensity = Math.max(0, 1 - Math.abs(index - shimmerHead) / activityOverlayShimmerBandChars);
+    if (intensity > 0 && charWidth > 0) {
+      const alpha = 0.2 + 0.72 * intensity;
+      context.fillStyle = `rgba(255, 255, 247, ${alpha.toFixed(3)})`;
+      context.fillText(characters[index] ?? "", cursorX + charWidth / 2, baselineY);
+    }
+
+    cursorX += charWidth;
+  }
 }
 
 function drawWorkerNameplates(context: CanvasRenderingContext2D, nameplates: WorkerNameplate[]): void {
@@ -1461,6 +1562,20 @@ function isWorkerBehindAnyOcclusionRect(position: WorkerPosition, mapData: Loade
   };
 
   for (const rect of mapData.occlusionRects) {
+    const occlusionRect: CollisionRect = {
+      left: rect.x,
+      top: rect.y,
+      right: rect.x + rect.width,
+      bottom: rect.y + rect.height
+    };
+
+    if (rect.mode === "hard") {
+      if (intersectsRect(workerBounds, occlusionRect)) {
+        return true;
+      }
+      continue;
+    }
+
     const rectLeft = rect.x - horizontalPadding;
     const rectRight = rect.x + rect.width + horizontalPadding;
     if (footX < rectLeft || footX > rectRight) {
@@ -1471,13 +1586,6 @@ function isWorkerBehindAnyOcclusionRect(position: WorkerPosition, mapData: Loade
     if (footY > baselineY - baselineBias) {
       continue;
     }
-
-    const occlusionRect: CollisionRect = {
-      left: rect.x,
-      top: rect.y,
-      right: rect.x + rect.width,
-      bottom: rect.y + rect.height
-    };
 
     if (!intersectsRect(workerBounds, occlusionRect)) {
       continue;
@@ -1641,6 +1749,118 @@ function drawDespawnEffect(
   context.arc(centerX, ringY, ringRadius, 0, Math.PI * 2);
   context.stroke();
   context.restore();
+}
+
+function drawAmbientFlameEffects(
+  context: CanvasRenderingContext2D,
+  viewport: ViewportState,
+  width: number,
+  height: number,
+  mapData: LoadedOutpostMap,
+  backgroundImage: HTMLImageElement,
+  nowMs: number
+): void {
+  if (mapData.ambientFlameRects.length === 0) {
+    return;
+  }
+
+  const worldWidth = mapData.width * mapData.tileSize;
+  const worldHeight = mapData.height * mapData.tileSize;
+  const sourceScaleX = backgroundImage.naturalWidth / worldWidth;
+  const sourceScaleY = backgroundImage.naturalHeight / worldHeight;
+  const timeSeconds = nowMs / 1000;
+
+  // Phase 1: Draw all flame pixels (screen composite)
+  for (let index = 0; index < mapData.ambientFlameRects.length; index += 1) {
+    const rect = mapData.ambientFlameRects[index];
+    const phase = index * 1.37;
+    const screen = worldToScreen(rect.x, rect.y, viewport);
+    const drawWidth = rect.width * viewport.scale;
+    const drawHeight = rect.height * viewport.scale;
+    const flicker =
+      0.18 +
+      Math.sin(timeSeconds * 8.1 + phase) * 0.05 +
+      Math.sin(timeSeconds * 13.7 + phase * 1.9) * 0.03;
+
+    // Use cluster center for culling check
+    const clusterScreenX = (rect.clusterCenterX + viewport.offsetX) * viewport.scale;
+    const clusterScreenY = (rect.clusterCenterY + viewport.offsetY) * viewport.scale;
+    const pulse = 0.88 + Math.sin(timeSeconds * 3.4 + phase * 0.7) * 0.12;
+    const glowRadius = Math.max(4, rect.clusterRadius * viewport.scale * (0.6 + pulse * 0.3));
+
+    if (
+      clusterScreenX < -glowRadius ||
+      clusterScreenY < -glowRadius ||
+      clusterScreenX > width + glowRadius ||
+      clusterScreenY > height + glowRadius
+    ) {
+      continue;
+    }
+
+    const jitterX = Math.sin(timeSeconds * 5.2 + phase) * drawWidth * 0.06;
+    const jitterY = Math.cos(timeSeconds * 4.3 + phase * 1.2) * drawHeight * 0.04;
+
+    context.save();
+    context.globalCompositeOperation = "screen";
+    context.globalAlpha = clamp(flicker, 0.06, 0.28);
+    context.drawImage(
+      backgroundImage,
+      rect.x * sourceScaleX,
+      rect.y * sourceScaleY,
+      rect.width * sourceScaleX,
+      rect.height * sourceScaleY,
+      screen.x + jitterX,
+      screen.y + jitterY,
+      drawWidth,
+      drawHeight
+    );
+    context.restore();
+  }
+
+  // Phase 2: Draw unified glows per cluster (lighter composite)
+  // Track which clusters we've already drawn
+  const drawnClusters = new Set<number>();
+  
+  for (let index = 0; index < mapData.ambientFlameRects.length; index += 1) {
+    const rect = mapData.ambientFlameRects[index];
+    
+    // Skip if we've already drawn this cluster's glow
+    const clusterKey = Math.round(rect.clusterCenterX * 1000) + Math.round(rect.clusterCenterY);
+    if (drawnClusters.has(clusterKey)) {
+      continue;
+    }
+    drawnClusters.add(clusterKey);
+
+    const phase = index * 1.37;
+    const pulse = 0.88 + Math.sin(timeSeconds * 3.4 + phase * 0.7) * 0.12;
+    
+    // Use cluster center and radius for unified glow
+    const clusterScreenX = (rect.clusterCenterX + viewport.offsetX) * viewport.scale;
+    const clusterScreenY = (rect.clusterCenterY + viewport.offsetY) * viewport.scale;
+    const glowRadius = Math.max(6, rect.clusterRadius * viewport.scale * (0.7 + pulse * 0.25));
+
+    if (
+      clusterScreenX < -glowRadius ||
+      clusterScreenY < -glowRadius ||
+      clusterScreenX > width + glowRadius ||
+      clusterScreenY > height + glowRadius
+    ) {
+      continue;
+    }
+
+    context.save();
+    context.globalCompositeOperation = "lighter";
+    const glow = context.createRadialGradient(clusterScreenX, clusterScreenY, 0, clusterScreenX, clusterScreenY, glowRadius);
+    glow.addColorStop(0, "rgba(255, 214, 132, 0.22)");
+    glow.addColorStop(0.35, "rgba(255, 168, 80, 0.14)");
+    glow.addColorStop(0.7, "rgba(255, 128, 48, 0.06)");
+    glow.addColorStop(1, "rgba(255, 98, 28, 0)");
+    context.fillStyle = glow;
+    context.beginPath();
+    context.arc(clusterScreenX, clusterScreenY, glowRadius, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+  }
 }
 
 function getWorkerSummonProgress(createdAtIso: string, nowMs: number): number | undefined {
@@ -2508,6 +2728,157 @@ function getActivityBadge(worker: Worker): string | undefined {
       }
       return undefined;
   }
+}
+
+interface ActivityOverlayTarget {
+  text: string;
+  animate: boolean;
+}
+
+function deriveActivityOverlayStateByWorker(
+  workers: Worker[],
+  animationStateByWorker: Record<string, ActivityOverlayAnimationState>,
+  nowMs: number
+): Record<string, ActivityOverlayRenderState | undefined> {
+  const overlayStateByWorker: Record<string, ActivityOverlayRenderState | undefined> = {};
+  const activeWorkerIds = new Set(workers.map((worker) => worker.id));
+
+  for (const workerId of Object.keys(animationStateByWorker)) {
+    if (!activeWorkerIds.has(workerId)) {
+      delete animationStateByWorker[workerId];
+    }
+  }
+
+  for (const worker of workers) {
+    const target = buildActivityOverlayTarget(worker);
+    if (!target) {
+      delete animationStateByWorker[worker.id];
+      continue;
+    }
+
+    const existing = animationStateByWorker[worker.id];
+    if (!existing || existing.animate !== target.animate || existing.text !== target.text) {
+      const keepRevealProgress =
+        Boolean(existing) &&
+        Boolean(existing?.animate) &&
+        Boolean(target.animate) &&
+        target.text.startsWith(existing?.text ?? "");
+      const revealedLength = keepRevealProgress ? Math.min(existing?.revealedLength ?? 0, target.text.length) : target.animate ? 0 : target.text.length;
+
+      animationStateByWorker[worker.id] = {
+        text: target.text,
+        animate: target.animate,
+        revealedLength,
+        lastRevealAtMs: nowMs,
+        fullyRevealedAtMs: revealedLength >= target.text.length ? nowMs : undefined
+      };
+    }
+
+    const state = animationStateByWorker[worker.id];
+    if (state.animate && state.revealedLength < state.text.length) {
+      const elapsedMs = nowMs - state.lastRevealAtMs;
+      if (elapsedMs >= activityOverlayTypingCharIntervalMs) {
+        const charsToReveal = Math.floor(elapsedMs / activityOverlayTypingCharIntervalMs);
+        state.revealedLength = Math.min(state.text.length, state.revealedLength + charsToReveal);
+        state.lastRevealAtMs += charsToReveal * activityOverlayTypingCharIntervalMs;
+        if (state.revealedLength >= state.text.length && state.fullyRevealedAtMs === undefined) {
+          state.fullyRevealedAtMs = nowMs;
+        }
+      }
+    } else if (!state.animate) {
+      state.revealedLength = state.text.length;
+      state.lastRevealAtMs = nowMs;
+      state.fullyRevealedAtMs = undefined;
+    } else if (state.revealedLength >= state.text.length && state.fullyRevealedAtMs === undefined) {
+      state.fullyRevealedAtMs = nowMs;
+    }
+
+    const visibleText = state.text.slice(0, Math.max(0, state.revealedLength));
+    if (!visibleText) {
+      overlayStateByWorker[worker.id] = {
+        text: "…",
+        shimmerPhase: undefined
+      };
+      continue;
+    }
+
+    overlayStateByWorker[worker.id] = {
+      text: visibleText,
+      shimmerPhase: deriveActivityOverlayShimmerPhase(state, nowMs, visibleText.length)
+    };
+  }
+
+  return overlayStateByWorker;
+}
+
+function deriveActivityOverlayShimmerPhase(
+  state: ActivityOverlayAnimationState,
+  nowMs: number,
+  visibleLength: number
+): number | undefined {
+  if (!state.animate || state.revealedLength < state.text.length || visibleLength < 6) {
+    return undefined;
+  }
+
+  if (state.fullyRevealedAtMs === undefined) {
+    return undefined;
+  }
+
+  const shimmerElapsedMs = nowMs - state.fullyRevealedAtMs - activityOverlayShimmerStartDelayMs;
+  if (shimmerElapsedMs < 0) {
+    return undefined;
+  }
+
+  return (shimmerElapsedMs % activityOverlayShimmerCycleMs) / activityOverlayShimmerCycleMs;
+}
+
+function buildActivityOverlayTarget(worker: Worker): ActivityOverlayTarget | undefined {
+  if (worker.status !== "working" && worker.status !== "attention" && worker.status !== "error") {
+    return undefined;
+  }
+
+  const activityText = worker.activityText?.replace(/\s+/g, " ").trim();
+  if (activityText) {
+    const thinkingDetail = extractThinkingOverlayDetail(activityText);
+    if (thinkingDetail) {
+      return {
+        text: truncateOverlayLabel(thinkingDetail, activityOverlayTextMaxLength),
+        animate: true
+      };
+    }
+
+    return {
+      text: truncateOverlayLabel(activityText, activityOverlayTextMaxLength),
+      animate: false
+    };
+  }
+
+  const badge = getActivityBadge(worker);
+  if (!badge) {
+    return undefined;
+  }
+
+  return {
+    text: badge,
+    animate: false
+  };
+}
+
+function extractThinkingOverlayDetail(activityText: string): string | undefined {
+  const match = activityText.match(/\bThinking:\s+(.+)$/i);
+  return match?.[1]?.trim() || undefined;
+}
+
+function truncateOverlayLabel(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  if (maxLength <= 1) {
+    return text.slice(0, Math.max(0, maxLength));
+  }
+
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 function spriteBoundsAtGround(centerX: number, groundY: number, scale: number, baseSize: number): SpriteBounds {
