@@ -10,6 +10,7 @@ const avatarValues: [AvatarType, ...AvatarType[]] = [
   "rogue",
   "priestess",
   "elf-ranger",
+  "minotaur",
   "mage",
   "ranger",
   "paladin",

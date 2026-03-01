@@ -372,6 +372,15 @@ export default function App(): JSX.Element {
     setKillConfirmWorkerId(selectedWorkerId);
   }, [selectedWorkerId]);
 
+  const onKillRosterActive = useCallback(() => {
+    const entry = rosterEntries[rosterActiveIndex];
+    if (!entry || entry.kind !== "worker") {
+      return;
+    }
+
+    setKillConfirmWorkerId(entry.worker.id);
+  }, [rosterActiveIndex, rosterEntries]);
+
   const onToggleMovementModeSelected = useCallback(async () => {
     if (!selectedWorker) {
       return;
@@ -624,6 +633,12 @@ export default function App(): JSX.Element {
 
       if (!selectedWorkerId && rosterEntries.length > 0 && !isTerminalTarget(event.target)) {
         const keyLower = event.key.toLowerCase();
+        if (keyLower === "k" && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          onKillRosterActive();
+          return;
+        }
+
         if (
           keyLower === "n" &&
           !event.ctrlKey &&
@@ -637,7 +652,7 @@ export default function App(): JSX.Element {
           return;
         }
 
-        if ((keyLower === "j" || keyLower === "k") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if ((keyLower === "j" || keyLower === "k") && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
           event.preventDefault();
           setRosterActiveIndex((current) => {
             const delta = keyLower === "j" ? 1 : -1;
@@ -703,6 +718,7 @@ export default function App(): JSX.Element {
     killConfirmWorkerId,
     nudgeMapColumnRatio,
     onActivateRosterIndex,
+    onKillRosterActive,
     resetMapColumnRatio,
     onKillWorker,
     onKillSelected,
@@ -993,6 +1009,10 @@ export default function App(): JSX.Element {
               <div className="shortcut-row">
                 <kbd>K</kbd>
                 <span>Open kill confirm (then Enter)</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>Shift+K</kbd>
+                <span>Kill highlighted roster agent (then Enter)</span>
               </div>
               <div className="shortcut-row">
                 <kbd>?</kbd>

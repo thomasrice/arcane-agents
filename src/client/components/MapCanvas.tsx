@@ -86,7 +86,8 @@ const defaultZoomScale = 1.45;
 const recenterVisibilityPaddingPx = 56;
 const fadingWorkerDurationMs = 420;
 const blockedTerrainValues = new Set([3]);
-const nonBlockingObjectTypes = new Set(["torch"]);
+const nonBlockingObjectTypes = new Set(["torch", "signpost", "barrel", "crate", "bush"]);
+const fullBodyCollisionObjectTypes = new Set(["oak-tree", "pine-tree", "tent"]);
 
 const avatarColor: Record<string, string> = {
   knight: "#8ca1c8",
@@ -99,6 +100,7 @@ const avatarColor: Record<string, string> = {
   ranger: "#4d9961",
   druid: "#6f8f44",
   rogue: "#7d6aa6",
+  minotaur: "#7f5f4d",
   paladin: "#d6b568",
   orc: "#688449",
   dwarf: "#a37854"
@@ -155,6 +157,7 @@ export function MapCanvas({
     [spriteLibrary]
   );
   const mapCollisionRects = useMemo(() => buildObjectCollisionRects(mapData), [mapData]);
+  const blockedTileKeys = useMemo(() => buildBlockedTileSet(mapData, mapCollisionRects), [mapCollisionRects, mapData]);
 
   useEffect(() => {
     animatedPositionsRef.current = animatedPositions;
@@ -551,6 +554,10 @@ export function MapCanvas({
 
   const issueManualMoveToWorld = useCallback(
     (worker: Worker, targetWorld: WorkerPosition): boolean => {
+      if (!mapData) {
+        return false;
+      }
+
       const target = clampWorldPosition(targetWorld, mapData);
       const currentPosition = animatedPositionsRef.current[worker.id] ?? worker.position;
       const normalizedTarget = {
@@ -558,16 +565,36 @@ export function MapCanvas({
         y: Math.round(target.y * 10) / 10
       };
 
-      const walkableTarget = isWorldPositionWalkable(normalizedTarget, mapData, mapCollisionRects)
-        ? normalizedTarget
-        : findNearestWalkablePosition(normalizedTarget, mapData, mapCollisionRects);
+      const startTile = worldPositionToTile(currentPosition, mapData);
+      const goalTileCandidate = worldPositionToTile(normalizedTarget, mapData);
+      const startTileWalkable = isTileWalkable(startTile.x, startTile.y, mapData, blockedTileKeys);
+      const goalTileWalkable = isTileWalkable(goalTileCandidate.x, goalTileCandidate.y, mapData, blockedTileKeys);
 
-      if (!walkableTarget) {
+      const startTileResolved = startTileWalkable
+        ? startTile
+        : findNearestWalkableTile(startTile, mapData, blockedTileKeys);
+
+      const goalTileResolved = goalTileWalkable
+        ? goalTileCandidate
+        : findNearestWalkableTile(goalTileCandidate, mapData, blockedTileKeys);
+
+      if (!startTileResolved || !goalTileResolved) {
+        return false;
+      }
+
+      const tilePath = findTilePath(startTileResolved, goalTileResolved, mapData, blockedTileKeys);
+      if (!tilePath || tilePath.length === 0) {
+        return false;
+      }
+
+      const waypoints = tilePathToWaypoints(tilePath, mapData);
+
+      if (waypoints.length === 0) {
         return false;
       }
 
       moveOrdersRef.current[worker.id] = {
-        waypoints: createCardinalWaypoints(currentPosition, walkableTarget),
+        waypoints,
         waypointIndex: 0,
         speedPerTick: moveSpeedPerTick,
         commitOnArrival: true,
@@ -587,7 +614,7 @@ export function MapCanvas({
 
       return true;
     },
-    [mapCollisionRects, mapData]
+    [blockedTileKeys, mapData]
   );
 
   useEffect(() => {
@@ -1520,13 +1547,26 @@ function buildObjectCollisionRects(mapData: LoadedOutpostMap | undefined): Colli
 
     const worldX = placedObject.x * mapData.tileSize + mapData.tileSize / 2 - definition.width / 2;
     const worldY = (placedObject.y + 1) * mapData.tileSize - definition.height;
-    const insetX = Math.max(1, Math.min(6, definition.width * 0.08));
-    const insetY = Math.max(1, Math.min(6, definition.height * 0.08));
+    let left: number;
+    let top: number;
+    let right: number;
+    let bottom: number;
 
-    const left = worldX + insetX;
-    const top = worldY + insetY;
-    const right = worldX + definition.width - insetX;
-    const bottom = worldY + definition.height - insetY;
+    if (fullBodyCollisionObjectTypes.has(placedObject.type)) {
+      const insetX = Math.max(2, Math.min(8, definition.width * 0.06));
+      const insetY = Math.max(2, Math.min(10, definition.height * 0.06));
+      left = worldX + insetX;
+      top = worldY + insetY;
+      right = worldX + definition.width - insetX;
+      bottom = worldY + definition.height - insetY;
+    } else {
+      const footprintWidth = clamp(definition.width * 0.62, mapData.tileSize * 0.42, mapData.tileSize * 1.12);
+      const footprintHeight = clamp(definition.height * 0.34, mapData.tileSize * 0.28, mapData.tileSize * 0.88);
+      left = worldX + (definition.width - footprintWidth) / 2;
+      top = worldY + definition.height - footprintHeight;
+      right = left + footprintWidth;
+      bottom = top + footprintHeight;
+    }
 
     collisionRects.push({
       left,
@@ -1611,6 +1651,226 @@ function findNearestWalkablePosition(
   }
 
   return undefined;
+}
+
+interface TileCoord {
+  x: number;
+  y: number;
+}
+
+function buildBlockedTileSet(mapData: LoadedOutpostMap | undefined, collisionRects: CollisionRect[]): Set<string> {
+  if (!mapData) {
+    return new Set<string>();
+  }
+
+  const blocked = new Set<string>();
+  const tileSize = mapData.tileSize;
+
+  for (const rect of collisionRects) {
+    const minTileX = clamp(Math.floor(rect.left / tileSize), 0, mapData.width - 1);
+    const maxTileX = clamp(Math.floor((rect.right - 0.01) / tileSize), 0, mapData.width - 1);
+    const minTileY = clamp(Math.floor(rect.top / tileSize), 0, mapData.height - 1);
+    const maxTileY = clamp(Math.floor((rect.bottom - 0.01) / tileSize), 0, mapData.height - 1);
+
+    for (let tileY = minTileY; tileY <= maxTileY; tileY += 1) {
+      for (let tileX = minTileX; tileX <= maxTileX; tileX += 1) {
+        blocked.add(tileCoordKey(tileX, tileY));
+      }
+    }
+  }
+
+  return blocked;
+}
+
+function worldPositionToTile(position: WorkerPosition, mapData: LoadedOutpostMap): TileCoord {
+  return {
+    x: clamp(Math.floor(position.x / mapData.tileSize), 0, mapData.width - 1),
+    y: clamp(Math.floor(position.y / mapData.tileSize), 0, mapData.height - 1)
+  };
+}
+
+function tileToWorldCenter(tile: TileCoord, mapData: LoadedOutpostMap): WorkerPosition {
+  return {
+    x: tile.x * mapData.tileSize + mapData.tileSize / 2,
+    y: tile.y * mapData.tileSize + mapData.tileSize / 2
+  };
+}
+
+function isTileWalkable(tileX: number, tileY: number, mapData: LoadedOutpostMap, blockedTileKeys: Set<string>): boolean {
+  if (tileX < 0 || tileY < 0 || tileX >= mapData.width || tileY >= mapData.height) {
+    return false;
+  }
+
+  const terrainValue = mapData.terrain[tileY]?.[tileX] ?? 0;
+  if (blockedTerrainValues.has(terrainValue)) {
+    return false;
+  }
+
+  return !blockedTileKeys.has(tileCoordKey(tileX, tileY));
+}
+
+function findNearestWalkableTile(
+  origin: TileCoord,
+  mapData: LoadedOutpostMap,
+  blockedTileKeys: Set<string>
+): TileCoord | undefined {
+  if (isTileWalkable(origin.x, origin.y, mapData, blockedTileKeys)) {
+    return origin;
+  }
+
+  const maxRadius = Math.max(mapData.width, mapData.height);
+  for (let radius = 1; radius <= maxRadius; radius += 1) {
+    for (let offsetY = -radius; offsetY <= radius; offsetY += 1) {
+      for (let offsetX = -radius; offsetX <= radius; offsetX += 1) {
+        if (Math.max(Math.abs(offsetX), Math.abs(offsetY)) !== radius) {
+          continue;
+        }
+
+        const candidateX = origin.x + offsetX;
+        const candidateY = origin.y + offsetY;
+        if (isTileWalkable(candidateX, candidateY, mapData, blockedTileKeys)) {
+          return { x: candidateX, y: candidateY };
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function findTilePath(
+  start: TileCoord,
+  goal: TileCoord,
+  mapData: LoadedOutpostMap,
+  blockedTileKeys: Set<string>
+): TileCoord[] | undefined {
+  const startKey = tileCoordKey(start.x, start.y);
+  const goalKey = tileCoordKey(goal.x, goal.y);
+
+  if (startKey === goalKey) {
+    return [start];
+  }
+
+  const openSet = new Set<string>([startKey]);
+  const cameFrom = new Map<string, string>();
+  const gScore = new Map<string, number>([[startKey, 0]]);
+  const fScore = new Map<string, number>([[startKey, manhattanDistance(start, goal)]]);
+
+  while (openSet.size > 0) {
+    let currentKey: string | undefined;
+    let currentScore = Number.POSITIVE_INFINITY;
+
+    for (const candidate of openSet) {
+      const score = fScore.get(candidate) ?? Number.POSITIVE_INFINITY;
+      if (score < currentScore) {
+        currentScore = score;
+        currentKey = candidate;
+      }
+    }
+
+    if (!currentKey) {
+      break;
+    }
+
+    if (currentKey === goalKey) {
+      return reconstructTilePath(cameFrom, currentKey);
+    }
+
+    openSet.delete(currentKey);
+    const currentTile = parseTileCoordKey(currentKey);
+    if (!currentTile) {
+      continue;
+    }
+
+    for (const [stepX, stepY] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1]
+    ]) {
+      const neighborX = currentTile.x + stepX;
+      const neighborY = currentTile.y + stepY;
+
+      if (!isTileWalkable(neighborX, neighborY, mapData, blockedTileKeys)) {
+        continue;
+      }
+
+      const neighborKey = tileCoordKey(neighborX, neighborY);
+      const tentativeGScore = (gScore.get(currentKey) ?? Number.POSITIVE_INFINITY) + 1;
+      if (tentativeGScore >= (gScore.get(neighborKey) ?? Number.POSITIVE_INFINITY)) {
+        continue;
+      }
+
+      cameFrom.set(neighborKey, currentKey);
+      gScore.set(neighborKey, tentativeGScore);
+      fScore.set(neighborKey, tentativeGScore + manhattanDistance({ x: neighborX, y: neighborY }, goal));
+      openSet.add(neighborKey);
+    }
+  }
+
+  return undefined;
+}
+
+function reconstructTilePath(cameFrom: Map<string, string>, currentKey: string): TileCoord[] {
+  const path: TileCoord[] = [];
+  let key: string | undefined = currentKey;
+
+  while (key) {
+    const tile = parseTileCoordKey(key);
+    if (!tile) {
+      break;
+    }
+    path.push(tile);
+    key = cameFrom.get(key);
+  }
+
+  path.reverse();
+  return path;
+}
+
+function tilePathToWaypoints(tilePath: TileCoord[], mapData: LoadedOutpostMap): WorkerPosition[] {
+  if (tilePath.length <= 1) {
+    return [];
+  }
+
+  const waypoints: WorkerPosition[] = [];
+  let previousDirection = {
+    x: tilePath[1].x - tilePath[0].x,
+    y: tilePath[1].y - tilePath[0].y
+  };
+
+  for (let index = 2; index < tilePath.length; index += 1) {
+    const direction = {
+      x: tilePath[index].x - tilePath[index - 1].x,
+      y: tilePath[index].y - tilePath[index - 1].y
+    };
+
+    if (direction.x !== previousDirection.x || direction.y !== previousDirection.y) {
+      waypoints.push(tileToWorldCenter(tilePath[index - 1], mapData));
+      previousDirection = direction;
+    }
+  }
+
+  waypoints.push(tileToWorldCenter(tilePath[tilePath.length - 1], mapData));
+  return waypoints;
+}
+
+function tileCoordKey(tileX: number, tileY: number): string {
+  return `${tileX},${tileY}`;
+}
+
+function parseTileCoordKey(key: string): TileCoord | undefined {
+  const [xText, yText] = key.split(",");
+  const x = Number(xText);
+  const y = Number(yText);
+  if (!Number.isInteger(x) || !Number.isInteger(y)) {
+    return undefined;
+  }
+  return { x, y };
+}
+
+function manhattanDistance(a: TileCoord, b: TileCoord): number {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
 function intersectsRect(a: CollisionRect, b: CollisionRect): boolean {

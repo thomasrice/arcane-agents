@@ -54,6 +54,7 @@ Create one top-level folder per character type. Worker avatar types currently in
 - `rogue`
 - `priestess`
 - `elf-ranger`
+- `minotaur`
 
 ## Runtime Behavior
 

@@ -15,7 +15,7 @@ interface PaneObservation {
 const shellCommands = new Set(["bash", "zsh", "fish", "sh", "nu", "pwsh"]);
 const nonShellIdleAfterMs = 10_000;
 const outputHeartbeatWorkingWindowMs = 12_000;
-const claudeStickyWorkingWindowMs = 45_000;
+const claudeStickyWorkingWindowMs = 10_000;
 const claudeActiveTextHoldWindowMs = 5 * 60_000;
 
 export class StatusMonitor {

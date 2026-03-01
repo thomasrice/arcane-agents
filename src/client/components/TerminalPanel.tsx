@@ -3,6 +3,30 @@ import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
 
 const shiftEnterSequence = "\n";
+const tokyoNightTheme = {
+  background: "#1a1b26",
+  foreground: "#c0caf5",
+  cursor: "#c0caf5",
+  cursorAccent: "#1a1b26",
+  selectionBackground: "rgba(122, 162, 247, 0.28)",
+  selectionInactiveBackground: "rgba(122, 162, 247, 0.2)",
+  black: "#15161e",
+  red: "#f7768e",
+  green: "#9ece6a",
+  yellow: "#e0af68",
+  blue: "#7aa2f7",
+  magenta: "#bb9af7",
+  cyan: "#7dcfff",
+  white: "#a9b1d6",
+  brightBlack: "#414868",
+  brightRed: "#f7768e",
+  brightGreen: "#9ece6a",
+  brightYellow: "#e0af68",
+  brightBlue: "#7aa2f7",
+  brightMagenta: "#bb9af7",
+  brightCyan: "#7dcfff",
+  brightWhite: "#c0caf5"
+};
 
 interface TerminalPanelProps {
   workerId?: string;
@@ -104,12 +128,8 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
       cursorStyle: "block",
       cursorInactiveStyle: "block",
       fontSize: 13,
-      lineHeight: 1.2,
-      theme: {
-        background: "#111a17",
-        foreground: "#eaf3de",
-        cursor: "#f5f2d0"
-      }
+      lineHeight: 1,
+      theme: tokyoNightTheme
     });
 
     const fitAddon = new FitAddon();

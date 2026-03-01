@@ -21,6 +21,7 @@ interface SpawnPlan {
   runtimeId: string;
   runtime: RuntimeConfig;
   command: string[];
+  displayName?: string;
   profileId?: string;
   avatar?: AvatarType;
 }
@@ -45,7 +46,8 @@ const allWorkerAvatars: AvatarType[] = [
   "druid",
   "rogue",
   "priestess",
-  "elf-ranger"
+  "elf-ranger",
+  "minotaur"
 ];
 
 const outpostSpawnSpec = loadOutpostSpawnSpec();
@@ -108,6 +110,7 @@ export class OrchestratorService {
     const worker: Worker = {
       id: workerId,
       name: windowName,
+      displayName: plan.displayName,
       projectId: plan.projectId,
       projectPath: plan.project.path,
       runtimeId: plan.runtimeId,
@@ -116,7 +119,7 @@ export class OrchestratorService {
       profileId: plan.profileId,
       status: "idle",
       avatarType: this.nextAvatar(plan.avatar),
-      movementMode: "hold",
+      movementMode: "wander",
       position: this.nextSpawnPosition(),
       tmuxRef,
       createdAt: now,
@@ -371,6 +374,7 @@ export class OrchestratorService {
         runtimeId: shortcut.runtime,
         runtime,
         command: runtime.command,
+        displayName: shortcut.label,
         avatar: shortcut.avatar
       };
     }
@@ -396,6 +400,7 @@ export class OrchestratorService {
         runtimeId: profile.runtime,
         runtime,
         command: profile.command ?? runtime.command,
+        displayName: profile.label,
         profileId: input.profileId,
         avatar: profile.avatar
       };

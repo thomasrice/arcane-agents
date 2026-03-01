@@ -24,6 +24,7 @@ export type AvatarType =
   | "rogue"
   | "priestess"
   | "elf-ranger"
+  | "minotaur"
   | "mage"
   | "ranger"
   | "paladin"
