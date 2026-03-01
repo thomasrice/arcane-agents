@@ -55,6 +55,7 @@ export default function App(): JSX.Element {
   const [mapColumnRatio, setMapColumnRatio] = useState<number>(() => loadMapColumnRatioFromStorage());
   const [rosterActiveIndex, setRosterActiveIndex] = useState(0);
   const [terminalFocused, setTerminalFocused] = useState(false);
+  const [workersHydrated, setWorkersHydrated] = useState(false);
   const [controlGroups, setControlGroups] = useState<ControlGroupMap>(() => loadControlGroupsFromStorage());
   const controlGroupByDigitRef = useRef<ControlGroupMap>(controlGroups);
 
@@ -162,6 +163,10 @@ export default function App(): JSX.Element {
   }, [mapColumnRatio]);
 
   useEffect(() => {
+    if (!workersHydrated) {
+      return;
+    }
+
     const activeIds = new Set(activeWorkers.map((worker) => worker.id));
     setControlGroups((current) => {
       let changed = false;
@@ -178,13 +183,14 @@ export default function App(): JSX.Element {
 
       return changed ? next : current;
     });
-  }, [activeWorkers]);
+  }, [activeWorkers, workersHydrated]);
 
   useEffect(() => {
     void Promise.all([fetchConfig(), fetchWorkers()])
       .then(([nextConfig, nextWorkers]) => {
         setConfig(nextConfig);
         setWorkers(nextWorkers);
+        setWorkersHydrated(true);
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : "Failed to load Overworld data";
@@ -212,6 +218,7 @@ export default function App(): JSX.Element {
         if (payload.type === "init") {
           setConfig(payload.config);
           setWorkers(payload.workers);
+          setWorkersHydrated(true);
           return;
         }
 
@@ -956,12 +963,20 @@ export default function App(): JSX.Element {
                 <span>Jump to summon list</span>
               </div>
               <div className="shortcut-row">
+                <kbd>Shift+W/A/S/D</kbd>
+                <span>Nudge selected agent on the map</span>
+              </div>
+              <div className="shortcut-row">
                 <kbd>[ / ] / =</kbd>
                 <span>Resize columns or reset split</span>
               </div>
               <div className="shortcut-row">
                 <kbd>Enter</kbd>
                 <span>Activate highlighted item or focus terminal</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>Shift+Enter</kbd>
+                <span>Insert newline in OpenCode prompt</span>
               </div>
               <div className="shortcut-row">
                 <kbd>Ctrl+]</kbd>

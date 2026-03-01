@@ -233,20 +233,20 @@ async function loadObjectDefinitions(
 }
 
 // Hero animated objects - objects that have looping animations
-const ANIMATED_OBJECT_TYPES = ['campfire', 'torch', 'water'];
+const ANIMATED_OBJECT_TYPES = ["campfire", "torch"];
 
 async function loadAnimatedObjectDefinitions(
   objectDefinitions: Record<string, RawObjectDefinition>
 ): Promise<LoadedOutpostMap["animatedObjectDefinitions"]> {
   const animatedDefs: LoadedOutpostMap["animatedObjectDefinitions"] = {};
-  
+
   for (const objectType of ANIMATED_OBJECT_TYPES) {
-    const dimensions = objectDefinitions[objectType === 'water' ? 'oak-tree' : objectType]; // Use oak-tree dims for water tiles
+    const dimensions = objectDefinitions[objectType];
     if (!dimensions) continue;
-    
-    const frameDir = objectType === 'water' ? 'water-animated' : `${objectType}-animated`;
+
+    const frameDir = `${objectType}-animated`;
     const frames: HTMLImageElement[] = [];
-    
+
     // Try to load up to 16 frames
     for (let i = 0; i < 16; i++) {
       const frame = await loadImage(`/api/assets/objects/${frameDir}/${i}.png`);
@@ -256,7 +256,7 @@ async function loadAnimatedObjectDefinitions(
         break;
       }
     }
-    
+
     if (frames.length > 0) {
       animatedDefs[objectType] = {
         width: dimensions.width,
@@ -266,7 +266,7 @@ async function loadAnimatedObjectDefinitions(
       };
     }
   }
-  
+
   return animatedDefs;
 }
 

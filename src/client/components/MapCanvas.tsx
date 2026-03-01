@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import type { Worker, WorkerPosition } from "../../shared/types";
 import { cornerKey, useOutpostMap, type LoadedOutpostMap } from "../map/tileMapLoader";
 import {
@@ -67,16 +67,26 @@ interface SpriteBounds {
   height: number;
 }
 
+interface CollisionRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 const workerRadius = 13;
 const spriteBaseSize = 64;
 const spriteAnchorYFactor = 0.84;
 const moveSpeedPerTick = 9;
 const animationIntervalMs = 95;
 const keyboardPanSpeedPerSecond = 520;
+const keyboardMoveStepTiles = 0.75;
 const pointerPanDragThreshold = 4;
 const defaultZoomScale = 1.45;
 const recenterVisibilityPaddingPx = 56;
 const fadingWorkerDurationMs = 420;
+const blockedTerrainValues = new Set([3]);
+const nonBlockingObjectTypes = new Set(["torch"]);
 
 const avatarColor: Record<string, string> = {
   knight: "#8ca1c8",
@@ -144,6 +154,7 @@ export function MapCanvas({
     () => Object.values(spriteLibrary).find((spriteSet) => Boolean(spriteSet?.hasSprites)),
     [spriteLibrary]
   );
+  const mapCollisionRects = useMemo(() => buildObjectCollisionRects(mapData), [mapData]);
 
   useEffect(() => {
     animatedPositionsRef.current = animatedPositions;
@@ -228,6 +239,7 @@ export function MapCanvas({
       let changed = false;
       const now = performance.now();
       const tileSize = mapData?.tileSize ?? 32;
+      const collisionRects = mapCollisionRects;
 
       if (selectedWorkerId) {
         const selectedOrder = orders[selectedWorkerId];
@@ -273,7 +285,7 @@ export function MapCanvas({
           continue;
         }
 
-        const nextTarget = randomWanderTarget(wanderState.anchor, tileSize, mapData);
+        const nextTarget = randomWanderTarget(wanderState.anchor, tileSize, mapData, collisionRects);
         const currentPosition = nextPositions[worker.id] ?? worker.position;
         const distance = Math.hypot(nextTarget.x - currentPosition.x, nextTarget.y - currentPosition.y);
         if (distance < 6) {
@@ -294,20 +306,17 @@ export function MapCanvas({
         };
       }
 
-      if (Object.keys(orders).length === 0) {
-        return;
-      }
-
-      for (const [workerId, order] of Object.entries(orders)) {
-        const worker = workersById.get(workerId);
-        if (!worker) {
-          delete orders[workerId];
-          if (nextPositions[workerId]) {
-            delete nextPositions[workerId];
-            changed = true;
+      if (Object.keys(orders).length > 0) {
+        for (const [workerId, order] of Object.entries(orders)) {
+          const worker = workersById.get(workerId);
+          if (!worker) {
+            delete orders[workerId];
+            if (nextPositions[workerId]) {
+              delete nextPositions[workerId];
+              changed = true;
+            }
+            continue;
           }
-          continue;
-        }
 
         const currentPosition = nextPositions[workerId] ?? worker.position;
         const targetWaypoint = order.waypoints[order.waypointIndex];
@@ -325,6 +334,16 @@ export function MapCanvas({
             x: targetWaypoint.x,
             y: targetWaypoint.y
           };
+
+          if (!isWorldPositionWalkable(finalPosition, mapData, collisionRects)) {
+            delete orders[workerId];
+            const wanderState = wanderStateRef.current[workerId];
+            if (wanderState) {
+              wanderState.nextMoveAfterMs = now + randomRange(2000, 5000);
+            }
+            continue;
+          }
+
           nextPositions[workerId] = finalPosition;
 
           if (order.waypointIndex < order.waypoints.length - 1) {
@@ -351,16 +370,41 @@ export function MapCanvas({
           continue;
         }
 
-        nextPositions[workerId] = {
+        const proposedPosition = {
           x: currentPosition.x + (dx / distance) * order.speedPerTick,
           y: currentPosition.y + (dy / distance) * order.speedPerTick
         };
-        changed = true;
+
+        if (!isWorldPositionWalkable(proposedPosition, mapData, collisionRects)) {
+          delete orders[workerId];
+          const wanderState = wanderStateRef.current[workerId];
+          if (wanderState) {
+            wanderState.nextMoveAfterMs = now + randomRange(2000, 5000);
+          }
+          continue;
+        }
+
+          nextPositions[workerId] = proposedPosition;
+          changed = true;
+        }
       }
 
       for (const worker of workers) {
         if (orders[worker.id]) {
           continue;
+        }
+
+        const currentPosition = nextPositions[worker.id] ?? worker.position;
+        if (!isWorldPositionWalkable(currentPosition, mapData, collisionRects)) {
+          const safePosition = findNearestWalkablePosition(currentPosition, mapData, collisionRects);
+          if (safePosition) {
+            nextPositions[worker.id] = safePosition;
+            commitQueue.push({
+              workerId: worker.id,
+              position: safePosition
+            });
+            changed = true;
+          }
         }
 
         const staged = nextPositions[worker.id];
@@ -390,7 +434,7 @@ export function MapCanvas({
     return () => {
       clearInterval(animationInterval);
     };
-  }, [mapData, onPositionCommit, selectedWorkerId, workers]);
+  }, [mapCollisionRects, mapData, onPositionCommit, selectedWorkerId, workers]);
 
   useEffect(() => {
     if (!mapData || hasCenteredOnMap) {
@@ -505,6 +549,47 @@ export function MapCanvas({
     workers
   ]);
 
+  const issueManualMoveToWorld = useCallback(
+    (worker: Worker, targetWorld: WorkerPosition): boolean => {
+      const target = clampWorldPosition(targetWorld, mapData);
+      const currentPosition = animatedPositionsRef.current[worker.id] ?? worker.position;
+      const normalizedTarget = {
+        x: Math.round(target.x * 10) / 10,
+        y: Math.round(target.y * 10) / 10
+      };
+
+      const walkableTarget = isWorldPositionWalkable(normalizedTarget, mapData, mapCollisionRects)
+        ? normalizedTarget
+        : findNearestWalkablePosition(normalizedTarget, mapData, mapCollisionRects);
+
+      if (!walkableTarget) {
+        return false;
+      }
+
+      moveOrdersRef.current[worker.id] = {
+        waypoints: createCardinalWaypoints(currentPosition, walkableTarget),
+        waypointIndex: 0,
+        speedPerTick: moveSpeedPerTick,
+        commitOnArrival: true,
+        source: "manual"
+      };
+
+      setAnimatedPositions((current) => {
+        if (current[worker.id]) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [worker.id]: worker.position
+        };
+      });
+
+      return true;
+    },
+    [mapCollisionRects, mapData]
+  );
+
   useEffect(() => {
     const stopPanLoop = () => {
       if (panRafRef.current !== null) {
@@ -575,6 +660,25 @@ export function MapCanvas({
         return;
       }
 
+      if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && isWasdKey(event.key)) {
+        if (terminalFocusedSelected || !selectedWorkerId) {
+          return;
+        }
+
+        const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId);
+        if (!selectedWorker) {
+          return;
+        }
+
+        const currentPosition = animatedPositionsRef.current[selectedWorker.id] ?? selectedWorker.position;
+        const stepSize = (mapData?.tileSize ?? 32) * keyboardMoveStepTiles;
+        const targetPosition = offsetPositionByDirection(currentPosition, direction, stepSize);
+        if (issueManualMoveToWorld(selectedWorker, targetPosition)) {
+          event.preventDefault();
+        }
+        return;
+      }
+
       event.preventDefault();
       pressedPanKeysRef.current.add(direction);
       startPanLoop();
@@ -608,34 +712,11 @@ export function MapCanvas({
       stopPanLoop();
       pressedPanKeysRef.current.clear();
     };
-  }, []);
+  }, [issueManualMoveToWorld, mapData, selectedWorkerId, terminalFocusedSelected, workers]);
 
   const issueManualMoveOrder = (worker: Worker, point: { x: number; y: number }) => {
-    const target = clampWorldPosition(screenToWorld(point.x, point.y, viewport), mapData);
-    const currentPosition = animatedPositionsRef.current[worker.id] ?? worker.position;
-    const normalizedTarget = {
-      x: Math.round(target.x * 10) / 10,
-      y: Math.round(target.y * 10) / 10
-    };
-
-    moveOrdersRef.current[worker.id] = {
-      waypoints: createCardinalWaypoints(currentPosition, normalizedTarget),
-      waypointIndex: 0,
-      speedPerTick: moveSpeedPerTick,
-      commitOnArrival: true,
-      source: "manual"
-    };
-
-    setAnimatedPositions((current) => {
-      if (current[worker.id]) {
-        return current;
-      }
-
-      return {
-        ...current,
-        [worker.id]: worker.position
-      };
-    });
+    const target = screenToWorld(point.x, point.y, viewport);
+    issueManualMoveToWorld(worker, target);
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
@@ -874,7 +955,7 @@ function drawScene({
   const controlGroupsByWorker = groupControlKeysByWorker(controlGroups);
 
   if (mapData) {
-    drawOutpostTerrain(context, viewport, width, height, mapData, animationTick);
+    drawOutpostTerrain(context, viewport, width, height, mapData);
     drawOutpostObjects(context, viewport, width, height, mapData, animationTick);
   } else {
     const gradient = context.createLinearGradient(0, 0, 0, height);
@@ -1148,8 +1229,7 @@ function drawOutpostTerrain(
   viewport: ViewportState,
   width: number,
   height: number,
-  mapData: LoadedOutpostMap,
-  animationTick: number
+  mapData: LoadedOutpostMap
 ): void {
   const tileSize = mapData.tileSize;
   const worldMinX = (-viewport.offsetX / viewport.scale) - tileSize;
@@ -1390,17 +1470,151 @@ function createCardinalWaypoints(from: WorkerPosition, to: WorkerPosition): Work
 function randomWanderTarget(
   anchor: WorkerPosition,
   tileSize: number,
-  mapData: LoadedOutpostMap | undefined
+  mapData: LoadedOutpostMap | undefined,
+  collisionRects: CollisionRect[]
 ): WorkerPosition {
-  const angle = randomRange(0, Math.PI * 2);
-  const radius = tileSize * randomRange(3, 4);
-  return clampWorldPosition(
-    {
-      x: anchor.x + Math.cos(angle) * radius,
-      y: anchor.y + Math.sin(angle) * radius
-    },
-    mapData
-  );
+  let fallback: WorkerPosition | undefined;
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const angle = randomRange(0, Math.PI * 2);
+    const radius = tileSize * randomRange(2.5, 4);
+    const candidate = clampWorldPosition(
+      {
+        x: anchor.x + Math.cos(angle) * radius,
+        y: anchor.y + Math.sin(angle) * radius
+      },
+      mapData
+    );
+
+    if (isWorldPositionWalkable(candidate, mapData, collisionRects)) {
+      return candidate;
+    }
+
+    if (!fallback) {
+      fallback = candidate;
+    }
+  }
+
+  if (!fallback) {
+    return anchor;
+  }
+
+  return findNearestWalkablePosition(fallback, mapData, collisionRects) ?? anchor;
+}
+
+function buildObjectCollisionRects(mapData: LoadedOutpostMap | undefined): CollisionRect[] {
+  if (!mapData) {
+    return [];
+  }
+
+  const collisionRects: CollisionRect[] = [];
+  for (const placedObject of mapData.objects) {
+    if (nonBlockingObjectTypes.has(placedObject.type)) {
+      continue;
+    }
+
+    const definition = mapData.objectDefinitions[placedObject.type];
+    if (!definition) {
+      continue;
+    }
+
+    const worldX = placedObject.x * mapData.tileSize + mapData.tileSize / 2 - definition.width / 2;
+    const worldY = (placedObject.y + 1) * mapData.tileSize - definition.height;
+    const insetX = Math.max(1, Math.min(6, definition.width * 0.08));
+    const insetY = Math.max(1, Math.min(6, definition.height * 0.08));
+
+    const left = worldX + insetX;
+    const top = worldY + insetY;
+    const right = worldX + definition.width - insetX;
+    const bottom = worldY + definition.height - insetY;
+
+    collisionRects.push({
+      left,
+      top,
+      right,
+      bottom
+    });
+  }
+
+  return collisionRects;
+}
+
+function isWorldPositionWalkable(
+  position: WorkerPosition,
+  mapData: LoadedOutpostMap | undefined,
+  collisionRects: CollisionRect[]
+): boolean {
+  if (!mapData) {
+    return true;
+  }
+
+  const worldWidth = mapData.width * mapData.tileSize;
+  const worldHeight = mapData.height * mapData.tileSize;
+  if (position.x < 14 || position.y < 14 || position.x > worldWidth - 14 || position.y > worldHeight - 14) {
+    return false;
+  }
+
+  const tileX = clamp(Math.floor(position.x / mapData.tileSize), 0, mapData.width - 1);
+  const tileY = clamp(Math.floor(position.y / mapData.tileSize), 0, mapData.height - 1);
+  const terrainValue = mapData.terrain[tileY]?.[tileX] ?? 0;
+  if (blockedTerrainValues.has(terrainValue)) {
+    return false;
+  }
+
+  const workerFootprint: CollisionRect = {
+    left: position.x - 10,
+    top: position.y - 9,
+    right: position.x + 10,
+    bottom: position.y + 7
+  };
+
+  for (const rect of collisionRects) {
+    if (intersectsRect(workerFootprint, rect)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function findNearestWalkablePosition(
+  target: WorkerPosition,
+  mapData: LoadedOutpostMap | undefined,
+  collisionRects: CollisionRect[]
+): WorkerPosition | undefined {
+  if (!mapData) {
+    return target;
+  }
+
+  if (isWorldPositionWalkable(target, mapData, collisionRects)) {
+    return target;
+  }
+
+  const step = Math.max(6, mapData.tileSize * 0.28);
+  const maxRadius = mapData.tileSize * 4;
+
+  for (let radius = step; radius <= maxRadius; radius += step) {
+    for (let directionIndex = 0; directionIndex < 16; directionIndex += 1) {
+      const angle = (Math.PI * 2 * directionIndex) / 16;
+      const candidate = clampWorldPosition(
+        {
+          x: target.x + Math.cos(angle) * radius,
+          y: target.y + Math.sin(angle) * radius
+        },
+        mapData
+      );
+
+      if (isWorldPositionWalkable(candidate, mapData, collisionRects)) {
+        return candidate;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function intersectsRect(a: CollisionRect, b: CollisionRect): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
 function randomRange(min: number, max: number): number {
@@ -1595,6 +1809,21 @@ function clamp(value: number, min: number, max: number): number {
 
 type PanDirection = "up" | "down" | "left" | "right";
 
+function offsetPositionByDirection(position: WorkerPosition, direction: PanDirection, distance: number): WorkerPosition {
+  switch (direction) {
+    case "up":
+      return { x: position.x, y: position.y - distance };
+    case "down":
+      return { x: position.x, y: position.y + distance };
+    case "left":
+      return { x: position.x - distance, y: position.y };
+    case "right":
+      return { x: position.x + distance, y: position.y };
+    default:
+      return position;
+  }
+}
+
 function toPanDirection(key: string): PanDirection | undefined {
   const normalized = key.length === 1 ? key.toLowerCase() : key;
   switch (normalized) {
@@ -1613,6 +1842,15 @@ function toPanDirection(key: string): PanDirection | undefined {
     default:
       return undefined;
   }
+}
+
+function isWasdKey(key: string): boolean {
+  if (key.length !== 1) {
+    return false;
+  }
+
+  const normalized = key.toLowerCase();
+  return normalized === "w" || normalized === "a" || normalized === "s" || normalized === "d";
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

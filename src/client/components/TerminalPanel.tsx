@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
 
+const shiftEnterSequence = "\n";
+
 interface TerminalPanelProps {
   workerId?: string;
   workerName?: string;
@@ -112,6 +114,21 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (!isShiftEnterEvent(event)) {
+        return true;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(shiftEnterSequence);
+      }
+
+      return false;
+    });
     terminal.open(containerRef.current);
 
     terminal.writeln("Select a worker to connect its terminal.");
@@ -223,4 +240,15 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
   }, [focusRequestKey, focusTerminal, workerId]);
 
   return <div className="terminal-panel" ref={containerRef} />;
+}
+
+function isShiftEnterEvent(event: KeyboardEvent): boolean {
+  return (
+    event.type === "keydown" &&
+    event.key === "Enter" &&
+    event.shiftKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey
+  );
 }
