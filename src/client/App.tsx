@@ -15,7 +15,7 @@ import { MapCanvas } from "./components/MapCanvas";
 import { SpawnDialog } from "./components/SpawnDialog";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { resolveSpriteAssetType } from "./sprites/spriteLoader";
-import type { ResolvedConfig, Worker, WorkerSpawnInput, WsServerEvent } from "../shared/types";
+import type { ResolvedConfig, ShortcutConfig, Worker, WorkerSpawnInput, WsServerEvent } from "../shared/types";
 
 type ControlGroupMap = Partial<Record<number, string>>;
 
@@ -23,6 +23,10 @@ interface FadingWorker {
   worker: Worker;
   startedAtMs: number;
 }
+
+type RosterEntry =
+  | { kind: "worker"; worker: Worker }
+  | { kind: "shortcut"; shortcut: ShortcutConfig; shortcutIndex: number };
 
 const controlGroupStorageKey = "overworld.control-groups.v1";
 const layoutSplitStorageKey = "overworld.layout-split.v1";
@@ -71,22 +75,37 @@ export default function App(): JSX.Element {
     [killConfirmWorkerId, workers]
   );
 
+  const summonShortcuts = useMemo(() => config?.shortcuts ?? [], [config]);
+
+  const rosterEntries = useMemo<RosterEntry[]>(
+    () => [
+      ...activeWorkers.map((worker) => ({ kind: "worker", worker }) as const),
+      ...summonShortcuts.map((shortcut, shortcutIndex) => ({ kind: "shortcut", shortcut, shortcutIndex }) as const)
+    ],
+    [activeWorkers, summonShortcuts]
+  );
+
+  const firstSummonEntryIndex = useMemo(() => {
+    const firstIndex = rosterEntries.findIndex((entry) => entry.kind === "shortcut");
+    return firstIndex >= 0 ? firstIndex : undefined;
+  }, [rosterEntries]);
+
   useEffect(() => {
-    if (activeWorkers.length === 0) {
+    if (rosterEntries.length === 0) {
       setRosterActiveIndex(0);
       return;
     }
 
     if (selectedWorkerId) {
-      const selectedIndex = activeWorkers.findIndex((worker) => worker.id === selectedWorkerId);
+      const selectedIndex = rosterEntries.findIndex((entry) => entry.kind === "worker" && entry.worker.id === selectedWorkerId);
       if (selectedIndex >= 0) {
         setRosterActiveIndex(selectedIndex);
       }
       return;
     }
 
-    setRosterActiveIndex((current) => clampNumber(current, 0, activeWorkers.length - 1));
-  }, [activeWorkers, selectedWorkerId]);
+    setRosterActiveIndex((current) => clampNumber(current, 0, rosterEntries.length - 1));
+  }, [rosterEntries, selectedWorkerId]);
 
   useEffect(() => {
     if (!selectedWorkerId) {
@@ -246,6 +265,23 @@ export default function App(): JSX.Element {
     setErrorText(error instanceof Error ? error.message : "Unknown request failure");
   }, []);
 
+  const runSpawn = useCallback(
+    async (input: WorkerSpawnInput) => {
+      try {
+        const worker = await spawnWorker(input);
+        setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
+        setSelectedWorkerId(worker.id);
+        setMapCenterWorkerId(worker.id);
+        setMapCenterToken((current) => current + 1);
+        setSpawnDialogOpen(false);
+        setPaletteOpen(false);
+      } catch (error) {
+        showError(error);
+      }
+    },
+    [showError]
+  );
+
   const requestTerminalFocus = useCallback(() => {
     setTerminalFocusToken((current) => (current ?? 0) + 1);
   }, []);
@@ -373,19 +409,25 @@ export default function App(): JSX.Element {
     [activeWorkers, selectedWorkerId]
   );
 
-  const onSelectRosterIndex = useCallback(
+  const onActivateRosterIndex = useCallback(
     (index: number) => {
-      const worker = activeWorkers[index];
-      if (!worker) {
+      const entry = rosterEntries[index];
+      if (!entry) {
         return;
       }
 
       setRosterActiveIndex(index);
-      setSelectedWorkerId(worker.id);
-      setMapCenterWorkerId(worker.id);
-      setMapCenterToken((current) => current + 1);
+
+      if (entry.kind === "worker") {
+        setSelectedWorkerId(entry.worker.id);
+        setMapCenterWorkerId(entry.worker.id);
+        setMapCenterToken((current) => current + 1);
+        return;
+      }
+
+      void runSpawn({ shortcutIndex: entry.shortcutIndex });
     },
-    [activeWorkers]
+    [rosterEntries, runSpawn]
   );
 
   useEffect(() => {
@@ -463,7 +505,9 @@ export default function App(): JSX.Element {
 
         if (!renameModalOpen && !shortcutsOverlayOpen && !paletteOpen && !spawnDialogOpen && selectedWorkerId) {
           event.preventDefault();
-          const selectedIndex = activeWorkers.findIndex((worker) => worker.id === selectedWorkerId);
+          const selectedIndex = rosterEntries.findIndex(
+            (entry) => entry.kind === "worker" && entry.worker.id === selectedWorkerId
+          );
           if (selectedIndex >= 0) {
             setRosterActiveIndex(selectedIndex);
           }
@@ -571,20 +615,33 @@ export default function App(): JSX.Element {
         return;
       }
 
-      if (!selectedWorkerId && activeWorkers.length > 0 && !isTerminalTarget(event.target)) {
+      if (!selectedWorkerId && rosterEntries.length > 0 && !isTerminalTarget(event.target)) {
         const keyLower = event.key.toLowerCase();
+        if (
+          keyLower === "n" &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          !event.shiftKey &&
+          firstSummonEntryIndex !== undefined
+        ) {
+          event.preventDefault();
+          setRosterActiveIndex(firstSummonEntryIndex);
+          return;
+        }
+
         if ((keyLower === "j" || keyLower === "k") && !event.ctrlKey && !event.metaKey && !event.altKey) {
           event.preventDefault();
           setRosterActiveIndex((current) => {
             const delta = keyLower === "j" ? 1 : -1;
-            return clampNumber(current + delta, 0, activeWorkers.length - 1);
+            return clampNumber(current + delta, 0, rosterEntries.length - 1);
           });
           return;
         }
 
         if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
           event.preventDefault();
-          onSelectRosterIndex(rosterActiveIndex);
+          onActivateRosterIndex(rosterActiveIndex);
           return;
         }
       }
@@ -598,6 +655,12 @@ export default function App(): JSX.Element {
       if (event.key.toLowerCase() === "r" && !event.ctrlKey && !event.metaKey && !event.altKey && selectedWorker) {
         event.preventDefault();
         openRenameForWorker(selectedWorker);
+        return;
+      }
+
+      if (event.key.toLowerCase() === "m" && !event.ctrlKey && !event.metaKey && !event.altKey && selectedWorker) {
+        event.preventDefault();
+        void onToggleMovementModeSelected();
         return;
       }
 
@@ -629,16 +692,19 @@ export default function App(): JSX.Element {
     closeRenameModal,
     cycleSelection,
     escapeTerminalFocus,
+    firstSummonEntryIndex,
     killConfirmWorkerId,
     nudgeMapColumnRatio,
+    onActivateRosterIndex,
     resetMapColumnRatio,
     onKillWorker,
     onKillSelected,
-    onSelectRosterIndex,
+    onToggleMovementModeSelected,
     openRenameForWorker,
     paletteOpen,
     renameModalOpen,
     requestTerminalFocus,
+    rosterEntries,
     rosterActiveIndex,
     selectedWorker,
     selectedWorkerId,
@@ -654,23 +720,6 @@ export default function App(): JSX.Element {
     setSelectedWorkerId(workerId);
     requestTerminalFocus();
   }, [requestTerminalFocus]);
-
-  const runSpawn = useCallback(
-    async (input: WorkerSpawnInput) => {
-      try {
-        const worker = await spawnWorker(input);
-        setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
-        setSelectedWorkerId(worker.id);
-        setMapCenterWorkerId(worker.id);
-        setMapCenterToken((current) => current + 1);
-        setSpawnDialogOpen(false);
-        setPaletteOpen(false);
-      } catch (error) {
-        showError(error);
-      }
-    },
-    [showError]
-  );
 
   const onOpenSelectedInTerminal = useCallback(async () => {
     if (!selectedWorkerId) {
@@ -761,7 +810,7 @@ export default function App(): JSX.Element {
           <div className="terminal-header-title">
             {selectedWorker
               ? `${selectedWorker.displayName ?? selectedWorker.name} (${selectedWorker.status})`
-              : `Workers (${activeWorkers.length})`}
+              : `Agents (${activeWorkers.length})`}
           </div>
 
           {selectedWorker ? (
@@ -787,34 +836,61 @@ export default function App(): JSX.Element {
           />
         ) : (
           <div className="worker-roster">
-            {activeWorkers.length === 0 ? (
-              <div className="worker-roster-empty">No active workers yet. Spawn one from the bottom bar.</div>
+            {rosterEntries.length === 0 ? (
+              <div className="worker-roster-empty">No active agents yet. Summon one from the bottom bar.</div>
             ) : (
-              activeWorkers.map((worker, index) => (
-                <button
-                  key={worker.id}
-                  className={`worker-roster-item ${index === rosterActiveIndex ? "active" : ""}`}
-                  onMouseEnter={() => setRosterActiveIndex(index)}
-                  onClick={() => onSelectRosterIndex(index)}
-                  type="button"
-                >
-                  <div className="worker-roster-main">
-                    <img
-                      className="worker-roster-avatar"
-                      src={`/api/assets/characters/${encodeURIComponent(resolveSpriteAssetType(worker.avatarType))}/rotations/south.png`}
-                      alt=""
-                      loading="lazy"
-                      aria-hidden="true"
-                    />
-                    <div className="worker-roster-text">
-                      <div className="worker-roster-name">{worker.displayName ?? worker.name}</div>
-                      <div className="worker-roster-meta">
-                        {worker.projectId} · {worker.runtimeId} · {worker.status}
+              rosterEntries.map((entry, index) => (
+                <div key={entry.kind === "worker" ? entry.worker.id : `shortcut-${entry.shortcutIndex}-${entry.shortcut.label}`}>
+                  {entry.kind === "shortcut" && (index === 0 || rosterEntries[index - 1]?.kind !== "shortcut") ? (
+                    <div className="worker-roster-section-label">Summon</div>
+                  ) : null}
+
+                  {entry.kind === "worker" ? (
+                    <button
+                      className={`worker-roster-item ${index === rosterActiveIndex ? "active" : ""}`}
+                      onMouseEnter={() => setRosterActiveIndex(index)}
+                      onClick={() => onActivateRosterIndex(index)}
+                      type="button"
+                    >
+                      <div className="worker-roster-main">
+                        <img
+                          className="worker-roster-avatar"
+                          src={`/api/assets/characters/${encodeURIComponent(resolveSpriteAssetType(entry.worker.avatarType))}/rotations/south.png`}
+                          alt=""
+                          loading="lazy"
+                          aria-hidden="true"
+                        />
+                        <div className="worker-roster-text">
+                          <div className="worker-roster-name">{entry.worker.displayName ?? entry.worker.name}</div>
+                          <div className="worker-roster-meta">
+                            {entry.worker.projectId} · {entry.worker.runtimeId} · {entry.worker.status}
+                          </div>
+                          {entry.worker.activityText ? <div className="worker-roster-activity">{entry.worker.activityText}</div> : null}
+                        </div>
                       </div>
-                      {worker.activityText ? <div className="worker-roster-activity">{worker.activityText}</div> : null}
-                    </div>
-                  </div>
-                </button>
+                    </button>
+                  ) : (
+                    <button
+                      className={`worker-roster-item worker-roster-item-summon ${index === rosterActiveIndex ? "active" : ""}`}
+                      onMouseEnter={() => setRosterActiveIndex(index)}
+                      onClick={() => onActivateRosterIndex(index)}
+                      type="button"
+                    >
+                      <div className="worker-roster-main">
+                        <div className="worker-roster-summon-glyph" aria-hidden="true">
+                          +
+                        </div>
+                        <div className="worker-roster-text">
+                          <div className="worker-roster-name">{entry.shortcut.label}</div>
+                          <div className="worker-roster-meta">
+                            {entry.shortcut.project} · {entry.shortcut.runtime}
+                          </div>
+                          <div className="worker-roster-activity">Summon agent</div>
+                        </div>
+                      </div>
+                    </button>
+                  )}
+                </div>
               ))
             )}
           </div>
@@ -861,19 +937,23 @@ export default function App(): JSX.Element {
               </div>
               <div className="shortcut-row">
                 <kbd>Ctrl+1-0</kbd>
-                <span>Assign selected worker to group</span>
+                <span>Assign selected agent to group</span>
               </div>
               <div className="shortcut-row">
                 <kbd>Tab</kbd>
-                <span>Select next worker</span>
+                <span>Select next agent</span>
               </div>
               <div className="shortcut-row">
                 <kbd>Shift+Tab</kbd>
-                <span>Select previous worker</span>
+                <span>Select previous agent</span>
               </div>
               <div className="shortcut-row">
                 <kbd>J / K</kbd>
-                <span>Move selection in roster list</span>
+                <span>Move selection in roster and summon list</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>N</kbd>
+                <span>Jump to summon list</span>
               </div>
               <div className="shortcut-row">
                 <kbd>[ / ] / =</kbd>
@@ -881,15 +961,19 @@ export default function App(): JSX.Element {
               </div>
               <div className="shortcut-row">
                 <kbd>Enter</kbd>
-                <span>Focus terminal for selected worker</span>
+                <span>Activate highlighted item or focus terminal</span>
               </div>
               <div className="shortcut-row">
                 <kbd>Ctrl+]</kbd>
-                <span>Leave terminal focus, then deselect worker</span>
+                <span>Leave terminal focus, then deselect agent</span>
               </div>
               <div className="shortcut-row">
                 <kbd>R</kbd>
-                <span>Rename selected worker</span>
+                <span>Rename selected agent</span>
+              </div>
+              <div className="shortcut-row">
+                <kbd>M</kbd>
+                <span>Toggle mode on selected agent</span>
               </div>
               <div className="shortcut-row">
                 <kbd>K</kbd>

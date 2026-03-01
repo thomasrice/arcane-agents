@@ -14,6 +14,9 @@ interface PaneObservation {
 
 const shellCommands = new Set(["bash", "zsh", "fish", "sh", "nu", "pwsh"]);
 const nonShellIdleAfterMs = 10_000;
+const outputHeartbeatWorkingWindowMs = 12_000;
+const claudeStickyWorkingWindowMs = 45_000;
+const claudeActiveTextHoldWindowMs = 5 * 60_000;
 
 export class StatusMonitor {
   private intervalId: NodeJS.Timeout | undefined;
@@ -132,6 +135,42 @@ export class StatusMonitor {
             derivedActivityPath = parsed.activity.filePath;
           }
         }
+
+        if (
+          derivedStatus === "idle" &&
+          this.shouldKeepWorkingFromHeartbeat(
+            worker,
+            paneState.currentCommand,
+            observation,
+            parsed.activity,
+            activeClaudeTask,
+            derivedActivityText,
+            output
+          )
+        ) {
+          derivedStatus = "working";
+          derivedActivityText = activeClaudeTask ?? derivedActivityText ?? parsed.activity.text ?? worker.activityText;
+          derivedActivityTool = derivedActivityTool ?? parsed.activity.tool ?? "terminal";
+          derivedActivityPath = derivedActivityPath ?? parsed.activity.filePath;
+        }
+
+        if (
+          derivedStatus === "attention" &&
+          this.shouldDowngradeAttentionToWorking(
+            worker,
+            paneState.currentCommand,
+            observation,
+            parsed.activity,
+            activeClaudeTask,
+            derivedActivityText,
+            output
+          )
+        ) {
+          derivedStatus = "working";
+          derivedActivityText = activeClaudeTask ?? derivedActivityText ?? parsed.activity.text ?? worker.activityText;
+          derivedActivityTool = derivedActivityTool ?? parsed.activity.tool ?? "terminal";
+          derivedActivityPath = derivedActivityPath ?? parsed.activity.filePath;
+        }
       }
     } catch {
       derivedStatus = "error";
@@ -230,6 +269,75 @@ export class StatusMonitor {
 
     return "working";
   }
+
+  private shouldKeepWorkingFromHeartbeat(
+    worker: Worker,
+    currentCommand: string,
+    observation: PaneObservation,
+    activity: ParsedActivity,
+    activeClaudeTask: string | undefined,
+    activityText: string | undefined,
+    output: string
+  ): boolean {
+    const now = Date.now();
+    const commandLower = currentCommand.toLowerCase();
+    const likelyClaudeSession = isLikelyClaudeSession(worker, commandLower);
+    const outputQuietForMs = now - observation.lastOutputChangeAtMs;
+
+    if (
+      likelyClaudeSession &&
+      hasActiveWorkActivityText(activityText) &&
+      !hasWaitingActivityText(activityText) &&
+      !hasClaudePromptSignal(output) &&
+      outputQuietForMs <= claudeActiveTextHoldWindowMs
+    ) {
+      return true;
+    }
+
+    const heartbeatWindowMs = likelyClaudeSession ? claudeStickyWorkingWindowMs : outputHeartbeatWorkingWindowMs;
+    if (outputQuietForMs > heartbeatWindowMs) {
+      return false;
+    }
+
+    if (!shellCommands.has(commandLower)) {
+      return true;
+    }
+
+    if (activeClaudeTask) {
+      return true;
+    }
+
+    if (likelyClaudeSession) {
+      return true;
+    }
+
+    if (worker.status === "working") {
+      return true;
+    }
+
+    return Boolean(activity.filePath || activity.tool || activity.text);
+  }
+
+  private shouldDowngradeAttentionToWorking(
+    worker: Worker,
+    currentCommand: string,
+    observation: PaneObservation,
+    activity: ParsedActivity,
+    activeClaudeTask: string | undefined,
+    activityText: string | undefined,
+    output: string
+  ): boolean {
+    if (activity.needsInput) {
+      return false;
+    }
+
+    const normalizedActivityText = (activityText ?? "").toLowerCase();
+    if (normalizedActivityText.includes("waiting for your answer")) {
+      return false;
+    }
+
+    return this.shouldKeepWorkingFromHeartbeat(worker, currentCommand, observation, activity, activeClaudeTask, activityText, output);
+  }
 }
 
 function outputSignature(output: string): string {
@@ -257,4 +365,49 @@ function extractClaudeActiveTask(output: string): string | undefined {
   }
 
   return undefined;
+}
+
+function isLikelyClaudeSession(worker: Worker, commandLower: string): boolean {
+  if (worker.runtimeId.toLowerCase().includes("claude")) {
+    return true;
+  }
+
+  const runtimeBinary = worker.command[0]?.toLowerCase() ?? "";
+  if (runtimeBinary.includes("claude")) {
+    return true;
+  }
+
+  return commandLower.includes("claude");
+}
+
+function hasActiveWorkActivityText(activityText: string | undefined): boolean {
+  if (!activityText) {
+    return false;
+  }
+
+  const normalized = activityText.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /^(reading|editing|writing|running:|searching|subtask:|using|fetching|planning|responding)/.test(normalized);
+}
+
+function hasWaitingActivityText(activityText: string | undefined): boolean {
+  if (!activityText) {
+    return false;
+  }
+
+  const normalized = activityText.trim().toLowerCase();
+  return normalized.includes("waiting for your answer") || normalized.includes("waiting for approval");
+}
+
+function hasClaudePromptSignal(output: string): boolean {
+  const lines = output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(-10);
+
+  return lines.some((line) => line.startsWith("❯"));
 }

@@ -218,6 +218,15 @@ body {
   overflow: auto;
 }
 
+.worker-roster-section-label {
+  margin: 4px 2px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(229, 237, 211, 0.76);
+}
+
 .worker-roster-item {
   border: 1px solid rgba(208, 224, 181, 0.22);
   border-radius: 9px;
@@ -261,6 +270,34 @@ body {
 .worker-roster-item.active {
   border-color: rgba(239, 244, 212, 0.74);
   background: rgba(53, 80, 64, 0.92);
+}
+
+.worker-roster-item.worker-roster-item-summon {
+  background: rgba(28, 42, 34, 0.9);
+}
+
+.worker-roster-item.worker-roster-item-summon:hover {
+  background: rgba(40, 63, 50, 0.92);
+}
+
+.worker-roster-item.worker-roster-item-summon.active {
+  border-color: rgba(157, 229, 176, 0.84);
+  background: rgba(52, 86, 67, 0.94);
+}
+
+.worker-roster-summon-glyph {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid rgba(170, 227, 186, 0.44);
+  background: rgba(40, 70, 54, 0.95);
+  color: #e8f7de;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  flex: 0 0 auto;
 }
 
 .worker-roster-name {

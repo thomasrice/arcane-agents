@@ -37,6 +37,15 @@ export interface LoadedOutpostMap {
       image?: HTMLImageElement;
     }
   >;
+  animatedObjectDefinitions: Record<
+    string,
+    {
+      width: number;
+      height: number;
+      frames: HTMLImageElement[];
+      frameCount: number;
+    }
+  >;
   baseGrassTile?: HTMLImageElement;
   tilesetsByTerrain: Record<number, LoadedWangTileset>;
 }
@@ -130,6 +139,7 @@ async function loadOutpostMap(): Promise<LoadedOutpostMap> {
   const objectDefinitions = await fetchJson<Record<string, RawObjectDefinition>>("/api/assets/objects/objects.json");
 
   const loadedObjectDefinitions = await loadObjectDefinitions(objectDefinitions);
+  const animatedObjectDefinitions = await loadAnimatedObjectDefinitions(objectDefinitions);
   const tilesetsByTerrain = await loadTilesetsByTerrain(rawMap);
 
   const baseGrassTile =
@@ -147,6 +157,7 @@ async function loadOutpostMap(): Promise<LoadedOutpostMap> {
     spawnArea: rawMap.spawnArea,
     objects: rawMap.objects,
     objectDefinitions: loadedObjectDefinitions,
+    animatedObjectDefinitions,
     baseGrassTile,
     tilesetsByTerrain
   };
@@ -219,6 +230,44 @@ async function loadObjectDefinitions(
   );
 
   return Object.fromEntries(entries);
+}
+
+// Hero animated objects - objects that have looping animations
+const ANIMATED_OBJECT_TYPES = ['campfire', 'torch', 'water'];
+
+async function loadAnimatedObjectDefinitions(
+  objectDefinitions: Record<string, RawObjectDefinition>
+): Promise<LoadedOutpostMap["animatedObjectDefinitions"]> {
+  const animatedDefs: LoadedOutpostMap["animatedObjectDefinitions"] = {};
+  
+  for (const objectType of ANIMATED_OBJECT_TYPES) {
+    const dimensions = objectDefinitions[objectType === 'water' ? 'oak-tree' : objectType]; // Use oak-tree dims for water tiles
+    if (!dimensions) continue;
+    
+    const frameDir = objectType === 'water' ? 'water-animated' : `${objectType}-animated`;
+    const frames: HTMLImageElement[] = [];
+    
+    // Try to load up to 16 frames
+    for (let i = 0; i < 16; i++) {
+      const frame = await loadImage(`/api/assets/objects/${frameDir}/${i}.png`);
+      if (frame) {
+        frames.push(frame);
+      } else {
+        break;
+      }
+    }
+    
+    if (frames.length > 0) {
+      animatedDefs[objectType] = {
+        width: dimensions.width,
+        height: dimensions.height,
+        frames,
+        frameCount: frames.length
+      };
+    }
+  }
+  
+  return animatedDefs;
 }
 
 async function loadTileImage(basePath: string, tileId: string, tileName: string): Promise<HTMLImageElement | null> {

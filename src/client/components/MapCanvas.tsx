@@ -874,8 +874,8 @@ function drawScene({
   const controlGroupsByWorker = groupControlKeysByWorker(controlGroups);
 
   if (mapData) {
-    drawOutpostTerrain(context, viewport, width, height, mapData);
-    drawOutpostObjects(context, viewport, width, height, mapData);
+    drawOutpostTerrain(context, viewport, width, height, mapData, animationTick);
+    drawOutpostObjects(context, viewport, width, height, mapData, animationTick);
   } else {
     const gradient = context.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, "#7fc08b");
@@ -1148,7 +1148,8 @@ function drawOutpostTerrain(
   viewport: ViewportState,
   width: number,
   height: number,
-  mapData: LoadedOutpostMap
+  mapData: LoadedOutpostMap,
+  animationTick: number
 ): void {
   const tileSize = mapData.tileSize;
   const worldMinX = (-viewport.offsetX / viewport.scale) - tileSize;
@@ -1206,7 +1207,8 @@ function drawOutpostObjects(
   viewport: ViewportState,
   width: number,
   height: number,
-  mapData: LoadedOutpostMap
+  mapData: LoadedOutpostMap,
+  animationTick: number
 ): void {
   const drawObjects = [...mapData.objects].sort((a, b) => a.y - b.y || a.x - b.x);
   const worldMinX = (-viewport.offsetX / viewport.scale) - 128;
@@ -1215,7 +1217,11 @@ function drawOutpostObjects(
   const worldMaxY = ((height - viewport.offsetY) / viewport.scale) + 128;
 
   for (const placedObject of drawObjects) {
-    const definition = mapData.objectDefinitions[placedObject.type];
+    // Check for animated version first
+    const animatedDef = mapData.animatedObjectDefinitions[placedObject.type];
+    const staticDef = mapData.objectDefinitions[placedObject.type];
+    
+    const definition = staticDef;
     if (!definition) {
       continue;
     }
@@ -1236,6 +1242,17 @@ function drawOutpostObjects(
     const drawWidth = definition.width * viewport.scale;
     const drawHeight = definition.height * viewport.scale;
 
+    // Use animated frame if available
+    if (animatedDef && animatedDef.frames.length > 0) {
+      const frameIndex = animationTick % animatedDef.frames.length;
+      const frame = animatedDef.frames[frameIndex];
+      if (frame) {
+        context.drawImage(frame, screen.x, screen.y, drawWidth, drawHeight);
+        continue;
+      }
+    }
+
+    // Fall back to static image
     if (definition.image) {
       context.drawImage(definition.image, screen.x, screen.y, drawWidth, drawHeight);
       continue;
