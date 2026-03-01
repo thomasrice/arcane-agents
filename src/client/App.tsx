@@ -1056,10 +1056,6 @@ export default function App(): JSX.Element {
                 <span>Activate highlighted item or focus terminal</span>
               </div>
               <div className="shortcut-row">
-                <kbd>Shift+Enter</kbd>
-                <span>Insert newline in OpenCode prompt</span>
-              </div>
-              <div className="shortcut-row">
                 <kbd>Ctrl+] / Ctrl+D</kbd>
                 <span>Leave terminal focus, then deselect agent</span>
               </div>

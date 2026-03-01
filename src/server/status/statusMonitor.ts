@@ -117,7 +117,10 @@ export class StatusMonitor {
           derivedActivityTool = transcriptSnapshot.activityTool ?? parsed.activity.tool;
           derivedActivityPath = transcriptSnapshot.activityPath ?? parsed.activity.filePath;
 
-          if (derivedStatus === "idle" && activeClaudeTask) {
+          if (
+            derivedStatus === "idle" &&
+            this.shouldPromoteIdleFromActiveClaudeTask(worker, paneState.currentCommand, observation, activeClaudeTask)
+          ) {
             derivedStatus = "working";
             derivedActivityText = activeClaudeTask;
             derivedActivityTool = "terminal";
@@ -125,7 +128,15 @@ export class StatusMonitor {
           }
         } else {
           derivedStatus = this.resolveFallbackStatus(parsed.status, paneState.currentCommand, observation, parsed.activity);
-          if (derivedStatus === "idle" && activeClaudeTask) {
+          const hasClaudeProgressSignal = isLikelyClaudeSession(worker, currentCommandLower) && hasClaudeLiveProgressSignal(output);
+          if (isLikelyClaudeSession(worker, currentCommandLower) && !activeClaudeTask && !hasClaudeProgressSignal) {
+            derivedStatus = parsed.activity.needsInput ? "attention" : "idle";
+          }
+
+          if (
+            derivedStatus === "idle" &&
+            this.shouldPromoteIdleFromActiveClaudeTask(worker, paneState.currentCommand, observation, activeClaudeTask)
+          ) {
             derivedStatus = "working";
             derivedActivityText = activeClaudeTask;
             derivedActivityTool = "terminal";
@@ -197,6 +208,16 @@ export class StatusMonitor {
           derivedActivityText = derivedActivityText ?? runtimeActivityText ?? activeClaudeTask ?? parsed.activity.text ?? worker.activityText;
           derivedActivityTool = derivedActivityTool ?? parsed.activity.tool ?? "terminal";
           derivedActivityPath = derivedActivityPath ?? parsed.activity.filePath;
+        }
+
+        if (
+          derivedStatus === "working" &&
+          this.shouldForceIdleOnStaleClaudeProgress(worker, paneState.currentCommand, observation, derivedActivityText)
+        ) {
+          derivedStatus = "idle";
+          derivedActivityText = undefined;
+          derivedActivityTool = undefined;
+          derivedActivityPath = undefined;
         }
 
         if (derivedStatus === "working" && isLikelyOpenCodeSession(worker, currentCommandLower)) {
@@ -342,15 +363,15 @@ export class StatusMonitor {
       return false;
     }
 
+    if (likelyClaudeSession) {
+      return Boolean(activeClaudeTask || hasClaudeProgressSignal);
+    }
+
     if (!shellCommands.has(commandLower)) {
       return true;
     }
 
     if (activeClaudeTask) {
-      return true;
-    }
-
-    if (likelyClaudeSession) {
       return true;
     }
 
@@ -390,6 +411,24 @@ export class StatusMonitor {
       (Boolean(activity.tool) && activity.tool !== "terminal");
 
     return !hasStrongActivitySignal;
+  }
+
+  private shouldPromoteIdleFromActiveClaudeTask(
+    worker: Worker,
+    currentCommand: string,
+    observation: PaneObservation,
+    activeClaudeTask: string | undefined
+  ): boolean {
+    if (!activeClaudeTask) {
+      return false;
+    }
+
+    if (!isLikelyClaudeSession(worker, currentCommand.toLowerCase())) {
+      return true;
+    }
+
+    const outputQuietForMs = Date.now() - observation.lastOutputChangeAtMs;
+    return outputQuietForMs <= claudeStickyWorkingWindowMs;
   }
 
   private shouldForceIdleOnOpenCodePrompt(
@@ -443,6 +482,34 @@ export class StatusMonitor {
     }
 
     return this.shouldKeepWorkingFromHeartbeat(worker, currentCommand, observation, activity, activeClaudeTask, activityText, output);
+  }
+
+  private shouldForceIdleOnStaleClaudeProgress(
+    worker: Worker,
+    currentCommand: string,
+    observation: PaneObservation,
+    activityText: string | undefined
+  ): boolean {
+    if (!isLikelyClaudeSession(worker, currentCommand.toLowerCase())) {
+      return false;
+    }
+
+    if (!activityText) {
+      return false;
+    }
+
+    const normalized = activityText.trim();
+    if (!normalized) {
+      return false;
+    }
+
+    const looksLikeTransientProgress = isGenericClaudeProgressLabel(normalized) || /\bfor\s+\d+\s*[ms]\b/i.test(normalized);
+    if (!looksLikeTransientProgress) {
+      return false;
+    }
+
+    const outputQuietForMs = Date.now() - observation.lastOutputChangeAtMs;
+    return outputQuietForMs > claudeStickyWorkingWindowMs;
   }
 }
 
@@ -563,7 +630,7 @@ function isGenericClaudeProgressLabel(text: string): boolean {
     .replace(/[.…]+$/, "")
     .toLowerCase();
 
-  return /^(?:whirring|thinking|saut[eé]ed)\b/.test(normalized);
+  return /^(?:whirring|thinking|saut[eé]ed|churned|baked|accomplishing|conversation compacted)\b/.test(normalized);
 }
 
 function hasOpenCodePromptSignal(output: string): boolean {

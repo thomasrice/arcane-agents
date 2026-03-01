@@ -32,9 +32,14 @@ export interface LoadedOutpostMap {
     y: number;
     width: number;
     height: number;
+    clusterId: number;
     clusterCenterX: number;
     clusterCenterY: number;
     clusterRadius: number;
+    clusterBoundsX: number;
+    clusterBoundsY: number;
+    clusterBoundsWidth: number;
+    clusterBoundsHeight: number;
     isCluster: boolean;
     cellCount: number;
   }>;
@@ -674,10 +679,12 @@ function parseLogicAmbientFlameRects(
     clusters.push(cluster);
   }
 
-  // Convert clusters to rects with unified properties
+  // Convert clusters to flame cells, each carrying shared cluster metadata.
+  // Keeping per-cell rects preserves fine-grained flicker at all zoom levels.
   const rects: LoadedOutpostMap["ambientFlameRects"] = [];
 
-  for (const cluster of clusters) {
+  for (let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex += 1) {
+    const cluster = clusters[clusterIndex];
     // Compute center of mass
     let centerX = 0, centerY = 0, totalArea = 0;
     for (const cell of cluster) {
@@ -700,21 +707,36 @@ function parseLogicAmbientFlameRects(
       maxDist = Math.max(maxDist, dist);
     }
 
-    // Add padding for glow
-    const padding = maxDist * 0.3;
-    const boundsSize = (maxDist + padding) * 2;
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const clusterCell of cluster) {
+      minX = Math.min(minX, clusterCell.x);
+      minY = Math.min(minY, clusterCell.y);
+      maxX = Math.max(maxX, clusterCell.x + clusterCell.width);
+      maxY = Math.max(maxY, clusterCell.y + clusterCell.height);
+    }
 
-    rects.push({
-      x: centerX - maxDist - padding,
-      y: centerY - maxDist - padding,
-      width: boundsSize,
-      height: boundsSize,
-      clusterCenterX: centerX,
-      clusterCenterY: centerY,
-      clusterRadius: maxDist,
-      isCluster: cluster.length > 1,
-      cellCount: cluster.length
-    });
+    for (const cell of cluster) {
+
+      rects.push({
+        x: cell.x,
+        y: cell.y,
+        width: cell.width,
+        height: cell.height,
+        clusterId: clusterIndex,
+        clusterCenterX: centerX,
+        clusterCenterY: centerY,
+        clusterRadius: maxDist,
+        clusterBoundsX: minX,
+        clusterBoundsY: minY,
+        clusterBoundsWidth: maxX - minX,
+        clusterBoundsHeight: maxY - minY,
+        isCluster: cluster.length > 1,
+        cellCount: cluster.length
+      });
+    }
   }
 
   return rects;

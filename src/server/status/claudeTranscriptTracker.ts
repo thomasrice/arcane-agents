@@ -7,6 +7,7 @@ const claudeProjectRoot = path.join(os.homedir(), ".claude", "projects");
 const bootstrapTailBytes = 196_608;
 const textIdleDelayMs = 5_000;
 const permissionIdleDelayMs = 12_000;
+const activeToolStaleAfterMs = 45_000;
 const maxRecentTranscriptAgeMs = 3 * 24 * 60 * 60 * 1000;
 
 const bashCommandDisplayMaxLength = 72;
@@ -154,7 +155,7 @@ function buildSnapshot(state: ClaudeTranscriptState, nowMs: number): ClaudeStatu
     return undefined;
   }
 
-  const activeTools = listActiveTools(state);
+  const activeTools = listFreshActiveTools(state, nowMs);
   const mostRecentTool = activeTools.reduce<ActiveToolEntry | undefined>((latest, current) => {
     if (!latest) {
       return current;
@@ -732,6 +733,24 @@ function listActiveTools(state: ClaudeTranscriptState): ActiveToolEntry[] {
   }
 
   return entries;
+}
+
+function listFreshActiveTools(state: ClaudeTranscriptState, nowMs: number): ActiveToolEntry[] {
+  const entries = listActiveTools(state);
+  if (entries.length === 0) {
+    return entries;
+  }
+
+  if (state.lastEventAtMs <= 0) {
+    return entries;
+  }
+
+  const transcriptQuietForMs = nowMs - state.lastEventAtMs;
+  if (transcriptQuietForMs <= activeToolStaleAfterMs) {
+    return entries;
+  }
+
+  return entries.filter((entry) => nowMs - entry.lastProgressAtMs <= activeToolStaleAfterMs);
 }
 
 function clearActiveTools(state: ClaudeTranscriptState): void {
