@@ -15,7 +15,8 @@ export function createHttpApp(context: ServerContext): express.Express {
 
   registerApiRoutes(app, {
     orchestrator: context.orchestrator,
-    hub: context.hub
+    hub: context.hub,
+    statusMonitor: context.statusMonitor
   });
 
   const clientDistPath = path.resolve(process.cwd(), "dist/client");

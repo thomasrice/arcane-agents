@@ -1,15 +1,17 @@
 import type express from "express";
 import { RealtimeHub } from "../../ws/realtimeHub";
 import { OrchestratorService } from "../../orchestrator/orchestratorService";
+import type { StatusMonitor } from "../../status/statusMonitor";
 import { handleRequestError } from "../errorResponse";
 import { parseBroadcastInput, parseSpawnInput } from "../requestParsers";
 
 interface RegisterApiRoutesDeps {
   orchestrator: OrchestratorService;
   hub: RealtimeHub;
+  statusMonitor: StatusMonitor;
 }
 
-export function registerApiRoutes(app: express.Express, { orchestrator, hub }: RegisterApiRoutesDeps): void {
+export function registerApiRoutes(app: express.Express, { orchestrator, hub, statusMonitor }: RegisterApiRoutesDeps): void {
   app.get("/api/health", (_req, res) => {
     res.json({
       ok: true,
@@ -24,6 +26,34 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub }: R
   app.get("/api/workers", (_req, res) => {
     res.json({
       workers: orchestrator.listWorkers()
+    });
+  });
+
+  app.get("/api/status-debug", (_req, res) => {
+    res.json({
+      workers: statusMonitor.listWorkerStatusDebug()
+    });
+  });
+
+  app.get("/api/workers/:workerId/status-debug", (req, res) => {
+    const debug = statusMonitor.getWorkerStatusDebug(req.params.workerId);
+    if (!debug) {
+      res.status(404).json({
+        error: `No status debug snapshot found for worker '${req.params.workerId}'.`
+      });
+      return;
+    }
+
+    res.json({
+      ...debug,
+      transitions: statusMonitor.getWorkerStatusHistory(req.params.workerId)
+    });
+  });
+
+  app.get("/api/workers/:workerId/status-history", (req, res) => {
+    res.json({
+      workerId: req.params.workerId,
+      transitions: statusMonitor.getWorkerStatusHistory(req.params.workerId)
     });
   });
 

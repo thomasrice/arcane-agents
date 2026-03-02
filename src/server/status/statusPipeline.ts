@@ -4,6 +4,7 @@ import { capturePaneLineCount } from "./runtimeSignals";
 import { evaluateWorkerStatus } from "./statusEvaluator";
 import { observePane, type PaneObservation } from "./paneObservation";
 import { ClaudeTranscriptTracker } from "./claudeTranscriptTracker";
+import type { StatusDecisionFacts, StatusReason } from "./engine/types";
 
 export interface WorkerStatusSignals {
   currentCommand: string;
@@ -17,6 +18,9 @@ export interface WorkerStatusEvaluation {
   activityText: Worker["activityText"];
   activityTool: Worker["activityTool"];
   activityPath: Worker["activityPath"];
+  confidence: number;
+  reasons: StatusReason[];
+  facts: StatusDecisionFacts;
 }
 
 interface CollectWorkerStatusSignalsInput {
