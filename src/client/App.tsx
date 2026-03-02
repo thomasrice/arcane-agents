@@ -683,7 +683,32 @@ export default function App(): JSX.Element {
     setRallyCommandResultText(undefined);
 
     try {
-      const result = await broadcastWorkerInput(workerIds, rallyCommandDraft, true);
+      const hasNameTemplate = rallyCommandDraft.includes("$NAME");
+      const result = hasNameTemplate
+        ? mergeBroadcastInputResults(
+            await Promise.all(
+              selectedWorkers.map(async (worker) => {
+                const command = rallyCommandDraft.replace(/\$NAME/g, worker.displayName ?? worker.name);
+                try {
+                  return await broadcastWorkerInput([worker.id], command, true);
+                } catch (error) {
+                  return {
+                    requestedCount: 1,
+                    deliveredWorkerIds: [],
+                    skippedWorkerIds: [],
+                    failed: [
+                      {
+                        workerId: worker.id,
+                        error: error instanceof Error ? error.message : "Failed to send input"
+                      }
+                    ]
+                  };
+                }
+              })
+            )
+          )
+        : await broadcastWorkerInput(workerIds, rallyCommandDraft, true);
+
       setRallyCommandDraft("");
       setRallyCommandResultText(formatRallyCommandResult(result));
     } catch (error) {
@@ -698,8 +723,12 @@ export default function App(): JSX.Element {
       return;
     }
 
-    openRenameForWorkers(selectedWorkers);
-  }, [openRenameForWorkers, selectedWorkers]);
+    const focusedGroupWorker =
+      selectedWorkers.length > 1
+        ? selectedWorkers.find((worker) => worker.id === focusedSelectedWorkerId)
+        : undefined;
+    openRenameForWorkers(focusedGroupWorker ? [focusedGroupWorker] : selectedWorkers);
+  }, [focusedSelectedWorkerId, openRenameForWorkers, selectedWorkers]);
 
   const onPositionCommit = useCallback(
     (workerId: string, position: { x: number; y: number }) => {
@@ -913,12 +942,12 @@ export default function App(): JSX.Element {
                     void onSendRallyCommand();
                   }
                 }}
-                placeholder="Type once, send to all selected agents..."
+                placeholder="Type once, send to all selected agents (use $NAME for per-agent names)..."
                 disabled={rallyCommandSending}
                 rows={3}
               />
               <div className="rally-command-actions">
-                <div className="rally-command-hint">Enter sends, Shift+Enter adds a new line</div>
+                <div className="rally-command-hint">Enter sends, Shift+Enter adds a new line, $NAME inserts each agent's name</div>
                 <button
                   className="bar-btn"
                   type="submit"
@@ -1388,6 +1417,24 @@ function formatRallyCommandResult(result: BroadcastInputResult): string {
   }
 
   return segments.join(" ");
+}
+
+function mergeBroadcastInputResults(results: BroadcastInputResult[]): BroadcastInputResult {
+  return results.reduce<BroadcastInputResult>(
+    (merged, result) => {
+      merged.requestedCount += result.requestedCount;
+      merged.deliveredWorkerIds.push(...result.deliveredWorkerIds);
+      merged.skippedWorkerIds.push(...result.skippedWorkerIds);
+      merged.failed.push(...result.failed);
+      return merged;
+    },
+    {
+      requestedCount: 0,
+      deliveredWorkerIds: [],
+      skippedWorkerIds: [],
+      failed: []
+    }
+  );
 }
 
 function parseControlGroupDigit(event: KeyboardEvent): number | undefined {

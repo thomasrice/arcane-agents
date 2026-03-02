@@ -428,7 +428,11 @@ export function useAppHotkeys({
 
       if (event.key.toLowerCase() === "r" && !event.ctrlKey && !event.metaKey && !event.altKey && selectedWorkers.length > 0) {
         event.preventDefault();
-        openRenameForWorkers(selectedWorkers);
+        const focusedGroupWorker =
+          selectedWorkers.length > 1
+            ? selectedWorkers.find((worker) => worker.id === focusedSelectedWorkerId)
+            : undefined;
+        openRenameForWorkers(focusedGroupWorker ? [focusedGroupWorker] : selectedWorkers);
         return;
       }
 
