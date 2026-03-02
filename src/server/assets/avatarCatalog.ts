@@ -27,7 +27,7 @@ export function listAvailableAvatarTypes(assetsRoot = path.resolve(process.cwd()
     .sort((a, b) => a.localeCompare(b));
 }
 
-export function hasRequiredAvatarFiles(assetsRoot: string, avatarType: string): boolean {
+function hasRequiredAvatarFiles(assetsRoot: string, avatarType: string): boolean {
   return requiredAvatarFiles.every((relativeFilePath) => {
     return fs.existsSync(path.join(assetsRoot, avatarType, relativeFilePath));
   });

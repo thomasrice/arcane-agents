@@ -1,5 +1,3 @@
-import type { WorkerPosition } from "../../shared/types";
-
 export interface ViewportState {
   scale: number;
   offsetX: number;
@@ -38,21 +36,6 @@ export function screenToWorld(screenX: number, screenY: number, viewport: Viewpo
     x: (screenX - viewport.offsetX) / viewport.scale,
     y: (screenY - viewport.offsetY) / viewport.scale
   };
-}
-
-export function offsetPositionByDirection(position: WorkerPosition, direction: PanDirection, distance: number): WorkerPosition {
-  switch (direction) {
-    case "up":
-      return { x: position.x, y: position.y - distance };
-    case "down":
-      return { x: position.x, y: position.y + distance };
-    case "left":
-      return { x: position.x - distance, y: position.y };
-    case "right":
-      return { x: position.x + distance, y: position.y };
-    default:
-      return position;
-  }
 }
 
 export function toPanDirection(key: string): PanDirection | undefined {

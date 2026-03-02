@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 
-export function expandHomePath(inputPath: string): string {
+function expandHomePath(inputPath: string): string {
   if (inputPath === "~") {
     return os.homedir();
   }

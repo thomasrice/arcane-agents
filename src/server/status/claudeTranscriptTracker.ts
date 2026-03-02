@@ -20,7 +20,6 @@ interface ActiveToolEntry {
   statusText: string;
   activityTool?: ActivityTool;
   activityPath?: string;
-  startedAtMs: number;
   lastProgressAtMs: number;
 }
 
@@ -33,7 +32,6 @@ interface ClaudeTranscriptState {
   activeTools: Map<string, ActiveToolEntry>;
   activeSubagentTools: Map<string, Map<string, ActiveToolEntry>>;
   waiting: boolean;
-  hadToolsInTurn: boolean;
   lastEventAtMs: number;
   busyUntilMs: number;
   lastActivityText?: string;
@@ -95,7 +93,6 @@ export class ClaudeTranscriptTracker {
       activeTools: new Map(),
       activeSubagentTools: new Map(),
       waiting: false,
-      hadToolsInTurn: false,
       lastEventAtMs: 0,
       busyUntilMs: 0,
       lastActivityText: undefined,
@@ -397,7 +394,6 @@ function processAssistantRecord(state: ClaudeTranscriptState, record: Record<str
 
   if (hasToolUse) {
     state.waiting = false;
-    state.hadToolsInTurn = true;
     state.busyUntilMs = nowMs + textIdleDelayMs;
     return;
   }
@@ -440,9 +436,6 @@ function processUserRecord(state: ClaudeTranscriptState, record: Record<string, 
     if (hasToolResult) {
       state.waiting = false;
       state.busyUntilMs = nowMs + textIdleDelayMs;
-      if (state.activeTools.size === 0) {
-        state.hadToolsInTurn = false;
-      }
       return;
     }
 
@@ -467,7 +460,6 @@ function processUserRecord(state: ClaudeTranscriptState, record: Record<string, 
     if (hasPromptText) {
       clearActiveTools(state);
       state.waiting = false;
-      state.hadToolsInTurn = false;
       state.busyUntilMs = nowMs + textIdleDelayMs;
       setLastActivity(state, "Responding", "terminal", undefined);
     }
@@ -478,7 +470,6 @@ function processUserRecord(state: ClaudeTranscriptState, record: Record<string, 
   if (typeof content === "string" && content.trim().length > 0) {
     clearActiveTools(state);
     state.waiting = false;
-    state.hadToolsInTurn = false;
     state.busyUntilMs = nowMs + textIdleDelayMs;
     setLastActivity(state, "Responding", "terminal", undefined);
   }
@@ -491,7 +482,6 @@ function processSystemRecord(state: ClaudeTranscriptState, record: Record<string
 
   clearActiveTools(state);
   state.waiting = true;
-  state.hadToolsInTurn = false;
   state.busyUntilMs = 0;
   state.lastActivityText = undefined;
   state.lastActivityTool = undefined;
@@ -598,7 +588,6 @@ function createActiveToolEntry(toolName: string, input: Record<string, unknown>,
     statusText: formatToolStatus(normalizedTool, toolName, input, activityPath),
     activityTool: mapActivityTool(normalizedTool),
     activityPath,
-    startedAtMs: nowMs,
     lastProgressAtMs: nowMs
   };
 }
@@ -764,7 +753,6 @@ function resetTranscriptState(state: ClaudeTranscriptState): void {
   state.initialized = false;
   state.seenTranscriptRecord = false;
   state.waiting = false;
-  state.hadToolsInTurn = false;
   state.lastEventAtMs = 0;
   state.busyUntilMs = 0;
   state.lastActivityText = undefined;
