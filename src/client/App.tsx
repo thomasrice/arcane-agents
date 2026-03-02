@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  broadcastWorkerInput,
   fetchConfig,
   fetchWorkers,
   openWorkerInTerminal,
@@ -15,6 +16,7 @@ import { MapCanvas } from "./components/MapCanvas";
 import { SpawnDialog } from "./components/SpawnDialog";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { resolveSpriteAssetType } from "./sprites/spriteLoader";
+import type { BroadcastInputResult } from "./api";
 import type { ResolvedConfig, ShortcutConfig, Worker, WorkerSpawnInput, WsServerEvent } from "../shared/types";
 
 type ControlGroupMap = Partial<Record<number, string[]>>;
@@ -64,6 +66,9 @@ export default function App(): JSX.Element {
   const [killConfirmWorkerIds, setKillConfirmWorkerIds] = useState<string[]>([]);
   const [renameDraft, setRenameDraft] = useState("");
   const [renameTargetWorkerIds, setRenameTargetWorkerIds] = useState<string[]>([]);
+  const [rallyCommandDraft, setRallyCommandDraft] = useState("");
+  const [rallyCommandSending, setRallyCommandSending] = useState(false);
+  const [rallyCommandResultText, setRallyCommandResultText] = useState<string | undefined>(undefined);
   const [errorText, setErrorText] = useState<string | undefined>(undefined);
   const [fadingWorkers, setFadingWorkers] = useState<FadingWorker[]>([]);
   const [mapColumnRatio, setMapColumnRatio] = useState<number>(() => loadMapColumnRatioFromStorage());
@@ -74,6 +79,7 @@ export default function App(): JSX.Element {
   const [workersHydrated, setWorkersHydrated] = useState(false);
   const [controlGroups, setControlGroups] = useState<ControlGroupMap>(() => loadControlGroupsFromStorage());
   const controlGroupByDigitRef = useRef<ControlGroupMap>(controlGroups);
+  const rallyCommandInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const activeWorkers = useMemo(() => workers.filter((worker) => worker.status !== "stopped"), [workers]);
   const idleWorkers = useMemo(() => activeWorkers.filter((worker) => worker.status === "idle"), [activeWorkers]);
@@ -100,6 +106,7 @@ export default function App(): JSX.Element {
 
   const terminalWorker = selectedWorker ?? (selectedWorkers.length > 1 ? focusedSelectedWorker : undefined);
   const terminalWorkerId = terminalWorker?.id;
+  const inSelectedGroupView = selectedWorkers.length > 1 && !terminalWorker;
 
   const renameTargetWorkers = useMemo(() => {
     if (renameTargetWorkerIds.length === 0) {
@@ -160,6 +167,8 @@ export default function App(): JSX.Element {
     if (selectedWorkers.length <= 1) {
       setSelectedGroupActiveIndex(0);
       setFocusedSelectedWorkerId(undefined);
+      setRallyCommandDraft("");
+      setRallyCommandResultText(undefined);
       return;
     }
 
@@ -335,6 +344,18 @@ export default function App(): JSX.Element {
     activeElement.blur();
     const mapCanvas = document.querySelector<HTMLCanvasElement>(".map-canvas");
     mapCanvas?.focus();
+    return true;
+  }, []);
+
+  const focusRallyCommandInput = useCallback((): boolean => {
+    const input = rallyCommandInputRef.current;
+    if (!input) {
+      return false;
+    }
+
+    input.focus();
+    const cursor = input.value.length;
+    input.setSelectionRange(cursor, cursor);
     return true;
   }, []);
 
@@ -864,8 +885,16 @@ export default function App(): JSX.Element {
         return;
       }
 
+      const keyLower = event.key.toLowerCase();
+      const killViaK =
+        keyLower === "k" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        (!inSelectedGroupView ? !event.shiftKey : event.shiftKey);
+
       if (
-        (event.key.toLowerCase() === "k" || event.key === "Delete") &&
+        (killViaK || event.key === "Delete") &&
         !event.ctrlKey &&
         !event.metaKey &&
         !event.altKey &&
@@ -877,7 +906,14 @@ export default function App(): JSX.Element {
       }
 
       if (selectedWorkers.length > 1 && !isTerminalTarget(event.target)) {
-        const keyLower = event.key.toLowerCase();
+        if (inSelectedGroupView && keyLower === "c" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+          const focused = focusRallyCommandInput();
+          if (focused) {
+            event.preventDefault();
+          }
+          return;
+        }
+
         if ((keyLower === "j" || keyLower === "k") && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
           event.preventDefault();
           const delta = keyLower === "j" ? 1 : -1;
@@ -986,7 +1022,9 @@ export default function App(): JSX.Element {
     cycleIdleSelection,
     cycleSelection,
     escapeTerminalFocus,
+    focusRallyCommandInput,
     firstSummonEntryIndex,
+    inSelectedGroupView,
     killConfirmWorkerIds,
     nudgeMapColumnRatio,
     onActivateRosterIndex,
@@ -1038,6 +1076,35 @@ export default function App(): JSX.Element {
       showError(error);
     }
   }, [showError, terminalWorkerId]);
+
+  const onSendRallyCommand = useCallback(async () => {
+    if (rallyCommandSending) {
+      return;
+    }
+
+    const workerIds = selectedWorkers.map((worker) => worker.id);
+    if (workerIds.length <= 1) {
+      return;
+    }
+
+    if (rallyCommandDraft.length === 0) {
+      setRallyCommandResultText("Enter a command to broadcast.");
+      return;
+    }
+
+    setRallyCommandSending(true);
+    setRallyCommandResultText(undefined);
+
+    try {
+      const result = await broadcastWorkerInput(workerIds, rallyCommandDraft, true);
+      setRallyCommandDraft("");
+      setRallyCommandResultText(formatRallyCommandResult(result));
+    } catch (error) {
+      showError(error);
+    } finally {
+      setRallyCommandSending(false);
+    }
+  }, [rallyCommandDraft, rallyCommandSending, selectedWorkers, showError]);
 
   const onRenameSelected = useCallback(() => {
     if (selectedWorkers.length === 0) {
@@ -1173,6 +1240,56 @@ export default function App(): JSX.Element {
                 </div>
               </button>
             ))}
+
+            <form
+              className="rally-command-card"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void onSendRallyCommand();
+              }}
+            >
+              <div className="rally-command-header">
+                <div className="rally-command-title">Rally Command</div>
+                <div className="rally-command-count">{selectedWorkers.length} agents</div>
+              </div>
+              <textarea
+                ref={rallyCommandInputRef}
+                className="input rally-command-input"
+                value={rallyCommandDraft}
+                onChange={(event) => {
+                  setRallyCommandDraft(event.target.value);
+                  if (rallyCommandResultText) {
+                    setRallyCommandResultText(undefined);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.ctrlKey &&
+                    !event.metaKey &&
+                    !event.altKey
+                  ) {
+                    event.preventDefault();
+                    void onSendRallyCommand();
+                  }
+                }}
+                placeholder="Type once, send to all selected agents..."
+                disabled={rallyCommandSending}
+                rows={3}
+              />
+              <div className="rally-command-actions">
+                <div className="rally-command-hint">Enter sends, Shift+Enter adds a new line</div>
+                <button
+                  className="bar-btn"
+                  type="submit"
+                  disabled={rallyCommandSending || rallyCommandDraft.length === 0}
+                >
+                  {rallyCommandSending ? "Sending..." : `Send to ${selectedWorkers.length}`}
+                </button>
+              </div>
+              {rallyCommandResultText ? <div className="rally-command-result">{rallyCommandResultText}</div> : null}
+            </form>
           </div>
         ) : terminalWorker ? (
           <TerminalPanel
@@ -1304,6 +1421,10 @@ export default function App(): JSX.Element {
                 <span>Move selection in roster and summon list</span>
               </div>
               <div className="shortcut-row">
+                <kbd>C</kbd>
+                <span>Focus Rally Command input (selected group view)</span>
+              </div>
+              <div className="shortcut-row">
                 <kbd>N</kbd>
                 <span>Jump to summon list</span>
               </div>
@@ -1337,7 +1458,7 @@ export default function App(): JSX.Element {
               </div>
               <div className="shortcut-row">
                 <kbd>K</kbd>
-                <span>Open kill confirm (then Enter)</span>
+                <span>Open kill confirm (Shift+K in selected group view)</span>
               </div>
               <div className="shortcut-row">
                 <kbd>Shift+K</kbd>
@@ -1838,6 +1959,26 @@ function formatShortcutSummonActivityText(hotkeys: string[] | undefined): string
   }
 
   return `Summon agent · ${displayHotkeys.join(" / ")}`;
+}
+
+function formatRallyCommandResult(result: BroadcastInputResult): string {
+  const sentCount = result.deliveredWorkerIds.length;
+  const skippedCount = result.skippedWorkerIds.length;
+  const failedCount = result.failed.length;
+
+  if (sentCount === result.requestedCount && skippedCount === 0 && failedCount === 0) {
+    return `Sent to ${sentCount} ${sentCount === 1 ? "agent" : "agents"}.`;
+  }
+
+  const segments = [`Sent ${sentCount}/${result.requestedCount}.`];
+  if (skippedCount > 0) {
+    segments.push(`Skipped ${skippedCount}.`);
+  }
+  if (failedCount > 0) {
+    segments.push(`Failed ${failedCount}.`);
+  }
+
+  return segments.join(" ");
 }
 
 function parseControlGroupDigit(event: KeyboardEvent): number | undefined {

@@ -1,5 +1,15 @@
 import type { ResolvedConfig, Worker, WorkerSpawnInput } from "../shared/types";
 
+export interface BroadcastInputResult {
+  requestedCount: number;
+  deliveredWorkerIds: string[];
+  skippedWorkerIds: string[];
+  failed: Array<{
+    workerId: string;
+    error: string;
+  }>;
+}
+
 async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
     headers: {
@@ -81,6 +91,17 @@ export function removeWorker(workerId: string): Promise<void> {
 export function openWorkerInTerminal(workerId: string): Promise<{ ok: true }> {
   return requestJson<{ ok: true }>(`/api/workers/${workerId}/open-terminal`, {
     method: "POST"
+  });
+}
+
+export function broadcastWorkerInput(workerIds: string[], text: string, submit = true): Promise<BroadcastInputResult> {
+  return requestJson<BroadcastInputResult>("/api/workers/broadcast-input", {
+    method: "POST",
+    body: JSON.stringify({
+      workerIds,
+      text,
+      submit
+    })
   });
 }
 

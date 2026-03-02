@@ -29,6 +29,10 @@ interface StopOptions {
   background?: boolean;
 }
 
+interface SendInputOptions {
+  submit?: boolean;
+}
+
 export interface ManagedWindow {
   window: string;
   pane: string;
@@ -235,6 +239,33 @@ export class TmuxAdapter {
         resolve();
       });
     });
+  }
+
+  async sendInput(ref: TmuxRef, text: string, options?: SendInputOptions): Promise<void> {
+    const target = this.target(ref);
+    const exists = await this.windowExists(ref);
+    if (!exists) {
+      throw new Error(`Cannot send input: tmux target '${target}' is not available.`);
+    }
+
+    const normalizedText = text.replace(/\r\n?/g, "\n");
+    if (normalizedText.length > 0) {
+      const lines = normalizedText.split("\n");
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index] ?? "";
+        if (line.length > 0) {
+          await this.runTmux(["send-keys", "-t", target, "-l", line]);
+        }
+
+        if (index < lines.length - 1) {
+          await this.runTmux(["send-keys", "-t", target, "Enter"]);
+        }
+      }
+    }
+
+    if (options?.submit ?? true) {
+      await this.runTmux(["send-keys", "-t", target, "Enter"]);
+    }
   }
 
   async capturePane(ref: TmuxRef, lines = 30): Promise<string> {

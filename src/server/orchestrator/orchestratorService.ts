@@ -39,6 +39,20 @@ interface OutpostMapSpec {
   spawnArea?: SpawnAreaSpec;
 }
 
+interface BroadcastInputOptions {
+  submit?: boolean;
+}
+
+export interface BroadcastInputResult {
+  requestedCount: number;
+  deliveredWorkerIds: string[];
+  skippedWorkerIds: string[];
+  failed: Array<{
+    workerId: string;
+    error: string;
+  }>;
+}
+
 const outpostSpawnSpec = loadOutpostSpawnSpec();
 const spawnSeparationDistancePx = 52;
 
@@ -217,6 +231,40 @@ export class OrchestratorService {
   async openInExternalTerminal(workerId: string): Promise<void> {
     const worker = this.requireWorker(workerId);
     await this.tmux.openInExternalTerminal(worker.tmuxRef, worker.id);
+  }
+
+  async broadcastInput(workerIds: string[], text: string, options?: BroadcastInputOptions): Promise<BroadcastInputResult> {
+    const uniqueWorkerIds = Array.from(new Set(workerIds));
+    const deliveredWorkerIds: string[] = [];
+    const skippedWorkerIds: string[] = [];
+    const failed: BroadcastInputResult["failed"] = [];
+
+    for (const workerId of uniqueWorkerIds) {
+      const worker = this.workers.getWorker(workerId);
+      if (!worker || worker.status === "stopped") {
+        skippedWorkerIds.push(workerId);
+        continue;
+      }
+
+      try {
+        await this.tmux.sendInput(worker.tmuxRef, text, {
+          submit: options?.submit
+        });
+        deliveredWorkerIds.push(workerId);
+      } catch (error) {
+        failed.push({
+          workerId,
+          error: error instanceof Error ? error.message : "Failed to send input"
+        });
+      }
+    }
+
+    return {
+      requestedCount: uniqueWorkerIds.length,
+      deliveredWorkerIds,
+      skippedWorkerIds,
+      failed
+    };
   }
 
   async reconcileWithTmux(): Promise<{ updatedWorkers: Worker[]; adoptedWorkers: Worker[]; removedWorkerIds: string[] }> {
