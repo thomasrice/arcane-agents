@@ -135,51 +135,6 @@ export class OrchestratorService {
     return workerId;
   }
 
-  async restart(workerId: string): Promise<Worker> {
-    const worker = this.requireWorker(workerId);
-    await this.tmux.stop(worker.tmuxRef).catch(() => undefined);
-
-    const project = this.config.projects[worker.projectId];
-    if (!project) {
-      throw new Error(`Cannot restart worker '${workerId}': project '${worker.projectId}' is no longer configured.`);
-    }
-
-    const runtime = this.config.runtimes[worker.runtimeId];
-    if (!runtime) {
-      throw new Error(`Cannot restart worker '${workerId}': runtime '${worker.runtimeId}' is no longer configured.`);
-    }
-
-    const launchCommand = withClaudeSessionId(worker.runtimeId, worker.command);
-    const shortId = worker.id.slice(0, 4);
-    const windowName = this.makeWindowName(project.shortName, worker.runtimeId, shortId);
-    const tmuxRef = await this.tmux.spawnWorker({
-      workerId: worker.id,
-      windowName,
-      projectPath: project.path,
-      command: launchCommand,
-      projectId: worker.projectId,
-      runtimeId: worker.runtimeId,
-      runtimeLabel: runtime.label
-    });
-
-    const updated: Worker = {
-      ...worker,
-      name: windowName,
-        projectPath: project.path,
-        runtimeLabel: runtime.label,
-        status: "idle",
-        activityText: undefined,
-        activityTool: undefined,
-        activityPath: undefined,
-        command: launchCommand,
-        tmuxRef,
-        updatedAt: new Date().toISOString()
-      };
-
-    this.workers.saveWorker(updated);
-    return updated;
-  }
-
   updatePosition(workerId: string, position: WorkerPosition): Worker {
     const updated = this.workers.updatePosition(workerId, position);
     if (!updated) {
@@ -209,19 +164,6 @@ export class OrchestratorService {
     }
 
     return updated;
-  }
-
-  async remove(workerId: string): Promise<boolean> {
-    const worker = this.workers.getWorker(workerId);
-    if (!worker) {
-      return false;
-    }
-
-    if (worker.status !== "stopped") {
-      await this.tmux.stop(worker.tmuxRef, { background: true }).catch(() => undefined);
-    }
-
-    return this.workers.deleteWorker(workerId);
   }
 
   async openInExternalTerminal(workerId: string): Promise<void> {

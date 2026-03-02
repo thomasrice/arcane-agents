@@ -80,31 +80,6 @@ async function bootstrap(): Promise<void> {
     res.json(orchestrator.getConfig());
   });
 
-  app.get("/api/config/projects", (_req, res) => {
-    const projects = Object.entries(orchestrator.getConfig().projects).map(([id, project]) => ({
-      id,
-      ...project
-    }));
-    res.json({
-      projects
-    });
-  });
-
-  app.post("/api/config/rediscover", async (_req, res) => {
-    try {
-      const discovery = await discoveryService.discover(baseConfig);
-      const config = orchestrator.setDiscoveredProjects(discovery.projects);
-      res.json({
-        discovered: Object.entries(config.projects)
-          .filter(([, project]) => project.source === "discovered")
-          .map(([id, project]) => ({ id, ...project })),
-        warnings: discovery.warnings
-      });
-    } catch (error) {
-      handleRequestError(res, error);
-    }
-  });
-
   app.get("/api/workers", (_req, res) => {
     res.json({
       workers: orchestrator.listWorkers()
@@ -127,16 +102,6 @@ async function bootstrap(): Promise<void> {
       const workerId = await orchestrator.stop(req.params.workerId);
       hub.broadcast({ type: "worker-removed", workerId });
       res.json({ ok: true, workerId });
-    } catch (error) {
-      handleRequestError(res, error);
-    }
-  });
-
-  app.post("/api/workers/:workerId/restart", async (req, res) => {
-    try {
-      const worker = await orchestrator.restart(req.params.workerId);
-      hub.broadcast({ type: "worker-updated", worker });
-      res.json(worker);
     } catch (error) {
       handleRequestError(res, error);
     }
@@ -183,21 +148,6 @@ async function bootstrap(): Promise<void> {
       const worker = orchestrator.setMovementMode(req.params.workerId, movementMode);
       hub.broadcast({ type: "worker-updated", worker });
       res.json(worker);
-    } catch (error) {
-      handleRequestError(res, error);
-    }
-  });
-
-  app.delete("/api/workers/:workerId", async (req, res) => {
-    try {
-      const removed = await orchestrator.remove(req.params.workerId);
-      if (!removed) {
-        res.status(404).json({ error: "Worker not found." });
-        return;
-      }
-
-      hub.broadcast({ type: "worker-removed", workerId: req.params.workerId });
-      res.status(204).send();
     } catch (error) {
       handleRequestError(res, error);
     }

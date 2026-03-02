@@ -55,12 +55,6 @@ export function stopWorker(workerId: string): Promise<{ ok: true; workerId: stri
   });
 }
 
-export function restartWorker(workerId: string): Promise<Worker> {
-  return requestJson<Worker>(`/api/workers/${workerId}/restart`, {
-    method: "POST"
-  });
-}
-
 export function updateWorkerPosition(workerId: string, x: number, y: number): Promise<Worker> {
   return requestJson<Worker>(`/api/workers/${workerId}/position`, {
     method: "PATCH",
@@ -82,12 +76,6 @@ export function setWorkerMovementMode(workerId: string, movementMode: "hold" | "
   });
 }
 
-export function removeWorker(workerId: string): Promise<void> {
-  return requestJson<void>(`/api/workers/${workerId}`, {
-    method: "DELETE"
-  });
-}
-
 export function openWorkerInTerminal(workerId: string): Promise<{ ok: true }> {
   return requestJson<{ ok: true }>(`/api/workers/${workerId}/open-terminal`, {
     method: "POST"
@@ -102,20 +90,5 @@ export function broadcastWorkerInput(workerIds: string[], text: string, submit =
       text,
       submit
     })
-  });
-}
-
-export function rediscoverProjects(): Promise<{
-  discovered: Array<{
-    id: string;
-    path: string;
-    shortName: string;
-    source?: "config" | "discovered";
-    label?: string;
-  }>;
-  warnings: string[];
-}> {
-  return requestJson("/api/config/rediscover", {
-    method: "POST"
   });
 }
