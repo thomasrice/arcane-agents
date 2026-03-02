@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import type { Worker, WorkerPosition } from "../../shared/types";
-import { useOutpostMap } from "../map/tileMapLoader";
+import { useOutpostMap, type LoadedOutpostMap } from "../map/tileMapLoader";
 import {
   buildBlockedTileSet,
   clampWorldPosition,
@@ -23,7 +23,6 @@ import {
   isEditableTarget,
   isInsideViewport,
   isWasdKey,
-  offsetPositionByDirection,
   screenToWorld,
   toPanDirection,
   worldToScreen,
@@ -92,7 +91,8 @@ const moveSpeedPerTick = 9;
 const movementIntervalMs = 95;
 const walkAnimationIntervalMs = 72;
 const keyboardPanSpeedPerSecond = 520;
-const keyboardMoveStepTiles = 0.75;
+const keyboardMoveUnitsPerSecond = (moveSpeedPerTick * 1000) / movementIntervalMs;
+const keyboardMoveCommitIntervalMs = 160;
 const pointerPanDragThreshold = 4;
 const defaultZoomScale = 1.45;
 const recenterVisibilityPaddingPx = 56;
@@ -125,10 +125,17 @@ export function MapCanvas({
   const moveOrdersRef = useRef<Record<string, MoveOrder>>({});
   const wanderStateRef = useRef<Record<string, WanderState>>({});
   const animatedPositionsRef = useRef<Record<string, WorkerPosition>>({});
+  const workersRef = useRef<Worker[]>(workers);
+  const mapDataRef = useRef<LoadedOutpostMap | undefined>(undefined);
   const panDragRef = useRef<PanDragState | null>(null);
   const pressedPanKeysRef = useRef<Set<PanDirection>>(new Set());
   const panRafRef = useRef<number | null>(null);
   const lastPanFrameRef = useRef<number | null>(null);
+  const pressedMoveKeysRef = useRef<Set<PanDirection>>(new Set());
+  const moveRafRef = useRef<number | null>(null);
+  const lastMoveFrameRef = useRef<number | null>(null);
+  const lastKeyboardMoveCommitAtRef = useRef(0);
+  const pendingKeyboardMoveCommitIdsRef = useRef<Set<string>>(new Set());
   const activityOverlayAnimationRef = useRef<Record<string, ActivityOverlayAnimationState>>({});
   const multiSelectedWorkerIdsRef = useRef<Set<string>>(new Set(selectedWorkerId ? [selectedWorkerId] : []));
 
@@ -210,6 +217,14 @@ export function MapCanvas({
   useEffect(() => {
     animatedPositionsRef.current = animatedPositions;
   }, [animatedPositions]);
+
+  useEffect(() => {
+    workersRef.current = workers;
+  }, [workers]);
+
+  useEffect(() => {
+    mapDataRef.current = mapData;
+  }, [mapData]);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -760,6 +775,111 @@ export function MapCanvas({
     [blockedTileKeys, mapData]
   );
 
+  const commitWorkerPositions = useCallback(
+    (workerIds: Iterable<string>, positions: Record<string, WorkerPosition>) => {
+      const activeWorkerIds = new Set(workersRef.current.map((worker) => worker.id));
+      for (const workerId of workerIds) {
+        if (!activeWorkerIds.has(workerId)) {
+          continue;
+        }
+
+        const position = positions[workerId];
+        if (!position) {
+          continue;
+        }
+
+        onPositionCommit(workerId, {
+          x: Math.round(position.x * 10) / 10,
+          y: Math.round(position.y * 10) / 10
+        });
+      }
+    },
+    [onPositionCommit]
+  );
+
+  const flushPendingKeyboardMoveCommits = useCallback(() => {
+    if (pendingKeyboardMoveCommitIdsRef.current.size === 0) {
+      return;
+    }
+
+    const commitIds = Array.from(pendingKeyboardMoveCommitIdsRef.current);
+    pendingKeyboardMoveCommitIdsRef.current.clear();
+    lastKeyboardMoveCommitAtRef.current = performance.now();
+    commitWorkerPositions(commitIds, animatedPositionsRef.current);
+  }, [commitWorkerPositions]);
+
+  const nudgeSelectedWorkers = useCallback(
+    (deltaX: number, deltaY: number): boolean => {
+      const selectedIds = Array.from(multiSelectedWorkerIdsRef.current);
+      if (selectedIds.length === 0) {
+        return false;
+      }
+
+      const mapData = mapDataRef.current;
+      const workersById = new Map(workersRef.current.map((worker) => [worker.id, worker]));
+      const nextPositions = { ...animatedPositionsRef.current };
+      const movedWorkerIds: string[] = [];
+      let changed = false;
+      const now = performance.now();
+
+      for (const workerId of selectedIds) {
+        const worker = workersById.get(workerId);
+        if (!worker) {
+          continue;
+        }
+
+        const currentPosition = nextPositions[workerId] ?? worker.position;
+        const targetPosition = clampWorldPosition(
+          {
+            x: currentPosition.x + deltaX,
+            y: currentPosition.y + deltaY
+          },
+          mapData
+        );
+
+        if (mapData && !isWorldPositionWalkable(targetPosition, mapData)) {
+          continue;
+        }
+
+        if (Math.hypot(targetPosition.x - currentPosition.x, targetPosition.y - currentPosition.y) < 0.01) {
+          continue;
+        }
+
+        movedWorkerIds.push(workerId);
+        nextPositions[workerId] = targetPosition;
+        changed = true;
+
+        delete moveOrdersRef.current[workerId];
+        const wanderState = wanderStateRef.current[workerId];
+        if (wanderState) {
+          wanderState.anchor = { ...targetPosition };
+          wanderState.nextMoveAfterMs = now + randomRange(900, 1800);
+        }
+      }
+
+      if (!changed) {
+        return false;
+      }
+
+      animatedPositionsRef.current = nextPositions;
+      setAnimatedPositions(nextPositions);
+
+      for (const workerId of movedWorkerIds) {
+        pendingKeyboardMoveCommitIdsRef.current.add(workerId);
+      }
+
+      if (now - lastKeyboardMoveCommitAtRef.current >= keyboardMoveCommitIntervalMs) {
+        const commitIds = Array.from(pendingKeyboardMoveCommitIdsRef.current);
+        pendingKeyboardMoveCommitIdsRef.current.clear();
+        lastKeyboardMoveCommitAtRef.current = now;
+        commitWorkerPositions(commitIds, nextPositions);
+      }
+
+      return true;
+    },
+    [commitWorkerPositions]
+  );
+
   useEffect(() => {
     const stopPanLoop = () => {
       if (panRafRef.current !== null) {
@@ -767,6 +887,42 @@ export function MapCanvas({
         panRafRef.current = null;
       }
       lastPanFrameRef.current = null;
+    };
+
+    const stopMoveLoop = () => {
+      if (moveRafRef.current !== null) {
+        cancelAnimationFrame(moveRafRef.current);
+        moveRafRef.current = null;
+      }
+      lastMoveFrameRef.current = null;
+    };
+
+    const movementVector = (pressed: Set<PanDirection>): { x: number; y: number } | undefined => {
+      let xAxis = 0;
+      let yAxis = 0;
+
+      if (pressed.has("left")) {
+        xAxis -= 1;
+      }
+      if (pressed.has("right")) {
+        xAxis += 1;
+      }
+      if (pressed.has("up")) {
+        yAxis -= 1;
+      }
+      if (pressed.has("down")) {
+        yAxis += 1;
+      }
+
+      if (xAxis === 0 && yAxis === 0) {
+        return undefined;
+      }
+
+      const vectorLength = Math.hypot(xAxis, yAxis);
+      return {
+        x: xAxis / vectorLength,
+        y: yAxis / vectorLength
+      };
     };
 
     const panStep = (timestamp: number) => {
@@ -812,12 +968,43 @@ export function MapCanvas({
       panRafRef.current = requestAnimationFrame(panStep);
     };
 
+    const moveStep = (timestamp: number) => {
+      const pressed = pressedMoveKeysRef.current;
+      if (pressed.size === 0) {
+        stopMoveLoop();
+        return;
+      }
+
+      const lastFrame = lastMoveFrameRef.current ?? (timestamp - 1000 / 60);
+      const deltaSeconds = Math.min(0.05, (timestamp - lastFrame) / 1000);
+      lastMoveFrameRef.current = timestamp;
+
+      const vector = movementVector(pressed);
+      if (vector) {
+        const speed = keyboardMoveUnitsPerSecond * deltaSeconds;
+        const deltaX = vector.x * speed;
+        const deltaY = vector.y * speed;
+
+        nudgeSelectedWorkers(deltaX, deltaY);
+      }
+
+      moveRafRef.current = requestAnimationFrame(moveStep);
+    };
+
     const startPanLoop = () => {
       if (panRafRef.current !== null) {
         return;
       }
       lastPanFrameRef.current = null;
       panRafRef.current = requestAnimationFrame(panStep);
+    };
+
+    const startMoveLoop = () => {
+      if (moveRafRef.current !== null) {
+        return;
+      }
+      lastMoveFrameRef.current = null;
+      moveRafRef.current = requestAnimationFrame(moveStep);
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -833,21 +1020,30 @@ export function MapCanvas({
       const wasdKey = isWasdKey(event.key);
 
       if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && wasdKey) {
-        if (terminalFocusedSelected || !selectedWorkerId) {
-          return;
-        }
-
-        const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId);
-        if (!selectedWorker) {
+        if (isTerminalPanelTarget(event.target) || multiSelectedWorkerIdsRef.current.size === 0) {
           return;
         }
 
         event.preventDefault();
+        const facingDirection = panDirectionToFacing(direction);
+        for (const workerId of multiSelectedWorkerIdsRef.current) {
+          workerFacingRef.current[workerId] = facingDirection;
+        }
 
-        const currentPosition = animatedPositionsRef.current[selectedWorker.id] ?? selectedWorker.position;
-        const stepSize = (mapData?.tileSize ?? 32) * keyboardMoveStepTiles;
-        const targetPosition = offsetPositionByDirection(currentPosition, direction, stepSize);
-        issueManualMoveToWorld(selectedWorker, targetPosition);
+        const pressed = pressedMoveKeysRef.current;
+        const alreadyPressed = pressed.has(direction);
+        pressed.add(direction);
+
+        if (!alreadyPressed) {
+          const vector = movementVector(pressed);
+          if (vector) {
+            const immediateDeltaSeconds = 1 / 60;
+            const immediateDistance = keyboardMoveUnitsPerSecond * immediateDeltaSeconds;
+            nudgeSelectedWorkers(vector.x * immediateDistance, vector.y * immediateDistance);
+          }
+        }
+
+        startMoveLoop();
         return;
       }
 
@@ -866,6 +1062,14 @@ export function MapCanvas({
         return;
       }
 
+      if (isWasdKey(event.key)) {
+        pressedMoveKeysRef.current.delete(direction);
+        if (pressedMoveKeysRef.current.size === 0) {
+          stopMoveLoop();
+          flushPendingKeyboardMoveCommits();
+        }
+      }
+
       pressedPanKeysRef.current.delete(direction);
       if (pressedPanKeysRef.current.size === 0) {
         stopPanLoop();
@@ -874,7 +1078,10 @@ export function MapCanvas({
 
     const onBlur = () => {
       pressedPanKeysRef.current.clear();
+      pressedMoveKeysRef.current.clear();
       stopPanLoop();
+      stopMoveLoop();
+      flushPendingKeyboardMoveCommits();
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -886,9 +1093,12 @@ export function MapCanvas({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
       stopPanLoop();
+      stopMoveLoop();
       pressedPanKeysRef.current.clear();
+      pressedMoveKeysRef.current.clear();
+      flushPendingKeyboardMoveCommits();
     };
-  }, [issueManualMoveToWorld, mapData, selectedWorkerId, terminalFocusedSelected, workers]);
+  }, [flushPendingKeyboardMoveCommits, nudgeSelectedWorkers]);
 
   const issueManualMoveOrder = (worker: Worker, point: { x: number; y: number }) => {
     const target = screenToWorld(point.x, point.y, viewport);
@@ -921,7 +1131,8 @@ export function MapCanvas({
 
         const targetWorld = screenToWorld(point.x, point.y, viewport);
         const columns = Math.ceil(Math.sqrt(selectedWorkers.length));
-        const spacing = Math.max((mapData?.tileSize ?? 32) * 1.28, workerPersonalSpacePx * 1.45);
+        const tileSize = mapData?.tileSize ?? 32;
+        const spacing = Math.max(tileSize * 2.2, spriteBaseSize + 8, workerPersonalSpacePx * 2.2);
 
         for (let index = 0; index < selectedWorkers.length; index += 1) {
           const worker = selectedWorkers[index];
@@ -1220,6 +1431,25 @@ export function MapCanvas({
       ) : null}
     </div>
   );
+}
+
+function isTerminalPanelTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && Boolean(target.closest(".terminal-panel"));
+}
+
+function panDirectionToFacing(direction: PanDirection): SpriteDirection {
+  switch (direction) {
+    case "up":
+      return "north";
+    case "down":
+      return "south";
+    case "left":
+      return "west";
+    case "right":
+      return "east";
+    default:
+      return "south";
+  }
 }
 
 function randomRange(min: number, max: number): number {
