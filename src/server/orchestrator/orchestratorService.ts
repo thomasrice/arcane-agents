@@ -115,7 +115,7 @@ export class OrchestratorService {
       command: launchCommand,
       status: "idle",
       avatarType: this.nextAvatar(plan.avatar),
-      movementMode: "wander",
+      movementMode: "hold",
       position: this.nextSpawnPosition(),
       tmuxRef,
       createdAt: now,
