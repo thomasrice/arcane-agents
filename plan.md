@@ -273,19 +273,15 @@ shortcuts:
   - label: PA
     project: personal-assistant
     runtime: opencode
-    icon: shield
   - label: Lab
     project: labyrinth
     runtime: claude
-    icon: scroll
   - label: Taur
     project: taurient
     runtime: claude
-    icon: sword
   - label: Obs
     project: obsidian
     runtime: claude
-    icon: book
 
 # Profiles: named presets for less common combos (available via palette and custom spawn)
 profiles:
@@ -363,7 +359,7 @@ This is heuristic and tool-specific but good enough for visual indicators. Falls
 
 - `Project`: `id`, `name`, `path`, `shortName`, `source` (config | discovered)
 - `Runtime`: `id`, `name`, `command`, `args`, `env`
-- `Shortcut`: `label`, `projectId`, `runtimeId`, `icon`, `avatar`
+- `Shortcut`: `label`, `projectId`, `runtimeId`, `avatar`
 - `Profile`: `id`, `projectId`, `runtimeId`, `label`, `command` (override), `avatar`
 - `Worker`: `id`, `projectId`, `runtimeId`, `profileId?`, `status`, `activityText`, `avatarType`, `position` (map x,y), `tmuxRef`, `createdAt`, `lastActivityAt`
 - `TmuxRef`: `session`, `window`, `pane`

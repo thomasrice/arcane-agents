@@ -29,19 +29,18 @@ shortcuts:
   - label: PA
     project: personal-assistant
     runtime: opencode
-    icon: shield
+    hotkeys: ["Ctrl+A"]
   - label: Lab
     project: labyrinth
     runtime: claude
-    icon: scroll
+    hotkeys: ["Ctrl+Shift+A"]
   - label: Taur
     project: taurient
     runtime: claude
-    icon: sword
+    hotkeys: ["Ctrl+S"]
   - label: Obs
     project: obsidian
     runtime: claude
-    icon: book
 
 profiles:
   kairos:

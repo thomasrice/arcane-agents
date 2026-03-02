@@ -33,8 +33,8 @@ export interface ShortcutConfig {
   label: string;
   project: string;
   runtime: string;
-  icon?: string;
   avatar?: AvatarType;
+  hotkeys?: string[];
 }
 
 export interface ProfileConfig {

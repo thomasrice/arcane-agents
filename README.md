@@ -65,6 +65,7 @@ Note: config is loaded at server startup. Changes to `config.yaml` require a ser
 ## Shortcuts vs Profiles
 
 - `shortcuts`: quick spawn entries shown in the bottom bar and summon list.
+- `shortcuts` can optionally define `hotkeys` (for example `"Ctrl+A"`, `"Ctrl+Shift+A"`) to spawn from the keyboard in non-terminal contexts.
 - `profiles`: named spawn presets mainly used via the command palette (`/`), with optional command/avatar overrides.
 
 ## Restarting The Server

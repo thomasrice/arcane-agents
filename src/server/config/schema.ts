@@ -19,8 +19,8 @@ const shortcutSchema = z.object({
   label: z.string().min(1),
   project: z.string().min(1),
   runtime: z.string().min(1),
-  icon: z.string().min(1).optional(),
-  avatar: avatarSchema.optional()
+  avatar: avatarSchema.optional(),
+  hotkeys: z.array(z.string().min(1)).optional()
 });
 
 const profileSchema = z.object({
@@ -103,8 +103,7 @@ export function createDefaultConfig(): ResolvedConfig {
       {
         label: "OW",
         project: "overworld",
-        runtime: "shell",
-        icon: "camp"
+        runtime: "shell"
       }
     ],
     profiles: {},
