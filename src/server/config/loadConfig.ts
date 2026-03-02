@@ -60,9 +60,10 @@ export function loadResolvedConfig(paths = getOverworldPaths()): ResolvedConfig 
     discovery: normalizedDiscovery
   };
 
-  validateReferences(finalConfig);
+  const normalizedShortcutConfig = normalizeShortcutProjectReferences(finalConfig);
+  validateReferences(normalizedShortcutConfig);
 
-  return finalConfig;
+  return normalizedShortcutConfig;
 }
 
 function readConfigFile(filePath: string): JsonObject {
@@ -110,4 +111,43 @@ function validateReferences(config: ResolvedConfig): void {
       throw new Error(`Shortcut '${shortcut.label}' references unknown runtime '${shortcut.runtime}'.`);
     }
   }
+}
+
+function normalizeShortcutProjectReferences(config: ResolvedConfig): ResolvedConfig {
+  const projectIdsByShortName = new Map<string, string[]>();
+  for (const [projectId, project] of Object.entries(config.projects)) {
+    const existing = projectIdsByShortName.get(project.shortName);
+    if (existing) {
+      existing.push(projectId);
+    } else {
+      projectIdsByShortName.set(project.shortName, [projectId]);
+    }
+  }
+
+  const normalizedShortcuts = config.shortcuts.map((shortcut) => {
+    if (config.projects[shortcut.project]) {
+      return shortcut;
+    }
+
+    const projectIdMatches = projectIdsByShortName.get(shortcut.project);
+    if (!projectIdMatches || projectIdMatches.length === 0) {
+      return shortcut;
+    }
+
+    if (projectIdMatches.length > 1) {
+      throw new Error(
+        `Shortcut '${shortcut.label}' references project '${shortcut.project}', but that shortName is ambiguous (${projectIdMatches.join(", ")}). Use an explicit project id.`
+      );
+    }
+
+    return {
+      ...shortcut,
+      project: projectIdMatches[0]
+    };
+  });
+
+  return {
+    ...config,
+    shortcuts: normalizedShortcuts
+  };
 }
