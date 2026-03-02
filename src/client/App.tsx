@@ -15,6 +15,8 @@ import { CommandPalette } from "./components/CommandPalette";
 import { MapCanvas } from "./components/MapCanvas";
 import { SpawnDialog } from "./components/SpawnDialog";
 import { TerminalPanel } from "./components/TerminalPanel";
+import { useAppHotkeys } from "./hooks/useAppHotkeys";
+import { buildShortcutHotkeyBindings, findMatchingShortcutIndexes } from "./hotkeys/shortcutHotkeys";
 import { resolveSpriteAssetType } from "./sprites/spriteLoader";
 import type { BroadcastInputResult } from "./api";
 import type { ResolvedConfig, ShortcutConfig, Worker, WorkerSpawnInput, WsServerEvent } from "../shared/types";
@@ -29,20 +31,6 @@ interface FadingWorker {
 type RosterEntry =
   | { kind: "worker"; worker: Worker }
   | { kind: "shortcut"; shortcut: ShortcutConfig; shortcutIndex: number };
-
-interface ParsedShortcutHotkey {
-  key: string;
-  code?: string;
-  ctrl: boolean;
-  meta: boolean;
-  alt: boolean;
-  shift: boolean;
-}
-
-interface ShortcutHotkeyBinding {
-  shortcutIndex: number;
-  hotkey: ParsedShortcutHotkey;
-}
 
 const controlGroupStorageKey = "overworld.control-groups.v1";
 const layoutSplitStorageKey = "overworld.layout-split.v1";
@@ -649,407 +637,6 @@ export default function App(): JSX.Element {
     }
   }, [activeWorkers, closeKillConfirm, killConfirmWorkerIds]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (killConfirmWorkerIds.length > 0) {
-        if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-          event.preventDefault();
-          confirmKillSelection();
-          return;
-        }
-
-        event.preventDefault();
-        closeKillConfirm();
-        return;
-      }
-
-      if (!isEditableTarget(event.target) && !isTerminalTarget(event.target)) {
-        const hotkeyShortcutIndexes = findMatchingShortcutIndexes(shortcutHotkeyBindings, event);
-        if (hotkeyShortcutIndexes.length > 0) {
-          event.preventDefault();
-          for (const shortcutIndex of hotkeyShortcutIndexes) {
-            void runSpawn({ shortcutIndex });
-          }
-        }
-      }
-
-      if (event.key === "Escape") {
-        if (renameModalOpen) {
-          event.preventDefault();
-          closeRenameModal();
-          return;
-        }
-
-        if (shortcutsOverlayOpen) {
-          event.preventDefault();
-          setShortcutsOverlayOpen(false);
-          return;
-        }
-
-        if (paletteOpen || spawnDialogOpen) {
-          event.preventDefault();
-          setPaletteOpen(false);
-          setSpawnDialogOpen(false);
-          return;
-        }
-
-        if (isTerminalTarget(event.target)) {
-          return;
-        }
-
-        if (selectedWorkerId) {
-          event.preventDefault();
-          applySelection([]);
-        }
-        return;
-      }
-
-      if (isTerminalEscapeShortcut(event)) {
-        if (
-          !renameModalOpen &&
-          !shortcutsOverlayOpen &&
-          !paletteOpen &&
-          !spawnDialogOpen &&
-          selectedWorkers.length > 1 &&
-          focusedSelectedWorkerId
-        ) {
-          const escaped = escapeTerminalFocus();
-          event.preventDefault();
-          if (escaped) {
-            event.stopPropagation();
-          }
-          setFocusedSelectedWorkerId(undefined);
-          return;
-        }
-
-        const escaped = escapeTerminalFocus();
-        if (escaped) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-
-        if (!renameModalOpen && !shortcutsOverlayOpen && !paletteOpen && !spawnDialogOpen && selectedWorkerIds.length > 0) {
-          event.preventDefault();
-          if (selectedWorkerId) {
-            const selectedIndex = rosterEntries.findIndex(
-              (entry) => entry.kind === "worker" && entry.worker.id === selectedWorkerId
-            );
-            if (selectedIndex >= 0) {
-              setRosterActiveIndex(selectedIndex);
-            }
-          }
-          applySelection([]);
-        }
-        return;
-      }
-
-      if (event.key === "?" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        if (!isEditableTarget(event.target) || shortcutsOverlayOpen) {
-          event.preventDefault();
-          setShortcutsOverlayOpen((current) => !current);
-        }
-        return;
-      }
-
-      if (
-        (event.key === "[" || event.key === "]" || event.key === "=") &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey &&
-        !event.shiftKey &&
-        !isEditableTarget(event.target) &&
-        !isTerminalTarget(event.target)
-      ) {
-        event.preventDefault();
-        if (event.key === "=") {
-          resetMapColumnRatio();
-        } else {
-          nudgeMapColumnRatio(event.key === "]" ? mapColumnRatioStep : -mapColumnRatioStep);
-        }
-        return;
-      }
-
-      if (event.key === "Tab" && !event.ctrlKey && !event.metaKey && !event.altKey && !isEditableTarget(event.target)) {
-        if (isTerminalTarget(event.target)) {
-          return;
-        }
-
-        event.preventDefault();
-        if (selectedWorkers.length > 1) {
-          cycleSelectedGroupFocus(event.shiftKey ? -1 : 1);
-          return;
-        }
-
-        cycleSelection(event.shiftKey ? -1 : 1);
-        return;
-      }
-
-      if (
-        event.code === "Period" &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey &&
-        !isEditableTarget(event.target)
-      ) {
-        if (isTerminalTarget(event.target)) {
-          return;
-        }
-
-        event.preventDefault();
-        cycleIdleSelection(event.shiftKey ? -1 : 1);
-        return;
-      }
-
-      if (
-        event.code === "Comma" &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey &&
-        !isEditableTarget(event.target)
-      ) {
-        if (isTerminalTarget(event.target)) {
-          return;
-        }
-
-        event.preventDefault();
-        cycleIdleSelection(-1);
-        return;
-      }
-
-      const groupDigit = parseControlGroupDigit(event);
-      if (groupDigit !== undefined) {
-        if ((event.ctrlKey || event.metaKey) && !event.altKey && selectedWorkerIds.length > 0) {
-          event.preventDefault();
-          setControlGroups((current) => {
-            const selectionSet = new Set(selectedWorkerIds);
-            const existing = current[groupDigit] ?? [];
-            const existingSet = new Set(existing);
-            const sameSelection =
-              existing.length === selectedWorkerIds.length && selectedWorkerIds.every((workerId) => existingSet.has(workerId));
-
-            if (sameSelection) {
-              const next = { ...current };
-              delete next[groupDigit];
-              return next;
-            }
-
-            const next: ControlGroupMap = { ...current };
-            for (const [digitText, workerIds] of Object.entries(next)) {
-              const digit = Number(digitText);
-              if (!Number.isInteger(digit) || digit < 0 || digit > 9) {
-                continue;
-              }
-
-              if (digit === groupDigit || !Array.isArray(workerIds)) {
-                continue;
-              }
-
-              next[digit] = workerIds.filter((workerId) => !selectionSet.has(workerId));
-            }
-
-            next[groupDigit] = [...selectedWorkerIds];
-            return next;
-          });
-          return;
-        }
-
-        if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !isEditableTarget(event.target)) {
-          const workerIds = controlGroupByDigitRef.current[groupDigit] ?? [];
-          if (workerIds.length === 0) {
-            return;
-          }
-
-          const activeWorkerIdSet = new Set(activeWorkers.map((worker) => worker.id));
-          const existingWorkerIds = workerIds.filter((workerId) => activeWorkerIdSet.has(workerId));
-          if (existingWorkerIds.length === 0) {
-            setControlGroups((current) => {
-              if (!(groupDigit in current)) {
-                return current;
-              }
-
-              const next = { ...current };
-              delete next[groupDigit];
-              return next;
-            });
-            return;
-          }
-
-          event.preventDefault();
-          applySelection(existingWorkerIds, { center: existingWorkerIds.length === 1 });
-        }
-        return;
-      }
-
-      if (isEditableTarget(event.target)) {
-        return;
-      }
-
-      const keyLower = event.key.toLowerCase();
-      const killViaK =
-        keyLower === "k" &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey &&
-        (!inSelectedGroupView ? !event.shiftKey : event.shiftKey);
-
-      if (
-        (killViaK || event.key === "Delete") &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey &&
-        selectedWorkerIds.length > 0
-      ) {
-        event.preventDefault();
-        onKillSelected();
-        return;
-      }
-
-      if (selectedWorkers.length > 1 && !isTerminalTarget(event.target)) {
-        if (inSelectedGroupView && keyLower === "c" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-          const focused = focusRallyCommandInput();
-          if (focused) {
-            event.preventDefault();
-          }
-          return;
-        }
-
-        if ((keyLower === "j" || keyLower === "k") && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-          event.preventDefault();
-          const delta = keyLower === "j" ? 1 : -1;
-          const nextIndex = clampNumber(selectedGroupActiveIndex + delta, 0, selectedWorkers.length - 1);
-          const nextWorker = selectedWorkers[nextIndex];
-          setSelectedGroupActiveIndex(nextIndex);
-          if (focusedSelectedWorkerId && nextWorker) {
-            setFocusedSelectedWorkerId(nextWorker.id);
-          }
-          return;
-        }
-
-        if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-          const focusedWorker =
-            selectedWorkers.find((worker) => worker.id === focusedSelectedWorkerId) ??
-            selectedWorkers[selectedGroupActiveIndex] ??
-            selectedWorkers[0];
-          if (!focusedWorker) {
-            return;
-          }
-
-          event.preventDefault();
-          setFocusedSelectedWorkerId(focusedWorker.id);
-          requestTerminalFocus();
-          return;
-        }
-      }
-
-      if (selectedWorkerIds.length === 0 && rosterEntries.length > 0 && !isTerminalTarget(event.target)) {
-        const keyLower = event.key.toLowerCase();
-        if (keyLower === "k" && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
-          event.preventDefault();
-          onKillRosterActive();
-          return;
-        }
-
-        if (
-          keyLower === "n" &&
-          !event.ctrlKey &&
-          !event.metaKey &&
-          !event.altKey &&
-          !event.shiftKey &&
-          firstSummonEntryIndex !== undefined
-        ) {
-          event.preventDefault();
-          setRosterActiveIndex(firstSummonEntryIndex);
-          return;
-        }
-
-        if ((keyLower === "j" || keyLower === "k") && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-          event.preventDefault();
-          setRosterActiveIndex((current) => {
-            const delta = keyLower === "j" ? 1 : -1;
-            return clampNumber(current + delta, 0, rosterEntries.length - 1);
-          });
-          return;
-        }
-
-        if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-          event.preventDefault();
-          onActivateRosterIndex(rosterActiveIndex);
-          return;
-        }
-      }
-
-      if (event.key.toLowerCase() === "r" && !event.ctrlKey && !event.metaKey && !event.altKey && selectedWorkers.length > 0) {
-        event.preventDefault();
-        openRenameForWorkers(selectedWorkers);
-        return;
-      }
-
-      if (event.key.toLowerCase() === "m" && !event.ctrlKey && !event.metaKey && !event.altKey && selectedWorkers.length > 0) {
-        event.preventDefault();
-        void onToggleMovementModeSelected();
-        return;
-      }
-
-      if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && selectedWorkerId) {
-        event.preventDefault();
-        requestTerminalFocus();
-        return;
-      }
-
-      if (event.key !== "/") {
-        return;
-      }
-
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-
-      event.preventDefault();
-      setPaletteOpen(true);
-      setSpawnDialogOpen(false);
-      setShortcutsOverlayOpen(false);
-    };
-
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [
-    applySelection,
-    activeWorkers,
-    cycleSelectedGroupFocus,
-    closeKillConfirm,
-    closeRenameModal,
-    cycleIdleSelection,
-    cycleSelection,
-    escapeTerminalFocus,
-    focusRallyCommandInput,
-    firstSummonEntryIndex,
-    inSelectedGroupView,
-    killConfirmWorkerIds,
-    nudgeMapColumnRatio,
-    onActivateRosterIndex,
-    onKillRosterActive,
-    resetMapColumnRatio,
-    onKillWorker,
-    onKillSelected,
-    confirmKillSelection,
-    onToggleMovementModeSelected,
-    openRenameForWorkers,
-    paletteOpen,
-    renameModalOpen,
-    requestTerminalFocus,
-    rosterEntries,
-    rosterActiveIndex,
-    focusedSelectedWorkerId,
-    selectedGroupActiveIndex,
-    selectedWorkers,
-    selectedWorkerId,
-    shortcutHotkeyBindings,
-    shortcutsOverlayOpen,
-    spawnDialogOpen,
-    runSpawn
-  ]);
-
   const onSelectWorker = useCallback((workerId: string | undefined) => {
     applySelection(workerId ? [workerId] : []);
   }, [applySelection]);
@@ -1126,6 +713,58 @@ export default function App(): JSX.Element {
     },
     [showError]
   );
+
+  useAppHotkeys({
+    activeWorkers,
+    applySelection,
+    clampNumber,
+    closeKillConfirm,
+    closeRenameModal,
+    confirmKillSelection,
+    controlGroupByDigitRef,
+    cycleIdleSelection,
+    cycleSelectedGroupFocus,
+    cycleSelection,
+    escapeTerminalFocus,
+    findMatchingShortcutIndexes,
+    firstSummonEntryIndex,
+    focusRallyCommandInput,
+    focusedSelectedWorkerId,
+    inSelectedGroupView,
+    isEditableTarget,
+    isTerminalEscapeShortcut,
+    isTerminalTarget,
+    killConfirmWorkerIds,
+    mapColumnRatioStep,
+    nudgeMapColumnRatio,
+    onActivateRosterIndex,
+    onKillRosterActive,
+    onKillSelected,
+    onToggleMovementModeSelected,
+    openRenameForWorkers,
+    paletteOpen,
+    parseControlGroupDigit,
+    renameModalOpen,
+    requestTerminalFocus,
+    resetMapColumnRatio,
+    rosterActiveIndex,
+    rosterEntries,
+    runSpawn,
+    selectedGroupActiveIndex,
+    selectedWorkerId,
+    selectedWorkerIds,
+    selectedWorkers,
+    setControlGroups,
+    setFocusedSelectedWorkerId,
+    setPaletteOpen,
+    setRosterActiveIndex,
+    setSelectedGroupActiveIndex,
+    setShortcutsOverlayOpen,
+    setSpawnDialogOpen,
+    shortcutHotkeyBindings,
+    shortcutsOverlayOpen,
+    spawnDialogOpen
+  });
 
   return (
     <div
@@ -1694,236 +1333,6 @@ function isTerminalTarget(target: EventTarget | null): boolean {
 
 function isElementInTerminalPanel(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && Boolean(target.closest(".terminal-panel"));
-}
-
-function buildShortcutHotkeyBindings(shortcuts: ShortcutConfig[]): ShortcutHotkeyBinding[] {
-  const bindings: ShortcutHotkeyBinding[] = [];
-
-  shortcuts.forEach((shortcut, shortcutIndex) => {
-    for (const hotkeyText of shortcut.hotkeys ?? []) {
-      const parsed = parseShortcutHotkey(hotkeyText);
-      if (!parsed) {
-        continue;
-      }
-
-      bindings.push({
-        shortcutIndex,
-        hotkey: parsed
-      });
-    }
-  });
-
-  return bindings;
-}
-
-function findMatchingShortcutIndexes(bindings: ShortcutHotkeyBinding[], event: KeyboardEvent): number[] {
-  const matchedShortcutIndexes: number[] = [];
-  const seenShortcutIndexes = new Set<number>();
-
-  for (const binding of bindings) {
-    if (!matchesShortcutHotkey(binding.hotkey, event)) {
-      continue;
-    }
-
-    if (seenShortcutIndexes.has(binding.shortcutIndex)) {
-      continue;
-    }
-
-    seenShortcutIndexes.add(binding.shortcutIndex);
-    matchedShortcutIndexes.push(binding.shortcutIndex);
-  }
-
-  return matchedShortcutIndexes;
-}
-
-function matchesShortcutHotkey(hotkey: ParsedShortcutHotkey, event: KeyboardEvent): boolean {
-  if (event.ctrlKey !== hotkey.ctrl || event.metaKey !== hotkey.meta || event.altKey !== hotkey.alt || event.shiftKey !== hotkey.shift) {
-    return false;
-  }
-
-  const normalizedEventKey = normalizeKeyboardEventKey(event.key);
-  if (normalizedEventKey === hotkey.key) {
-    return true;
-  }
-
-  if (!hotkey.code) {
-    return false;
-  }
-
-  return event.code === hotkey.code;
-}
-
-function parseShortcutHotkey(hotkeyText: string): ParsedShortcutHotkey | undefined {
-  const tokens = splitShortcutHotkeyTokens(hotkeyText);
-  if (tokens.length === 0) {
-    return undefined;
-  }
-
-  let ctrl = false;
-  let meta = false;
-  let alt = false;
-  let shift = false;
-  let keyToken: string | undefined;
-
-  for (const token of tokens) {
-    const normalizedToken = token.trim().toLowerCase();
-    if (!normalizedToken) {
-      continue;
-    }
-
-    if (normalizedToken === "ctrl" || normalizedToken === "control") {
-      ctrl = true;
-      continue;
-    }
-
-    if (normalizedToken === "cmd" || normalizedToken === "meta" || normalizedToken === "super") {
-      meta = true;
-      continue;
-    }
-
-    if (normalizedToken === "alt" || normalizedToken === "option") {
-      alt = true;
-      continue;
-    }
-
-    if (normalizedToken === "shift") {
-      shift = true;
-      continue;
-    }
-
-    if (keyToken) {
-      return undefined;
-    }
-
-    keyToken = token;
-  }
-
-  if (!keyToken) {
-    return undefined;
-  }
-
-  const normalizedKey = normalizeShortcutKeyToken(keyToken);
-  if (!normalizedKey) {
-    return undefined;
-  }
-
-  return {
-    key: normalizedKey.key,
-    code: normalizedKey.code,
-    ctrl,
-    meta,
-    alt,
-    shift
-  };
-}
-
-function splitShortcutHotkeyTokens(hotkeyText: string): string[] {
-  const compactHotkey = hotkeyText.trim().replace(/\s+/g, "");
-  if (!compactHotkey) {
-    return [];
-  }
-
-  if (compactHotkey.includes("+")) {
-    return compactHotkey.split("+").filter((token) => token.length > 0);
-  }
-
-  const lower = compactHotkey.toLowerCase();
-  const hasDashModifierPrefix =
-    lower.includes("ctrl-") ||
-    lower.includes("control-") ||
-    lower.includes("cmd-") ||
-    lower.includes("meta-") ||
-    lower.includes("super-") ||
-    lower.includes("alt-") ||
-    lower.includes("option-") ||
-    lower.includes("shift-");
-
-  if (hasDashModifierPrefix) {
-    return compactHotkey.split("-").filter((token) => token.length > 0);
-  }
-
-  return [compactHotkey];
-}
-
-function normalizeShortcutKeyToken(token: string): { key: string; code?: string } | undefined {
-  const trimmedToken = token.trim();
-  if (!trimmedToken) {
-    return undefined;
-  }
-
-  const lower = trimmedToken.toLowerCase();
-  if (lower === "space" || lower === "spacebar") {
-    return { key: " ", code: "Space" };
-  }
-
-  if (lower === "esc") {
-    return { key: "escape", code: "Escape" };
-  }
-
-  if (lower === "return") {
-    return { key: "enter", code: "Enter" };
-  }
-
-  if (lower === "up") {
-    return { key: "arrowup", code: "ArrowUp" };
-  }
-
-  if (lower === "down") {
-    return { key: "arrowdown", code: "ArrowDown" };
-  }
-
-  if (lower === "left") {
-    return { key: "arrowleft", code: "ArrowLeft" };
-  }
-
-  if (lower === "right") {
-    return { key: "arrowright", code: "ArrowRight" };
-  }
-
-  if (/^key[a-z]$/.test(lower)) {
-    const letter = lower.slice(3);
-    return { key: letter, code: `Key${letter.toUpperCase()}` };
-  }
-
-  if (/^digit[0-9]$/.test(lower)) {
-    const digit = lower.slice(5);
-    return { key: digit, code: `Digit${digit}` };
-  }
-
-  if (/^numpad[0-9]$/.test(lower)) {
-    const digit = lower.slice(6);
-    return { key: digit, code: `Numpad${digit}` };
-  }
-
-  if (/^f[0-9]{1,2}$/.test(lower)) {
-    return { key: lower, code: lower.toUpperCase() };
-  }
-
-  if (trimmedToken.length === 1) {
-    if (/^[a-z]$/i.test(trimmedToken)) {
-      const letter = trimmedToken.toLowerCase();
-      return { key: letter, code: `Key${letter.toUpperCase()}` };
-    }
-
-    if (/^[0-9]$/.test(trimmedToken)) {
-      return { key: trimmedToken };
-    }
-
-    return { key: trimmedToken };
-  }
-
-  return {
-    key: lower
-  };
-}
-
-function normalizeKeyboardEventKey(eventKey: string): string {
-  const lower = eventKey.toLowerCase();
-  if (lower === "spacebar") {
-    return " ";
-  }
-
-  return lower;
 }
 
 function toDisplayHotkeys(hotkeys: string[] | undefined): string[] {
