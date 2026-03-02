@@ -1,42 +1,23 @@
 import { nanoid } from "nanoid";
-import { randomUUID } from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
 import type {
   AvatarType,
   MovementMode,
   ProjectConfig,
   ResolvedConfig,
-  RuntimeConfig,
   Worker,
   WorkerPosition,
   WorkerSpawnInput
 } from "../../shared/types";
 import { listAvailableAvatarTypes } from "../assets/avatarCatalog";
 import { WorkerRepository } from "../persistence/workerRepository";
+import { isSameWorkerRecord } from "./reconcile/isSameWorkerRecord";
+import { withClaudeSessionId } from "./spawn/command";
+import { resolveSpawnPlan } from "./spawn/resolveSpawnPlan";
+import { selectNextAvatar } from "./spawn/avatarAllocator";
+import { makeWindowName as buildWindowName, slugify } from "./spawn/windowName";
+import { loadOutpostSpawnSpec, nextSpawnPosition as computeNextSpawnPosition } from "./spawn/spawnPosition";
 import { TmuxAdapter, type ManagedWindow } from "../tmux/tmuxAdapter";
-
-interface SpawnPlan {
-  projectId: string;
-  project: ProjectConfig;
-  runtimeId: string;
-  runtime: RuntimeConfig;
-  command: string[];
-  displayName?: string;
-  avatar?: AvatarType;
-}
-
-interface SpawnAreaSpec {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
-interface OutpostMapSpec {
-  tileSize: number;
-  spawnArea?: SpawnAreaSpec;
-}
 
 interface BroadcastInputOptions {
   submit?: boolean;
@@ -88,11 +69,11 @@ export class OrchestratorService {
   }
 
   async spawn(input: WorkerSpawnInput): Promise<Worker> {
-    const plan = this.resolveSpawnPlan(input);
+    const plan = resolveSpawnPlan(this.config, input);
     const workerId = nanoid(8).toLowerCase();
     const launchCommand = withClaudeSessionId(plan.runtimeId, plan.command);
     const shortId = workerId.slice(0, 4);
-    const windowName = this.makeWindowName(plan.project.shortName, plan.runtimeId, shortId);
+    const windowName = buildWindowName(plan.project.shortName, plan.runtimeId, shortId);
     const tmuxRef = await this.tmux.spawnWorker({
       workerId,
       windowName,
@@ -324,51 +305,6 @@ export class OrchestratorService {
     };
   }
 
-  private resolveSpawnPlan(input: WorkerSpawnInput): SpawnPlan {
-    if ("shortcutIndex" in input) {
-      const shortcut = this.config.shortcuts[input.shortcutIndex];
-      if (!shortcut) {
-        throw new Error(`Shortcut index '${input.shortcutIndex}' is out of range.`);
-      }
-
-      const project = this.config.projects[shortcut.project];
-      const runtime = this.config.runtimes[shortcut.runtime];
-      if (!project) {
-        throw new Error(`Shortcut '${shortcut.label}' references unknown project '${shortcut.project}'.`);
-      }
-      if (!runtime) {
-        throw new Error(`Shortcut '${shortcut.label}' references unknown runtime '${shortcut.runtime}'.`);
-      }
-
-      return {
-        projectId: shortcut.project,
-        project,
-        runtimeId: shortcut.runtime,
-        runtime,
-        command: shortcut.command ?? runtime.command,
-        displayName: shortcut.label,
-        avatar: shortcut.avatar
-      };
-    }
-
-    const project = this.config.projects[input.projectId];
-    const runtime = this.config.runtimes[input.runtimeId];
-    if (!project) {
-      throw new Error(`Unknown project '${input.projectId}'.`);
-    }
-    if (!runtime) {
-      throw new Error(`Unknown runtime '${input.runtimeId}'.`);
-    }
-
-    return {
-      projectId: input.projectId,
-      project,
-      runtimeId: input.runtimeId,
-      runtime,
-      command: input.command && input.command.length > 0 ? input.command : runtime.command
-    };
-  }
-
   private requireWorker(workerId: string): Worker {
     const worker = this.workers.getWorker(workerId);
     if (!worker) {
@@ -440,96 +376,21 @@ export class OrchestratorService {
     return firstRuntimeId ?? "shell";
   }
 
-  private makeWindowName(projectShortName: string, runtimeId: string, shortId: string): string {
-    const sanitize = (value: string) => value.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-    return `${sanitize(projectShortName)}-${sanitize(runtimeId)}-${sanitize(shortId)}`;
-  }
-
   private nextAvatar(preferred?: AvatarType): AvatarType {
-    const availableAvatars = listAvailableAvatarTypes();
-
-    if (preferred && availableAvatars.includes(preferred)) {
-      return preferred;
-    }
-
-    const pool = availableAvatars.length > 0 ? availableAvatars : ["knight"];
-    const reservedConfiguredAvatars = new Set(
-      this.config.shortcuts
-        .map((shortcut) => shortcut.avatar)
-        .filter((avatarType): avatarType is AvatarType => Boolean(avatarType && pool.includes(avatarType)))
-    );
-    const randomPool = pool.filter((avatarType) => !reservedConfiguredAvatars.has(avatarType));
-    const eligiblePool = randomPool.length > 0 ? randomPool : pool;
-    const activeAvatars = new Set(
-      this.workers
-        .listWorkers()
-        .filter((worker) => worker.status !== "stopped")
-        .map((worker) => worker.avatarType)
-    );
-
-    const unusedAvatars = eligiblePool.filter((avatarType) => !activeAvatars.has(avatarType));
-    const selectionPool = unusedAvatars.length > 0 ? unusedAvatars : eligiblePool;
-
-    return selectionPool[Math.floor(Math.random() * selectionPool.length)] ?? eligiblePool[0] ?? pool[0] ?? "knight";
+    return selectNextAvatar({
+      preferred,
+      config: this.config,
+      workers: this.workers.listWorkers(),
+      availableAvatars: listAvailableAvatarTypes()
+    });
   }
 
   private nextSpawnPosition(): WorkerPosition {
-    const activeWorkers = this.workers.listWorkers().filter((worker) => worker.status !== "stopped");
-    const index = activeWorkers.length;
-
-    if (outpostSpawnSpec?.spawnArea) {
-      const { tileSize, spawnArea } = outpostSpawnSpec;
-      const areaWidth = Math.max(1, spawnArea.x2 - spawnArea.x1 + 1);
-      const areaHeight = Math.max(1, spawnArea.y2 - spawnArea.y1 + 1);
-      const totalTiles = areaWidth * areaHeight;
-      const startTileIndex = index % totalTiles;
-
-      for (let step = 0; step < totalTiles; step += 1) {
-        const tileIndex = (startTileIndex + step) % totalTiles;
-        const tileOffsetX = tileIndex % areaWidth;
-        const tileOffsetY = Math.floor(tileIndex / areaWidth);
-        const tileX = spawnArea.x1 + tileOffsetX;
-        const tileY = spawnArea.y1 + tileOffsetY;
-        const candidate = {
-          x: (tileX + 0.5) * tileSize,
-          y: (tileY + 0.5) * tileSize
-        };
-
-        if (isSpawnPositionFree(candidate, activeWorkers, spawnSeparationDistancePx)) {
-          return candidate;
-        }
-      }
-
-      const fallbackOffsetX = startTileIndex % areaWidth;
-      const fallbackOffsetY = Math.floor(startTileIndex / areaWidth);
-      return {
-        x: (spawnArea.x1 + fallbackOffsetX + 0.5) * tileSize,
-        y: (spawnArea.y1 + fallbackOffsetY + 0.5) * tileSize
-      };
-    }
-
-    const ringSize = 6;
-    const ring = Math.floor(index / ringSize);
-    const angle = (index % ringSize) * ((Math.PI * 2) / ringSize);
-    const radius = 110 + ring * 85;
-
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      const adjustedRadius = radius + attempt * 36;
-      const adjustedAngle = angle + attempt * 0.32;
-      const candidate = {
-        x: 520 + Math.cos(adjustedAngle) * adjustedRadius,
-        y: 310 + Math.sin(adjustedAngle) * adjustedRadius
-      };
-
-      if (isSpawnPositionFree(candidate, activeWorkers, spawnSeparationDistancePx)) {
-        return candidate;
-      }
-    }
-
-    return {
-      x: 520 + Math.cos(angle) * radius,
-      y: 310 + Math.sin(angle) * radius
-    };
+    return computeNextSpawnPosition({
+      activeWorkers: this.workers.listWorkers().filter((worker) => worker.status !== "stopped"),
+      spec: outpostSpawnSpec,
+      spawnSeparationDistancePx
+    });
   }
 
   private refreshConfigProjects(): void {
@@ -541,93 +402,4 @@ export class OrchestratorService {
       }
     };
   }
-}
-
-function loadOutpostSpawnSpec(): OutpostMapSpec | undefined {
-  const mapPath = path.resolve(process.cwd(), "assets/maps/outpost.json");
-  if (!fs.existsSync(mapPath)) {
-    return undefined;
-  }
-
-  try {
-    const raw = fs.readFileSync(mapPath, "utf8");
-    const parsed = JSON.parse(raw) as Partial<OutpostMapSpec>;
-    if (typeof parsed.tileSize !== "number") {
-      return undefined;
-    }
-
-    return {
-      tileSize: parsed.tileSize,
-      spawnArea: parsed.spawnArea
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function withClaudeSessionId(runtimeId: string, command: string[]): string[] {
-  const commandCopy = [...command];
-  if (!looksLikeClaudeRuntime(runtimeId, commandCopy)) {
-    return commandCopy;
-  }
-
-  if (hasSessionIdArg(commandCopy)) {
-    return commandCopy;
-  }
-
-  return [...commandCopy, "--session-id", randomUUID()];
-}
-
-function isSpawnPositionFree(candidate: WorkerPosition, workers: Worker[], minDistance: number): boolean {
-  return workers.every((worker) => {
-    return Math.hypot(candidate.x - worker.position.x, candidate.y - worker.position.y) >= minDistance;
-  });
-}
-
-function looksLikeClaudeRuntime(runtimeId: string, command: string[]): boolean {
-  if (runtimeId.toLowerCase().includes("claude")) {
-    return true;
-  }
-
-  const binary = path.basename(command[0] ?? "").toLowerCase();
-  return binary.includes("claude");
-}
-
-function hasSessionIdArg(command: string[]): boolean {
-  for (let index = 0; index < command.length; index += 1) {
-    const token = command[index] ?? "";
-    if (token === "--session-id") {
-      const nextValue = command[index + 1];
-      return typeof nextValue === "string" && nextValue.trim().length > 0;
-    }
-
-    if (token.startsWith("--session-id=")) {
-      const value = token.slice("--session-id=".length).trim();
-      return value.length > 0;
-    }
-  }
-
-  return false;
-}
-
-function slugify(value: string): string {
-  const slug = value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
-  return slug || "project";
-}
-
-function isSameWorkerRecord(a: Worker, b: Worker): boolean {
-  return (
-    a.id === b.id &&
-    a.name === b.name &&
-    a.projectId === b.projectId &&
-    a.projectPath === b.projectPath &&
-    a.runtimeId === b.runtimeId &&
-    a.runtimeLabel === b.runtimeLabel &&
-    JSON.stringify(a.command) === JSON.stringify(b.command) &&
-    a.status === b.status &&
-    a.movementMode === b.movementMode &&
-    a.tmuxRef.session === b.tmuxRef.session &&
-    a.tmuxRef.window === b.tmuxRef.window &&
-    a.tmuxRef.pane === b.tmuxRef.pane
-  );
 }

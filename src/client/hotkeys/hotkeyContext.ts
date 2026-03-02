@@ -1,0 +1,59 @@
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { Worker } from "../../shared/types";
+import type { ShortcutHotkeyBinding } from "./shortcutHotkeys";
+
+export type ControlGroupMap = Partial<Record<number, string[]>>;
+
+export type RosterEntry = { kind: "worker"; worker: Worker } | { kind: "shortcut"; shortcutIndex: number };
+
+export interface AppHotkeyContext {
+  activeWorkers: Worker[];
+  applySelection: (workerIds: string[], options?: { center?: boolean; focusTerminal?: boolean }) => void;
+  clampNumber: (value: number, min: number, max: number) => number;
+  closeKillConfirm: () => void;
+  closeRenameModal: () => void;
+  confirmKillSelection: () => void;
+  controlGroupByDigitRef: MutableRefObject<ControlGroupMap>;
+  cycleIdleSelection: (direction: 1 | -1) => void;
+  cycleSelectedGroupFocus: (direction: 1 | -1) => void;
+  cycleSelection: (direction: 1 | -1) => void;
+  escapeTerminalFocus: () => boolean;
+  findMatchingShortcutIndexes: (bindings: ShortcutHotkeyBinding[], event: KeyboardEvent) => number[];
+  firstSummonEntryIndex: number | undefined;
+  focusRallyCommandInput: () => boolean;
+  focusedSelectedWorkerId: string | undefined;
+  inSelectedGroupView: boolean;
+  isEditableTarget: (target: EventTarget | null) => boolean;
+  isTerminalEscapeShortcut: (event: KeyboardEvent) => boolean;
+  isTerminalTarget: (target: EventTarget | null) => boolean;
+  killConfirmWorkerIds: string[];
+  mapColumnRatioStep: number;
+  nudgeMapColumnRatio: (delta: number) => void;
+  onActivateRosterIndex: (index: number) => void;
+  onKillRosterActive: () => void;
+  onKillSelected: () => void;
+  onToggleMovementModeSelected: () => void | Promise<void>;
+  openRenameForWorkers: (workersToRename: Worker[]) => void;
+  paletteOpen: boolean;
+  parseControlGroupDigit: (event: KeyboardEvent) => number | undefined;
+  renameModalOpen: boolean;
+  requestTerminalFocus: () => void;
+  resetMapColumnRatio: () => void;
+  rosterActiveIndex: number;
+  rosterEntries: RosterEntry[];
+  runSpawn: (input: { shortcutIndex: number }) => void | Promise<void>;
+  selectedGroupActiveIndex: number;
+  selectedWorkerId: string | undefined;
+  selectedWorkerIds: string[];
+  selectedWorkers: Worker[];
+  setControlGroups: Dispatch<SetStateAction<ControlGroupMap>>;
+  setFocusedSelectedWorkerId: Dispatch<SetStateAction<string | undefined>>;
+  setPaletteOpen: Dispatch<SetStateAction<boolean>>;
+  setRosterActiveIndex: Dispatch<SetStateAction<number>>;
+  setSelectedGroupActiveIndex: Dispatch<SetStateAction<number>>;
+  setShortcutsOverlayOpen: Dispatch<SetStateAction<boolean>>;
+  setSpawnDialogOpen: Dispatch<SetStateAction<boolean>>;
+  shortcutHotkeyBindings: ShortcutHotkeyBinding[];
+  shortcutsOverlayOpen: boolean;
+  spawnDialogOpen: boolean;
+}

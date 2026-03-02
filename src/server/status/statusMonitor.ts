@@ -1,10 +1,14 @@
 import type { Worker } from "../../shared/types";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { TmuxAdapter } from "../tmux/tmuxAdapter";
-import { observePane, type PaneObservation } from "./paneObservation";
+import type { PaneObservation } from "./paneObservation";
 import { ClaudeTranscriptTracker } from "./claudeTranscriptTracker";
-import { evaluateWorkerStatus } from "./statusEvaluator";
-import { capturePaneLineCount } from "./runtimeSignals";
+import {
+  collectWorkerStatusSignals,
+  evaluateWorkerStatusSignals,
+  normalizeWorkerStatusEvaluation,
+  type WorkerStatusEvaluation
+} from "./statusPipeline";
 
 export class StatusMonitor {
   private intervalId: NodeJS.Timeout | undefined;
@@ -70,15 +74,22 @@ export class StatusMonitor {
       return;
     }
 
-    let derivedStatus = worker.status;
-    let derivedActivityText = worker.activityText;
-    let derivedActivityTool = worker.activityTool;
-    let derivedActivityPath = worker.activityPath;
+    let evaluation: WorkerStatusEvaluation = {
+      status: worker.status,
+      activityText: worker.activityText,
+      activityTool: worker.activityTool,
+      activityPath: worker.activityPath
+    };
 
     try {
-      const paneState = await this.tmux.getPaneState(worker.tmuxRef);
-      const output = await this.tmux.capturePane(worker.tmuxRef, capturePaneLineCount(worker, paneState.currentCommand.toLowerCase()));
-      if (paneState.isDead) {
+      const signals = await collectWorkerStatusSignals({
+        worker,
+        tmux: this.tmux,
+        paneObservation: this.paneObservation,
+        claudeTranscript: this.claudeTranscript
+      });
+
+      if (!signals) {
         const removed = this.workers.deleteWorker(worker.id);
         if (removed) {
           this.claudeTranscript.forget(worker.id);
@@ -88,43 +99,26 @@ export class StatusMonitor {
         return;
       }
 
-      const transcriptSnapshot = this.claudeTranscript.poll(worker, paneState.currentCommand, paneState.currentPath);
-      const observation = observePane(this.paneObservation, worker.id, paneState.currentCommand, output);
-      const evaluated = evaluateWorkerStatus({
-        worker,
-        currentCommand: paneState.currentCommand,
-        output,
-        observation,
-        transcriptSnapshot
-      });
-
-      derivedStatus = evaluated.status;
-      derivedActivityText = evaluated.activityText;
-      derivedActivityTool = evaluated.activityTool;
-      derivedActivityPath = evaluated.activityPath;
+      evaluation = normalizeWorkerStatusEvaluation(evaluateWorkerStatusSignals(worker, signals));
     } catch {
-      derivedStatus = "error";
-      derivedActivityText = "Status check failed";
-      derivedActivityTool = "unknown";
-      derivedActivityPath = undefined;
-    }
-
-    if (derivedStatus === "idle") {
-      derivedActivityText = undefined;
-      derivedActivityTool = undefined;
-      derivedActivityPath = undefined;
+      evaluation = {
+        status: "error",
+        activityText: "Status check failed",
+        activityTool: "unknown",
+        activityPath: undefined
+      };
     }
 
     if (
-      derivedStatus === worker.status &&
-      derivedActivityText === worker.activityText &&
-      derivedActivityTool === worker.activityTool &&
-      derivedActivityPath === worker.activityPath
+      evaluation.status === worker.status &&
+      evaluation.activityText === worker.activityText &&
+      evaluation.activityTool === worker.activityTool &&
+      evaluation.activityPath === worker.activityPath
     ) {
       return;
     }
 
-    if (derivedStatus === "stopped") {
+    if (evaluation.status === "stopped") {
       const removed = this.workers.deleteWorker(worker.id);
       if (removed) {
         this.claudeTranscript.forget(worker.id);
@@ -135,10 +129,10 @@ export class StatusMonitor {
     }
 
     const updated = this.workers.updateStatus(worker.id, {
-      status: derivedStatus,
-      activityText: derivedActivityText,
-      activityTool: derivedActivityTool,
-      activityPath: derivedActivityPath
+      status: evaluation.status,
+      activityText: evaluation.activityText,
+      activityTool: evaluation.activityTool,
+      activityPath: evaluation.activityPath
     });
     if (updated) {
       this.onWorkerUpdated(updated);
