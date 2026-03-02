@@ -724,7 +724,13 @@ export default function App(): JSX.Element {
         }
       }
 
-      if (event.key.toLowerCase() === "k" && !event.ctrlKey && !event.metaKey && !event.altKey && selectedWorkerId) {
+      if (
+        (event.key.toLowerCase() === "k" || event.key === "Delete") &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        selectedWorkerId
+      ) {
         event.preventDefault();
         onKillSelected();
         return;
@@ -1091,9 +1097,9 @@ export default function App(): JSX.Element {
       {killConfirmWorkerId ? (
         <div className="overlay" onClick={closeKillConfirm}>
           <div className="dialog kill-confirm-dialog" onClick={(event) => event.stopPropagation()}>
-            <div className="dialog-title">Kill Worker?</div>
-            <div className="rename-subtitle">{killConfirmWorker?.displayName ?? killConfirmWorker?.name ?? "Selected worker"}</div>
-            <div className="kill-confirm-copy">This will terminate the session and remove this worker from the map.</div>
+            <div className="dialog-title">Kill Agent?</div>
+            <div className="rename-subtitle">{killConfirmWorker?.displayName ?? killConfirmWorker?.name ?? "Selected agent"}</div>
+            <div className="kill-confirm-copy">This will terminate the session and remove this agent from the map.</div>
             <div className="dialog-actions">
               <button className="bar-btn subtle" type="button" onClick={closeKillConfirm}>
                 Cancel

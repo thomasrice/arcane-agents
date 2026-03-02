@@ -66,6 +66,7 @@ interface WanderState {
 
 interface PanDragState {
   pointerId: number;
+  mode: "pan" | "click";
   startX: number;
   startY: number;
   lastX: number;
@@ -903,17 +904,29 @@ export function MapCanvas({
     if (event.button === 2) {
       event.preventDefault();
 
-      if (!selectedWorkerId) {
-        return;
-      }
+      if (selectedWorkerId) {
+        const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId);
+        if (!selectedWorker) {
+          return;
+        }
 
-      const selectedWorker = workers.find((worker) => worker.id === selectedWorkerId);
-      if (!selectedWorker) {
+        const point = readPointerOnCanvas(event);
+        issueManualMoveOrder(selectedWorker, point);
         return;
       }
 
       const point = readPointerOnCanvas(event);
-      issueManualMoveOrder(selectedWorker, point);
+      panDragRef.current = {
+        pointerId: event.pointerId,
+        mode: "pan",
+        startX: point.x,
+        startY: point.y,
+        lastX: point.x,
+        lastY: point.y,
+        moved: false,
+        deselectOnClick: false
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
 
@@ -935,6 +948,7 @@ export function MapCanvas({
 
     panDragRef.current = {
       pointerId: event.pointerId,
+      mode: "click",
       startX: point.x,
       startY: point.y,
       lastX: point.x,
@@ -958,7 +972,7 @@ export function MapCanvas({
         panDrag.moved = true;
       }
 
-      if (panDrag.moved && (deltaX !== 0 || deltaY !== 0)) {
+      if (panDrag.mode === "pan" && panDrag.moved && (deltaX !== 0 || deltaY !== 0)) {
         setViewport((current) => ({
           ...current,
           offsetX: current.offsetX + deltaX,
@@ -997,7 +1011,7 @@ export function MapCanvas({
     }
     panDragRef.current = null;
 
-    if (panDrag.moved) {
+    if (panDrag.mode === "pan" && panDrag.moved) {
       return;
     }
 
