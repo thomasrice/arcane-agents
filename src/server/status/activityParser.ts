@@ -82,9 +82,7 @@ export function parseActivity(currentCommand: string, output: string): {
           ? `Working on ${filePath}`
           : fallbackLine;
 
-  const latestLine = newestFirst[0] ?? "";
-  const hasPrompt = /(?:[$#>]|\u276F|\u279C|\u03BB)\s*$/.test(latestLine);
-  const status = deriveStatus(currentCommand, needsInput, hasError, Boolean(toolResult || filePath), hasPrompt);
+  const status = deriveStatus(currentCommand, needsInput, hasError);
 
   return {
     status,
@@ -173,13 +171,7 @@ function normalizeStatusLine(line: string): string {
   return line.replace(/^[\s│┃╹▀▣⬝■]+/, "").trim();
 }
 
-function deriveStatus(
-  currentCommand: string,
-  needsInput: boolean,
-  hasError: boolean,
-  hasActivitySignal: boolean,
-  hasPrompt: boolean
-): WorkerStatus {
+function deriveStatus(currentCommand: string, needsInput: boolean, hasError: boolean): WorkerStatus {
   if (needsInput) {
     return "attention";
   }

@@ -20,11 +20,6 @@ interface PaneState {
   currentPath?: string;
 }
 
-interface WindowSummary {
-  name: string;
-  id: string;
-}
-
 interface StopOptions {
   background?: boolean;
 }
@@ -113,32 +108,6 @@ export class TmuxAdapter {
     }
 
     await this.stopGracefully(ref);
-  }
-
-  async listWindows(): Promise<WindowSummary[]> {
-    if (!(await this.hasSession())) {
-      return [];
-    }
-
-    const output = await this.runTmux([
-      "list-windows",
-      "-t",
-      this.sessionName,
-      "-F",
-      "#{window_name}\t#{window_id}"
-    ]);
-
-    return output
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => {
-        const [name, id] = line.split("\t");
-        return {
-          name,
-          id
-        };
-      });
   }
 
   async windowExists(ref: TmuxRef): Promise<boolean> {
@@ -287,10 +256,6 @@ export class TmuxAdapter {
       isDead: deadFlag === "1",
       currentPath: currentPath.trim().length > 0 ? currentPath : undefined
     };
-  }
-
-  attachTarget(ref: TmuxRef): string {
-    return this.target(ref);
   }
 
   private async hasSession(): Promise<boolean> {

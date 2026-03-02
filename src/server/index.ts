@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import express, { type Request, type Response } from "express";
+import express, { type Response } from "express";
 import { WebSocketServer } from "ws";
 import type { WorkerSpawnInput, WsServerEvent } from "../shared/types";
 import { DiscoveryService } from "./config/discovery";

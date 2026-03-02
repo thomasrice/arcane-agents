@@ -80,10 +80,6 @@ export class OrchestratorService {
     return this.config;
   }
 
-  getDiscoveredProjects(): Record<string, ProjectConfig> {
-    return { ...this.discoveredProjects };
-  }
-
   listWorkers(): Worker[] {
     return this.workers.listWorkers();
   }
