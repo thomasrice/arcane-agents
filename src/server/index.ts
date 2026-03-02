@@ -260,10 +260,6 @@ function parseSpawnInput(body: unknown): WorkerSpawnInput {
     return { shortcutIndex: record.shortcutIndex };
   }
 
-  if (typeof record.profileId === "string" && record.profileId.trim().length > 0) {
-    return { profileId: record.profileId };
-  }
-
   if (typeof record.projectId === "string" && typeof record.runtimeId === "string") {
     const command = Array.isArray(record.command)
       ? record.command.filter((value): value is string => typeof value === "string")
@@ -275,7 +271,7 @@ function parseSpawnInput(body: unknown): WorkerSpawnInput {
     };
   }
 
-  throw new Error("Invalid spawn request: expected shortcutIndex, profileId, or projectId+runtimeId.");
+  throw new Error("Invalid spawn request: expected shortcutIndex or projectId+runtimeId.");
 }
 
 interface BroadcastInputBody {

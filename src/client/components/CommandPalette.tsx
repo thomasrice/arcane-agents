@@ -5,7 +5,6 @@ interface CommandPaletteProps {
   open: boolean;
   config: ResolvedConfig;
   onSpawnShortcut: (shortcutIndex: number) => void;
-  onSpawnProfile: (profileId: string) => void;
   onSpawnProjectRuntime: (projectId: string, runtimeId: string) => void;
   onClose: () => void;
 }
@@ -22,7 +21,6 @@ export function CommandPalette({
   open,
   config,
   onSpawnShortcut,
-  onSpawnProfile,
   onSpawnProjectRuntime,
   onClose
 }: CommandPaletteProps): JSX.Element | null {
@@ -43,16 +41,6 @@ export function CommandPalette({
       });
     });
 
-    for (const [profileId, profile] of Object.entries(config.profiles)) {
-      nextItems.push({
-        id: `profile-${profileId}`,
-        label: `Profile ${profile.label}`,
-        subLabel: `${profileId} · ${profile.project} · ${profile.runtime}`,
-        searchText: `${profileId} ${profile.label} ${profile.project} ${profile.runtime}`.toLowerCase(),
-        run: () => onSpawnProfile(profileId)
-      });
-    }
-
     for (const [projectId, project] of Object.entries(config.projects)) {
       for (const [runtimeId, runtime] of Object.entries(config.runtimes)) {
         nextItems.push({
@@ -66,7 +54,7 @@ export function CommandPalette({
     }
 
     return nextItems;
-  }, [config, onSpawnProfile, onSpawnProjectRuntime, onSpawnShortcut]);
+  }, [config, onSpawnProjectRuntime, onSpawnShortcut]);
 
   const filteredItems = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -117,7 +105,7 @@ export function CommandPalette({
           className="palette-input"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Type project/runtime, shortcut, or profile"
+          placeholder="Type project/runtime or shortcut"
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();

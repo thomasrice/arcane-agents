@@ -33,16 +33,9 @@ export interface ShortcutConfig {
   label: string;
   project: string;
   runtime: string;
-  avatar?: AvatarType;
-  hotkeys?: string[];
-}
-
-export interface ProfileConfig {
-  project: string;
-  runtime: string;
-  label: string;
   command?: string[];
   avatar?: AvatarType;
+  hotkeys?: string[];
 }
 
 export interface DiscoveryRule {
@@ -58,7 +51,6 @@ export interface ResolvedConfig {
   projects: Record<string, ProjectConfig>;
   runtimes: Record<string, RuntimeConfig>;
   shortcuts: ShortcutConfig[];
-  profiles: Record<string, ProfileConfig>;
   discovery: DiscoveryRule[];
   backend: {
     tmux: {
@@ -92,7 +84,6 @@ export interface Worker {
   runtimeId: string;
   runtimeLabel: string;
   command: string[];
-  profileId?: string;
   status: WorkerStatus;
   activityText?: string;
   activityTool?: ActivityTool;
@@ -107,7 +98,6 @@ export interface Worker {
 
 export type WorkerSpawnInput =
   | { shortcutIndex: number }
-  | { profileId: string }
   | { projectId: string; runtimeId: string; command?: string[] };
 
 export type WsServerEvent =

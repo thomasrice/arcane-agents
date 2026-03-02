@@ -19,16 +19,9 @@ const shortcutSchema = z.object({
   label: z.string().min(1),
   project: z.string().min(1),
   runtime: z.string().min(1),
+  command: z.array(z.string().min(1)).min(1).optional(),
   avatar: avatarSchema.optional(),
   hotkeys: z.array(z.string().min(1)).optional()
-});
-
-const profileSchema = z.object({
-  project: z.string().min(1),
-  runtime: z.string().min(1),
-  label: z.string().min(1),
-  command: z.array(z.string().min(1)).min(1).optional(),
-  avatar: avatarSchema.optional()
 });
 
 const discoveryRuleSchema = z.object({
@@ -57,7 +50,6 @@ export const partialConfigSchema = z
     projects: z.record(projectSchema).optional(),
     runtimes: z.record(runtimeSchema).optional(),
     shortcuts: z.array(shortcutSchema).optional(),
-    profiles: z.record(profileSchema).optional(),
     discovery: z.array(discoveryRuleSchema).optional(),
     backend: z
       .object({
@@ -77,7 +69,6 @@ export const resolvedConfigSchema = z.object({
   projects: z.record(projectSchema),
   runtimes: z.record(runtimeSchema),
   shortcuts: z.array(shortcutSchema),
-  profiles: z.record(profileSchema),
   discovery: z.array(discoveryRuleSchema),
   backend: backendSchema,
   server: serverSchema
@@ -106,7 +97,6 @@ export function createDefaultConfig(): ResolvedConfig {
         runtime: "shell"
       }
     ],
-    profiles: {},
     discovery: [],
     backend: {
       tmux: {

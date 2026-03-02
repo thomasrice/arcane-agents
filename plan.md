@@ -6,7 +6,7 @@ Overworld is a local-first visual control room for managing terminal-backed AI c
 
 Build an open-source orchestration layer that can:
 
-- spawn terminal workers from config-driven shortcuts and profiles,
+- spawn terminal workers from config-driven shortcuts,
 - map each worker to a real tmux window,
 - visualise worker state in a top-down pixel-art overworld,
 - provide an embedded terminal (xterm.js) for direct interaction,
@@ -19,7 +19,7 @@ Generic and open-source by default; user-specific setups live in config files.
 
 - Local-first (no cloud dependency).
 - tmux as the execution substrate (hard dependency for v1).
-- Config-driven (projects, runtimes, shortcuts, profiles are data, not code).
+- Config-driven (projects, runtimes, shortcuts are data, not code).
 - Terminal-in-browser as primary interaction (xterm.js panel).
 - RTS-style controls: bottom bar for spawning, contextual toolbar for selected worker.
 - Map is decorative and organisational, not functional (spawning is not tied to map location).
@@ -68,7 +68,7 @@ Generic and open-source by default; user-specific setups live in config files.
 - The map has no functional zones — it is purely decorative and for visual clustering.
 - Users drag characters to arrange them however they like (group by project, priority, etc).
 
-Character variety is important. Each spawned worker gets a distinct fantasy character from a pool. Shortcuts/profiles can pin a specific avatar type. Characters generated via PixelLab API or similar pixel-art tools.
+Character variety is important. Each spawned worker gets a distinct fantasy character from a pool. Shortcuts can pin a specific avatar type. Characters generated via PixelLab API or similar pixel-art tools.
 
 ## Core Workflows
 
@@ -283,13 +283,11 @@ shortcuts:
     project: obsidian
     runtime: claude
 
-# Profiles: named presets for less common combos (available via palette and custom spawn)
-profiles:
-  kairos:
+# Additional shortcut with command override + pinned avatar
+  - label: Kairos
     project: taurient
     runtime: shell
     command: ["poetry", "run", "python", "chat.py", "-a", "kairos"]
-    label: Chat with Kairos
     avatar: wizard
 
 # Discovery: auto-scan rules to find additional projects
@@ -359,9 +357,8 @@ This is heuristic and tool-specific but good enough for visual indicators. Falls
 
 - `Project`: `id`, `name`, `path`, `shortName`, `source` (config | discovered)
 - `Runtime`: `id`, `name`, `command`, `args`, `env`
-- `Shortcut`: `label`, `projectId`, `runtimeId`, `avatar`
-- `Profile`: `id`, `projectId`, `runtimeId`, `label`, `command` (override), `avatar`
-- `Worker`: `id`, `projectId`, `runtimeId`, `profileId?`, `status`, `activityText`, `avatarType`, `position` (map x,y), `tmuxRef`, `createdAt`, `lastActivityAt`
+- `Shortcut`: `label`, `projectId`, `runtimeId`, `command?` (override), `avatar?`, `hotkeys?`
+- `Worker`: `id`, `projectId`, `runtimeId`, `status`, `activityText`, `avatarType`, `position` (map x,y), `tmuxRef`, `createdAt`, `lastActivityAt`
 - `TmuxRef`: `session`, `window`, `pane`
 
 ## Orchestrator API
@@ -369,10 +366,10 @@ This is heuristic and tool-specific but good enough for visual indicators. Falls
 ### REST endpoints
 
 - `GET /api/health`
-- `GET /api/config` — resolved config (projects, runtimes, shortcuts, profiles)
+- `GET /api/config` — resolved config (projects, runtimes, shortcuts)
 - `GET /api/config/projects` — includes discovered projects
 - `GET /api/workers` — all active workers with status
-- `POST /api/workers/spawn` — `{ shortcutIndex }` or `{ profileId }` or `{ projectId, runtimeId }`
+- `POST /api/workers/spawn` — `{ shortcutIndex }` or `{ projectId, runtimeId }`
 - `POST /api/workers/:id/stop`
 - `POST /api/workers/:id/restart`
 - `PATCH /api/workers/:id/position` — `{ x, y }` for drag-to-reposition
@@ -463,7 +460,7 @@ A modal/panel that opens over the map:
 
 An overlay text input that fuzzy-matches across:
 - Shortcut labels (e.g. "PA", "Lab").
-- Profile names (e.g. "kairos").
+- Shortcut names with command/avatar overrides (e.g. "kairos").
 - Project + runtime combos (e.g. "personal-assistant claude", "taurient opencode").
 - Discovered project names.
 
@@ -492,7 +489,7 @@ Pressing Enter spawns immediately. Results update as you type.
 
 - Fantasy theme: knight, mage, ranger, orc, elf, dwarf, druid, paladin, rogue, barbarian, etc.
 - Each spawned worker gets the next available character type from a pool (round-robin).
-- Shortcuts and profiles can pin a specific avatar type in config.
+- Shortcuts can pin a specific avatar type in config.
 - Characters are pixel-art sprite sheets generated via PixelLab API or similar tools.
 - Sprite format: walk (4 directions), idle, working poses. Exact sheet layout TBD during Phase 4.
 - For early phases, use placeholder sprites (pixel-agents character sheets or simple coloured tokens).
@@ -627,7 +624,7 @@ Discovered projects are ephemeral (not written to config) but appear in the cust
 - [x] Terminal panel auto-switches to newly spawned workers.
 - [x] Bottom bar shows contextual controls (stop/restart) when a worker is selected.
 - [x] Custom spawn dialog allows picking from configured + discovered projects.
-- [x] Command palette fuzzy-matches shortcuts, profiles, and project+runtime combos.
+- [x] Command palette fuzzy-matches shortcuts and project+runtime combos.
 - [x] Status indicators update in real time (idle, working, attention, error).
 - [x] Activity text is parsed and shown for at least Claude Code and OpenCode.
 - [x] Can stop and restart workers from the contextual toolbar.

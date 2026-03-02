@@ -19,7 +19,6 @@ interface WorkerRow {
   runtime_id: string;
   runtime_label: string;
   command_json: string;
-  profile_id: string | null;
   status: WorkerStatus;
   activity_text: string | null;
   activity_tool: Worker["activityTool"] | null;
@@ -64,12 +63,12 @@ export class WorkerRepository {
         `
         INSERT INTO workers (
           id, name, display_name, project_id, project_path, runtime_id, runtime_label,
-          command_json, profile_id, status, activity_text, activity_tool, activity_path, avatar_type, movement_mode,
+          command_json, status, activity_text, activity_tool, activity_path, avatar_type, movement_mode,
           position_x, position_y, tmux_session, tmux_window, tmux_pane,
           created_at, updated_at
         ) VALUES (
           @id, @name, @display_name, @project_id, @project_path, @runtime_id, @runtime_label,
-          @command_json, @profile_id, @status, @activity_text, @activity_tool, @activity_path, @avatar_type, @movement_mode,
+          @command_json, @status, @activity_text, @activity_tool, @activity_path, @avatar_type, @movement_mode,
           @position_x, @position_y, @tmux_session, @tmux_window, @tmux_pane,
           @created_at, @updated_at
         )
@@ -81,7 +80,6 @@ export class WorkerRepository {
           runtime_id = excluded.runtime_id,
           runtime_label = excluded.runtime_label,
           command_json = excluded.command_json,
-          profile_id = excluded.profile_id,
           status = excluded.status,
           activity_text = excluded.activity_text,
           activity_tool = excluded.activity_tool,
@@ -170,7 +168,6 @@ export class WorkerRepository {
         runtime_id TEXT NOT NULL,
         runtime_label TEXT NOT NULL,
         command_json TEXT NOT NULL,
-        profile_id TEXT,
         status TEXT NOT NULL,
         activity_text TEXT,
         activity_tool TEXT,
@@ -206,7 +203,6 @@ export class WorkerRepository {
       runtimeId: row.runtime_id,
       runtimeLabel: row.runtime_label,
       command: JSON.parse(row.command_json) as string[],
-      profileId: row.profile_id ?? undefined,
       status: row.status,
       activityText: row.activity_text ?? undefined,
       activityTool: row.activity_tool ?? undefined,
@@ -237,7 +233,6 @@ export class WorkerRepository {
       runtime_id: worker.runtimeId,
       runtime_label: worker.runtimeLabel,
       command_json: JSON.stringify(worker.command),
-      profile_id: worker.profileId ?? null,
       status: worker.status,
       activity_text: worker.activityText ?? null,
       activity_tool: worker.activityTool ?? null,

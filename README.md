@@ -8,7 +8,7 @@ Each agent appears as a character on a 2D map, and selecting one opens its live 
 - Manages agents as tmux windows.
 - Streams live terminal output into the browser via `node-pty` + WebSockets.
 - Tracks worker status (idle/working/attention/error) from pane output.
-- Lets you spawn agents from shortcuts/profiles or direct project+runtime combinations.
+- Lets you spawn agents from shortcuts or direct project+runtime combinations.
 - Stores state locally in SQLite.
 
 ## Stack
@@ -21,6 +21,21 @@ Each agent appears as a character on a 2D map, and selecting one opens its live 
 - tmux (session/window process management)
 - better-sqlite3 (local persistence)
 
+## Platform Support
+
+- Linux: fully supported and recommended.
+- macOS: core app works, but opening a worker in an external terminal (`↗`) is currently Linux-oriented (`xdg-terminal-exec`).
+- Windows: use WSL2 (Ubuntu or similar) and run Overworld inside WSL.
+
+## Requirements
+
+- Node.js 20+ and npm
+- tmux (hard dependency)
+- At least one configured runtime command (for example `opencode`, `claude`, or `bash`)
+- Optional but useful:
+  - `git` (for worktree/discovery workflows)
+  - `xdg-terminal-exec` (Linux external terminal button)
+
 ## Project Layout
 
 ```
@@ -31,13 +46,42 @@ src/
 assets/     Maps, character art
 ```
 
-## Running Locally
+## Install (Cross-Platform)
 
-Install dependencies:
+Linux (Debian/Ubuntu):
+
+```bash
+sudo apt update
+sudo apt install -y tmux git
+```
+
+macOS (Homebrew):
+
+```bash
+brew install tmux git
+```
+
+Windows:
+
+- Install WSL2 and Ubuntu.
+- Run the Linux setup steps inside WSL.
+
+## Quick Start (Dev)
+
+Clone + install:
 
 ```bash
 npm install
 ```
+
+Optional: create your user config from the repo example:
+
+```bash
+mkdir -p ~/.config/overworld
+cp config.example.yaml ~/.config/overworld/config.yaml
+```
+
+Then edit runtime commands and project paths in `~/.config/overworld/config.yaml`.
 
 Start dev mode (client + server):
 
@@ -50,6 +94,15 @@ Default URLs:
 - App (Vite): `http://127.0.0.1:7600`
 - API (Express): `http://127.0.0.1:7601`
 
+## Build + Run
+
+```bash
+npm run build
+npm start
+```
+
+Default runtime URL: `http://127.0.0.1:7600`
+
 ## Config
 
 User config file:
@@ -61,12 +114,16 @@ State directory:
 - `~/.local/state/overworld/`
 
 Note: config is loaded at server startup. Changes to `config.yaml` require a server restart.
+These paths are used on Linux/macOS and inside WSL.
 
-## Shortcuts vs Profiles
+## Shortcuts
 
-- `shortcuts`: quick spawn entries shown in the bottom bar and summon list.
-- `shortcuts` can optionally define `hotkeys` (for example `"Ctrl+A"`, `"Ctrl+Shift+A"`) to spawn from the keyboard in non-terminal contexts.
-- `profiles`: named spawn presets mainly used via the command palette (`/`), with optional command/avatar overrides.
+- `shortcuts`: quick spawn entries shown in the bottom bar, summon list, and command palette.
+- A shortcut can optionally define:
+  - `hotkeys` (for example `"Ctrl+A"`, `"Ctrl+Shift+A"`)
+  - `command` (override runtime command for this shortcut)
+  - `avatar` (pin a specific character sprite)
+- Avatars pinned by shortcuts are excluded from the random avatar pool used by non-pinned spawns (unless all avatars are pinned, then full pool is used).
 
 ## Restarting The Server
 

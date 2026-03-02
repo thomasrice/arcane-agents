@@ -16,7 +16,7 @@ projects:
 
 runtimes:
   claude:
-    command: ["claude"]
+    command: ["claude", "--dangerously-skip-permissions"]
     label: Claude Code
   opencode:
     command: ["opencode"]
@@ -30,25 +30,23 @@ shortcuts:
     project: personal-assistant
     runtime: opencode
     hotkeys: ["Ctrl+A"]
-  - label: Lab
+  - label: Labyrinth
     project: labyrinth
     runtime: claude
     hotkeys: ["Ctrl+Shift+A"]
-  - label: Taur
+  - label: Taurient
     project: taurient
-    runtime: claude
+    runtime: opencode
     hotkeys: ["Ctrl+S"]
-  - label: Obs
+  - label: Obsidian
     project: obsidian
-    runtime: claude
-
-profiles:
-  kairos:
+    runtime: opencode
+  - label: Kairos
     project: taurient
     runtime: shell
     command: ["poetry", "run", "python", "chat.py", "-a", "kairos"]
-    label: Chat with Kairos
-    avatar: wizard
+    hotkeys: ["Ctrl+K"]
+    avatar: elder-wizard
 
 discovery:
   - name: code-projects

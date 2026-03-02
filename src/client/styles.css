@@ -285,6 +285,13 @@ body {
   background: rgba(52, 86, 67, 0.94);
 }
 
+.worker-roster-summon-avatar {
+  border-radius: 10px;
+  border: 1px solid rgba(170, 227, 186, 0.44);
+  background: rgba(40, 70, 54, 0.95);
+  padding: 2px;
+}
+
 .worker-roster-summon-glyph {
   width: 42px;
   height: 42px;

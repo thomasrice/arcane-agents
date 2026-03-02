@@ -1008,9 +1008,19 @@ export default function App(): JSX.Element {
                       type="button"
                     >
                       <div className="worker-roster-main">
-                        <div className="worker-roster-summon-glyph" aria-hidden="true">
-                          +
-                        </div>
+                        {entry.shortcut.avatar ? (
+                          <img
+                            className="worker-roster-avatar worker-roster-summon-avatar"
+                            src={`/api/assets/characters/${encodeURIComponent(resolveSpriteAssetType(entry.shortcut.avatar))}/rotations/south.png`}
+                            alt=""
+                            loading="lazy"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <div className="worker-roster-summon-glyph" aria-hidden="true">
+                            +
+                          </div>
+                        )}
                         <div className="worker-roster-text">
                           <div className="worker-roster-name">{entry.shortcut.label}</div>
                           <div className="worker-roster-meta">
@@ -1049,9 +1059,6 @@ export default function App(): JSX.Element {
           onClose={() => setPaletteOpen(false)}
           onSpawnShortcut={(shortcutIndex) => {
             void runSpawn({ shortcutIndex });
-          }}
-          onSpawnProfile={(profileId) => {
-            void runSpawn({ profileId });
           }}
           onSpawnProjectRuntime={(projectId, runtimeId) => {
             void runSpawn({ projectId, runtimeId });
@@ -1098,7 +1105,7 @@ export default function App(): JSX.Element {
               </div>
               <div className="shortcut-row">
                 <kbd>W/A/S/D</kbd>
-                <span>Move selected agent (hold)</span>
+                <span>Move selected agent(s) smoothly (hold)</span>
               </div>
               <div className="shortcut-row">
                 <kbd>Shift+W/A/S/D</kbd>

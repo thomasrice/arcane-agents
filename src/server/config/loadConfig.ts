@@ -110,14 +110,4 @@ function validateReferences(config: ResolvedConfig): void {
       throw new Error(`Shortcut '${shortcut.label}' references unknown runtime '${shortcut.runtime}'.`);
     }
   }
-
-  for (const [profileId, profile] of Object.entries(config.profiles)) {
-    if (!config.projects[profile.project]) {
-      throw new Error(`Profile '${profileId}' references unknown project '${profile.project}'.`);
-    }
-
-    if (!config.runtimes[profile.runtime]) {
-      throw new Error(`Profile '${profileId}' references unknown runtime '${profile.runtime}'.`);
-    }
-  }
 }

@@ -23,7 +23,6 @@ interface SpawnPlan {
   runtime: RuntimeConfig;
   command: string[];
   displayName?: string;
-  profileId?: string;
   avatar?: AvatarType;
 }
 
@@ -114,7 +113,6 @@ export class OrchestratorService {
       runtimeId: plan.runtimeId,
       runtimeLabel: plan.runtime.label,
       command: launchCommand,
-      profileId: plan.profileId,
       status: "idle",
       avatarType: this.nextAvatar(plan.avatar),
       movementMode: "wander",
@@ -347,36 +345,9 @@ export class OrchestratorService {
         project,
         runtimeId: shortcut.runtime,
         runtime,
-        command: runtime.command,
+        command: shortcut.command ?? runtime.command,
         displayName: shortcut.label,
         avatar: shortcut.avatar
-      };
-    }
-
-    if ("profileId" in input) {
-      const profile = this.config.profiles[input.profileId];
-      if (!profile) {
-        throw new Error(`Profile '${input.profileId}' is not defined.`);
-      }
-
-      const project = this.config.projects[profile.project];
-      const runtime = this.config.runtimes[profile.runtime];
-      if (!project) {
-        throw new Error(`Profile '${input.profileId}' references unknown project '${profile.project}'.`);
-      }
-      if (!runtime) {
-        throw new Error(`Profile '${input.profileId}' references unknown runtime '${profile.runtime}'.`);
-      }
-
-      return {
-        projectId: profile.project,
-        project,
-        runtimeId: profile.runtime,
-        runtime,
-        command: profile.command ?? runtime.command,
-        displayName: profile.label,
-        profileId: input.profileId,
-        avatar: profile.avatar
       };
     }
 
@@ -482,6 +453,13 @@ export class OrchestratorService {
     }
 
     const pool = availableAvatars.length > 0 ? availableAvatars : ["knight"];
+    const reservedConfiguredAvatars = new Set(
+      this.config.shortcuts
+        .map((shortcut) => shortcut.avatar)
+        .filter((avatarType): avatarType is AvatarType => Boolean(avatarType && pool.includes(avatarType)))
+    );
+    const randomPool = pool.filter((avatarType) => !reservedConfiguredAvatars.has(avatarType));
+    const eligiblePool = randomPool.length > 0 ? randomPool : pool;
     const activeAvatars = new Set(
       this.workers
         .listWorkers()
@@ -489,10 +467,10 @@ export class OrchestratorService {
         .map((worker) => worker.avatarType)
     );
 
-    const unusedAvatars = pool.filter((avatarType) => !activeAvatars.has(avatarType));
-    const selectionPool = unusedAvatars.length > 0 ? unusedAvatars : pool;
+    const unusedAvatars = eligiblePool.filter((avatarType) => !activeAvatars.has(avatarType));
+    const selectionPool = unusedAvatars.length > 0 ? unusedAvatars : eligiblePool;
 
-    return selectionPool[Math.floor(Math.random() * selectionPool.length)] ?? pool[0] ?? "knight";
+    return selectionPool[Math.floor(Math.random() * selectionPool.length)] ?? eligiblePool[0] ?? pool[0] ?? "knight";
   }
 
   private nextSpawnPosition(): WorkerPosition {
