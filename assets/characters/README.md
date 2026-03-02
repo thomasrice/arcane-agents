@@ -44,17 +44,18 @@ assets/characters/
         15.png
 ```
 
-Create one top-level folder per character type. Worker avatar types currently include:
+Create one top-level folder per character type.
 
-- `knight`
-- `wizard`
-- `enchantress`
-- `berserker`
-- `druid`
-- `rogue`
-- `priestess`
-- `elf-ranger`
-- `minotaur`
+Avatar discovery is directory-driven: Overworld treats each subfolder as an available avatar when these required files exist:
+
+- `rotations/south.png`
+- `rotations/east.png`
+- `rotations/north.png`
+- `rotations/west.png`
+- `animations/walk/south/0.png`
+- `animations/working/0.png`
+
+If these files are present, you can drop in a new folder and it becomes eligible automatically (including random spawn selection).
 
 ## Runtime Behavior
 
@@ -62,3 +63,22 @@ Create one top-level folder per character type. Worker avatar types currently in
 - Moving characters use `animations/walk/<direction>/<index>.png` frames.
 - Working characters use `animations/working/<index>.png` (south-facing loop).
 - Frames are loaded in ascending index order starting at `0.png` until a gap is encountered.
+
+## Generation Notes (Recorded)
+
+We do not currently have a checked-in PixelLab preset export or prompt/options log.
+
+What we can reliably recover from the current asset set:
+
+- All character sprites are `64x64` PNG (`402/402` files).
+- Direction set is always `south`, `east`, `north`, `west`.
+- Walk cycle length is variable by character (legacy packs often `6` frames, newer packs often `8` frames).
+- Standard working cycle is `16` frames (`0.png` to `15.png`).
+- One known outlier: `rogue` has `12` south walk frames.
+- Existing characters share a consistent top-down fantasy RPG style with transparent backgrounds.
+
+Recommended process for future consistency:
+
+1. When generating a new character, copy the exact PixelLab options/prompt into this file.
+2. Include model, seed (if available), and any style sliders/toggles.
+3. Keep output at `64x64` and preserve the same direction/frame layout.

@@ -1,24 +1,7 @@
 import { z } from "zod";
-import type { AvatarType, ResolvedConfig } from "../../shared/types";
+import type { ResolvedConfig } from "../../shared/types";
 
-const avatarValues: [AvatarType, ...AvatarType[]] = [
-  "knight",
-  "wizard",
-  "enchantress",
-  "berserker",
-  "druid",
-  "rogue",
-  "priestess",
-  "elf-ranger",
-  "minotaur",
-  "mage",
-  "ranger",
-  "paladin",
-  "orc",
-  "dwarf"
-];
-
-const avatarSchema = z.enum(avatarValues);
+const avatarSchema = z.string().trim().min(1);
 
 const projectSchema = z.object({
   path: z.string().min(1),

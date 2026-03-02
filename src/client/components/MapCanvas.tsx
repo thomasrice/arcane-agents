@@ -115,7 +115,8 @@ const workerRadius = 13;
 const spriteBaseSize = 64;
 const spriteAnchorYFactor = 0.84;
 const moveSpeedPerTick = 9;
-const animationIntervalMs = 95;
+const movementIntervalMs = 95;
+const walkAnimationIntervalMs = 72;
 const keyboardPanSpeedPerSecond = 520;
 const keyboardMoveStepTiles = 0.75;
 const pointerPanDragThreshold = 4;
@@ -140,23 +141,6 @@ const activityOverlayShimmerCycleMs = 1800;
 const activityOverlayShimmerBandChars = 3.4;
 const flameRegionMaskCache = new Map<string, { canvas: HTMLCanvasElement; heatCoverage: number }>();
 const flameMaskVersion = "v4";
-
-const avatarColor: Record<string, string> = {
-  knight: "#8ca1c8",
-  wizard: "#6489cf",
-  enchantress: "#a68bc9",
-  berserker: "#9b7350",
-  priestess: "#d4c07b",
-  "elf-ranger": "#5b9463",
-  mage: "#4b83d6",
-  ranger: "#4d9961",
-  druid: "#6f8f44",
-  rogue: "#7d6aa6",
-  minotaur: "#7f5f4d",
-  paladin: "#d6b568",
-  orc: "#688449",
-  dwarf: "#a37854"
-};
 
 export function MapCanvas({
   workers,
@@ -194,6 +178,7 @@ export function MapCanvas({
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [animatedPositions, setAnimatedPositions] = useState<Record<string, WorkerPosition>>({});
   const [animationTick, setAnimationTick] = useState(0);
+  const [walkAnimationTick, setWalkAnimationTick] = useState(0);
   const [hasCenteredOnMap, setHasCenteredOnMap] = useState(false);
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null);
   const [mapPreviewImage, setMapPreviewImage] = useState<HTMLImageElement | undefined>(undefined);
@@ -306,6 +291,16 @@ export function MapCanvas({
   }, [fadingWorkers, workers]);
 
   useEffect(() => {
+    const walkAnimationInterval = window.setInterval(() => {
+      setWalkAnimationTick((current) => (current + 1) % 1000000);
+    }, walkAnimationIntervalMs);
+
+    return () => {
+      clearInterval(walkAnimationInterval);
+    };
+  }, []);
+
+  useEffect(() => {
     const animationInterval = window.setInterval(() => {
       setAnimationTick((current) => (current + 1) % 1000000);
 
@@ -371,7 +366,7 @@ export function MapCanvas({
         }
 
         const durationMs = randomRange(1000, 2000);
-        const steps = Math.max(8, durationMs / animationIntervalMs);
+        const steps = Math.max(8, durationMs / movementIntervalMs);
         const waypoints = createCardinalWaypoints(currentPosition, nextTarget);
 
         orders[worker.id] = {
@@ -539,7 +534,7 @@ export function MapCanvas({
           y: Math.round(commit.position.y * 10) / 10
         });
       }
-    }, animationIntervalMs);
+    }, movementIntervalMs);
 
     return () => {
       clearInterval(animationInterval);
@@ -646,6 +641,7 @@ export function MapCanvas({
       mapData,
       spriteLibrary,
       animationTick,
+      walkAnimationTick,
       commandFeedback,
       mapPreviewImage,
       activityOverlayStateByWorker
@@ -653,6 +649,7 @@ export function MapCanvas({
   }, [
     animatedPositions,
     animationTick,
+    walkAnimationTick,
     canvasSize,
     controlGroups,
     fadingWorkers,
@@ -1116,6 +1113,7 @@ interface DrawSceneInput {
   mapData: LoadedOutpostMap | undefined;
   spriteLibrary: Partial<Record<string, CharacterSpriteSet>>;
   animationTick: number;
+  walkAnimationTick: number;
   commandFeedback: CommandFeedback | null;
   mapPreviewImage: HTMLImageElement | undefined;
   activityOverlayStateByWorker: Record<string, ActivityOverlayRenderState | undefined>;
@@ -1136,6 +1134,7 @@ function drawScene({
   mapData,
   spriteLibrary,
   animationTick,
+  walkAnimationTick,
   commandFeedback,
   mapPreviewImage,
   activityOverlayStateByWorker
@@ -1207,7 +1206,7 @@ function drawScene({
     const spriteFrame = getSpriteFrame(spriteSet, {
       direction: motion.facing,
       state: spriteState,
-      frameIndex: animationTick
+      frameIndex: spriteState === "walking" ? walkAnimationTick : animationTick
     });
 
     if (ghostAlpha === undefined) {
@@ -1405,7 +1404,7 @@ function drawFallbackWorker(
   radius: number,
   scale: number
 ): void {
-  context.fillStyle = avatarColor[worker.avatarType] ?? "#7a8c9a";
+  context.fillStyle = fallbackAvatarColor(worker.avatarType);
   context.beginPath();
   context.arc(centerX, centerY, radius, 0, Math.PI * 2);
   context.fill();
@@ -1416,6 +1415,21 @@ function drawFallbackWorker(
 
   context.fillStyle = "rgba(15, 24, 19, 0.45)";
   context.fillRect(centerX - 4 * scale, centerY - 3 * scale, 8 * scale, 6 * scale);
+}
+
+function fallbackAvatarColor(avatarType: string): string {
+  const normalized = avatarType.trim().toLowerCase();
+  if (!normalized) {
+    return "#7a8c9a";
+  }
+
+  let hash = 0;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0;
+  }
+
+  const hue = hash % 360;
+  return `hsl(${hue} 35% 56%)`;
 }
 
 function drawCharacterGroundShadow(context: CanvasRenderingContext2D, centerX: number, groundY: number, scale: number): void {

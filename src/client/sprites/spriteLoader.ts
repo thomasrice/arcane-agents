@@ -21,13 +21,7 @@ interface SpriteFrameOptions {
 
 const directions: SpriteDirection[] = ["south", "east", "north", "west"];
 const imageLoadCache = new Map<string, Promise<HTMLImageElement | null>>();
-const spriteTypeAliases: Partial<Record<string, string>> = {
-  mage: "wizard",
-  ranger: "elf-ranger",
-  paladin: "priestess",
-  orc: "berserker",
-  dwarf: "enchantress"
-};
+const targetWalkCycleFrames = 8;
 
 export function useCharacterSpriteLibrary(characterTypes: string[]): Partial<Record<string, CharacterSpriteSet>> {
   const normalizedTypes = useMemo(
@@ -81,7 +75,7 @@ export function getSpriteFrame(spriteSet: CharacterSpriteSet | undefined, option
   if (options.state === "walking") {
     const walkFrames = spriteSet.animations.walk[resolvedDirection] ?? spriteSet.animations.walk.south;
     if (walkFrames && walkFrames.length > 0) {
-      return walkFrames[options.frameIndex % walkFrames.length];
+      return walkFrames[resolveWalkFrameIndex(options.frameIndex, walkFrames.length)];
     }
   }
 
@@ -190,6 +184,16 @@ function pickDirection(spriteSet: CharacterSpriteSet, requested: SpriteDirection
   return "south";
 }
 
+function resolveWalkFrameIndex(frameTick: number, frameCount: number): number {
+  if (frameCount <= 1) {
+    return 0;
+  }
+
+  const cycleFrames = Math.max(targetWalkCycleFrames, frameCount);
+  const normalizedTick = ((frameTick % cycleFrames) + cycleFrames) % cycleFrames;
+  return Math.min(frameCount - 1, Math.floor((normalizedTick / cycleFrames) * frameCount));
+}
+
 export function resolveSpriteAssetType(characterType: string): string {
-  return spriteTypeAliases[characterType] ?? characterType;
+  return characterType;
 }

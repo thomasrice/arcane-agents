@@ -15,21 +15,7 @@ export type ActivityTool =
   | "terminal"
   | "unknown";
 
-export type AvatarType =
-  | "knight"
-  | "wizard"
-  | "enchantress"
-  | "berserker"
-  | "druid"
-  | "rogue"
-  | "priestess"
-  | "elf-ranger"
-  | "minotaur"
-  | "mage"
-  | "ranger"
-  | "paladin"
-  | "orc"
-  | "dwarf";
+export type AvatarType = string;
 
 export interface ProjectConfig {
   path: string;

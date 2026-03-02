@@ -12,6 +12,7 @@ import type {
   WorkerPosition,
   WorkerSpawnInput
 } from "../../shared/types";
+import { listAvailableAvatarTypes } from "../assets/avatarCatalog";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { TmuxAdapter, type ManagedWindow } from "../tmux/tmuxAdapter";
 
@@ -38,23 +39,10 @@ interface OutpostMapSpec {
   spawnArea?: SpawnAreaSpec;
 }
 
-const allWorkerAvatars: AvatarType[] = [
-  "knight",
-  "wizard",
-  "enchantress",
-  "berserker",
-  "druid",
-  "rogue",
-  "priestess",
-  "elf-ranger",
-  "minotaur"
-];
-
 const outpostSpawnSpec = loadOutpostSpawnSpec();
 const spawnSeparationDistancePx = 52;
 
 export class OrchestratorService {
-  private readonly spawnAvatarPool: AvatarType[];
   private readonly configuredProjects: Record<string, ProjectConfig>;
   private discoveredProjects: Record<string, ProjectConfig> = {};
   private config: ResolvedConfig;
@@ -65,7 +53,6 @@ export class OrchestratorService {
     private readonly tmux: TmuxAdapter
   ) {
     this.config = initialConfig;
-    this.spawnAvatarPool = resolveSpawnAvatarPool();
     this.configuredProjects = { ...initialConfig.projects };
   }
 
@@ -502,11 +489,13 @@ export class OrchestratorService {
   }
 
   private nextAvatar(preferred?: AvatarType): AvatarType {
-    if (preferred && this.spawnAvatarPool.includes(preferred)) {
+    const availableAvatars = listAvailableAvatarTypes();
+
+    if (preferred && availableAvatars.includes(preferred)) {
       return preferred;
     }
 
-    const pool = this.spawnAvatarPool.length > 0 ? this.spawnAvatarPool : allWorkerAvatars;
+    const pool = availableAvatars.length > 0 ? availableAvatars : ["knight"];
     const activeAvatars = new Set(
       this.workers
         .listWorkers()
@@ -517,7 +506,7 @@ export class OrchestratorService {
     const unusedAvatars = pool.filter((avatarType) => !activeAvatars.has(avatarType));
     const selectionPool = unusedAvatars.length > 0 ? unusedAvatars : pool;
 
-    return selectionPool[Math.floor(Math.random() * selectionPool.length)] ?? "knight";
+    return selectionPool[Math.floor(Math.random() * selectionPool.length)] ?? pool[0] ?? "knight";
   }
 
   private nextSpawnPosition(): WorkerPosition {
@@ -588,13 +577,6 @@ export class OrchestratorService {
       }
     };
   }
-}
-
-function resolveSpawnAvatarPool(): AvatarType[] {
-  const assetsRoot = path.resolve(process.cwd(), "assets/characters");
-  return allWorkerAvatars.filter((avatarType) => {
-    return fs.existsSync(path.join(assetsRoot, avatarType, "rotations", "south.png"));
-  });
 }
 
 function loadOutpostSpawnSpec(): OutpostMapSpec | undefined {

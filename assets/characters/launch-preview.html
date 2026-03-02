@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Launch Character Preview</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --border: #2d333b;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --ok-bg: #103625;
+      --ok-text: #7ee787;
+      --bad-bg: #3a1f22;
+      --bad-text: #ff7b72;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.35 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .note {
+      margin: 0 0 14px;
+      color: var(--muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--border);
+    }
+
+    th,
+    td {
+      border-top: 1px solid var(--border);
+      padding: 10px;
+      vertical-align: top;
+    }
+
+    th {
+      text-align: left;
+      font-weight: 600;
+      color: #c9d1d9;
+    }
+
+    .char-name {
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
+    .asset-key {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .front {
+      width: 64px;
+      height: 64px;
+      image-rendering: pixelated;
+      background: #0b0f14;
+      border: 1px solid var(--border);
+      object-fit: contain;
+      display: block;
+    }
+
+    .row-stack {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    .anim-item {
+      border: 1px solid var(--border);
+      background: #0b0f14;
+      padding: 6px;
+      min-width: 96px;
+    }
+
+    .anim-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .anim-frame {
+      width: 64px;
+      height: 64px;
+      display: block;
+      image-rendering: pixelated;
+      background: #000;
+      border: 1px solid var(--border);
+      object-fit: contain;
+    }
+
+    .missing {
+      opacity: 0.35;
+      filter: grayscale(1);
+    }
+
+    .badge {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .ok {
+      background: var(--ok-bg);
+      color: var(--ok-text);
+    }
+
+    .bad {
+      background: var(--bad-bg);
+      color: var(--bad-text);
+    }
+  </style>
+</head>
+<body>
+  <h1>Launch Character Preview</h1>
+  <p class="note">One row per launch character. Targets: walk = exactly 8 frames per direction; working = exactly 16 frames and loops cleanly.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 240px;">Character</th>
+        <th style="width: 92px;">Front</th>
+        <th>Walk (south/east/north/west)</th>
+        <th style="width: 180px;">Working</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <script>
+    const CHARACTERS = [
+      { assetKey: "assassin-shadow", displayName: "Shadow Assassin" },
+      { assetKey: "minotaur-strategist", displayName: "Minotaur Strategist" },
+      { assetKey: "horned-helm-fighter", displayName: "Horned Helm Fighter" },
+      { assetKey: "dwarf-warrior-short", displayName: "Dwarf Warrior" },
+      { assetKey: "barbarian-wild", displayName: "Barbarian" },
+      { assetKey: "blood-elf-spellarcher", displayName: "Blood Elf Spell-Archer" },
+      { assetKey: "necromancer-male", displayName: "Necromancer" },
+      { assetKey: "witch-hunter-gunslinger", displayName: "Witch Hunter" },
+      { assetKey: "knight-blue-guardian", displayName: "Blue Knight" },
+      { assetKey: "valkyrie-spearmaid", displayName: "Valkyrie" },
+      { assetKey: "oracle-seer", displayName: "Oracle" },
+      { assetKey: "pyromancer-wizard", displayName: "Pyromancer Wizard" }
+    ];
+
+    const DIRECTIONS = ["south", "east", "north", "west"];
+
+    function makeBadge(text, good) {
+      const badge = document.createElement("span");
+      badge.className = `badge ${good ? "ok" : "bad"}`;
+      badge.textContent = text;
+      return badge;
+    }
+
+    function loadImage(src) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+    }
+
+    async function loadFrameSequence(basePath, maxFrames = 64) {
+      const frames = [];
+      for (let i = 0; i < maxFrames; i += 1) {
+        const src = `${basePath}/${i}.png`;
+        const loaded = await loadImage(src);
+        if (!loaded) break;
+        frames.push(src);
+      }
+      return frames;
+    }
+
+    function attachAnimation(imgEl, frames, speedMs) {
+      if (!frames.length) {
+        imgEl.classList.add("missing");
+        imgEl.alt = "missing";
+        return;
+      }
+      let idx = 0;
+      imgEl.src = frames[0];
+      setInterval(() => {
+        idx = (idx + 1) % frames.length;
+        imgEl.src = frames[idx];
+      }, speedMs);
+    }
+
+    async function buildRow(character) {
+      const tr = document.createElement("tr");
+
+      const tdChar = document.createElement("td");
+      const name = document.createElement("div");
+      name.className = "char-name";
+      name.textContent = character.displayName;
+      const key = document.createElement("div");
+      key.className = "asset-key";
+      key.textContent = character.assetKey;
+      tdChar.append(name, key);
+
+      const tdFront = document.createElement("td");
+      const front = document.createElement("img");
+      front.className = "front";
+      front.alt = `${character.displayName} front`;
+      front.src = `./${character.assetKey}/rotations/south.png`;
+      front.onerror = () => front.classList.add("missing");
+      tdFront.append(front);
+
+      const tdWalk = document.createElement("td");
+      const walkStack = document.createElement("div");
+      walkStack.className = "row-stack";
+
+      for (const dir of DIRECTIONS) {
+        const item = document.createElement("div");
+        item.className = "anim-item";
+
+        const label = document.createElement("div");
+        label.className = "anim-label";
+        label.textContent = dir;
+
+        const frame = document.createElement("img");
+        frame.className = "anim-frame";
+        frame.alt = `${character.displayName} walk ${dir}`;
+
+        const frames = await loadFrameSequence(`./${character.assetKey}/animations/walk/${dir}`, 32);
+        const firstEight = frames.slice(0, 8);
+        attachAnimation(frame, firstEight, 120);
+
+        item.append(label, frame, makeBadge(`${frames.length} frames`, frames.length === 8));
+        walkStack.append(item);
+      }
+
+      tdWalk.append(walkStack);
+
+      const tdWorking = document.createElement("td");
+      const workItem = document.createElement("div");
+      workItem.className = "anim-item";
+      const workLabel = document.createElement("div");
+      workLabel.className = "anim-label";
+      workLabel.textContent = "working";
+      const workFrame = document.createElement("img");
+      workFrame.className = "anim-frame";
+      workFrame.alt = `${character.displayName} working`;
+
+      const workingFrames = await loadFrameSequence(`./${character.assetKey}/animations/working`, 64);
+      const firstSixteen = workingFrames.slice(0, 16);
+      attachAnimation(workFrame, firstSixteen, 140);
+
+      workItem.append(workLabel, workFrame, makeBadge(`${workingFrames.length} frames`, workingFrames.length === 16));
+      tdWorking.append(workItem);
+
+      tr.append(tdChar, tdFront, tdWalk, tdWorking);
+      return tr;
+    }
+
+    async function init() {
+      const tbody = document.getElementById("rows");
+      for (const character of CHARACTERS) {
+        const row = await buildRow(character);
+        tbody.append(row);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
