@@ -397,6 +397,10 @@ body {
   backdrop-filter: blur(2px);
 }
 
+.overlay-no-blur {
+  backdrop-filter: none;
+}
+
 .dialog {
   width: min(880px, calc(100vw - 34px));
   max-height: min(78vh, 740px);

@@ -4,10 +4,7 @@ import { handleActionHotkeys, handleNavigationHotkeys, handleSystemHotkeys } fro
 
 export function useAppHotkeys(context: AppHotkeyContext): void {
   const contextRef = useRef(context);
-
-  useEffect(() => {
-    contextRef.current = context;
-  }, [context]);
+  contextRef.current = context;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

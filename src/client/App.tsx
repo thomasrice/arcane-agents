@@ -184,7 +184,6 @@ export default function App(): JSX.Element {
     setRenameModalOpen,
     renameTargetWorkerIds,
     setRenameTargetWorkerIds,
-    renameDraft,
     setRenameDraft,
     killConfirmWorkerIds,
     setKillConfirmWorkerIds,
@@ -369,8 +368,7 @@ export default function App(): JSX.Element {
         open={renameModalOpen}
         targetWorkerIds={renameTargetWorkerIds}
         targetWorkers={renameTargetWorkers}
-        draft={renameDraft}
-        onDraftChange={setRenameDraft}
+        initialDraft={renameDraft}
         onClose={closeRenameModal}
         onSubmit={submitRename}
       />

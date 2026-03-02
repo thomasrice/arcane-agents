@@ -1,30 +1,39 @@
+import { useEffect, useState } from "react";
 import type { Worker } from "../../shared/types";
 
 interface RenameDialogProps {
   open: boolean;
   targetWorkerIds: string[];
   targetWorkers: Worker[];
-  draft: string;
-  onDraftChange: (value: string) => void;
+  initialDraft: string;
   onClose: () => void;
-  onSubmit: () => void | Promise<void>;
+  onSubmit: (draft: string) => void | Promise<void>;
 }
 
 export function RenameDialog({
   open,
   targetWorkerIds,
   targetWorkers,
-  draft,
-  onDraftChange,
+  initialDraft,
   onClose,
   onSubmit
 }: RenameDialogProps): JSX.Element | null {
+  const [draft, setDraft] = useState(initialDraft);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setDraft(initialDraft);
+  }, [initialDraft, open]);
+
   if (!open) {
     return null;
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay overlay-no-blur" onClick={onClose}>
       <div className="dialog rename-dialog" onClick={(event) => event.stopPropagation()}>
         <div className="dialog-title">{targetWorkerIds.length > 1 ? "Rename Selected Agents" : "Rename Worker"}</div>
         <div className="rename-subtitle">
@@ -36,14 +45,14 @@ export function RenameDialog({
           className="rename-form"
           onSubmit={(event) => {
             event.preventDefault();
-            void onSubmit();
+            void onSubmit(draft);
           }}
         >
           <input
             className="input"
             autoFocus
             value={draft}
-            onChange={(event) => onDraftChange(event.target.value)}
+            onChange={(event) => setDraft(event.target.value)}
             placeholder={targetWorkerIds.length > 1 ? "Base name (e.g. Builder)" : "Display name"}
           />
           <div className="dialog-actions">

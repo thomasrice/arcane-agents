@@ -17,14 +17,13 @@ interface UseWorkerMutationActionsParams {
   setSpawnDialogOpen: Dispatch<SetStateAction<boolean>>;
   setPaletteOpen: Dispatch<SetStateAction<boolean>>;
   renameTargetWorkerIds: string[];
-  renameDraft: string;
   closeRenameModal: () => void;
   showError: (error: unknown) => void;
 }
 
 interface UseWorkerMutationActionsResult {
   runSpawn: (input: WorkerSpawnInput) => Promise<void>;
-  submitRename: () => Promise<void>;
+  submitRename: (draft: string) => Promise<void>;
   onToggleMovementModeSelected: () => Promise<void>;
   onOpenSelectedInTerminal: () => Promise<void>;
   onPositionCommit: (workerId: string, position: { x: number; y: number }) => void;
@@ -38,7 +37,6 @@ export function useWorkerMutationActions({
   setSpawnDialogOpen,
   setPaletteOpen,
   renameTargetWorkerIds,
-  renameDraft,
   closeRenameModal,
   showError
 }: UseWorkerMutationActionsParams): UseWorkerMutationActionsResult {
@@ -57,7 +55,7 @@ export function useWorkerMutationActions({
     [applySelection, setPaletteOpen, setSpawnDialogOpen, setWorkers, showError]
   );
 
-  const submitRename = useCallback(async () => {
+  const submitRename = useCallback(async (draft: string) => {
     const targetWorkerIds = [...renameTargetWorkerIds];
     if (targetWorkerIds.length === 0) {
       closeRenameModal();
@@ -66,10 +64,10 @@ export function useWorkerMutationActions({
 
     try {
       if (targetWorkerIds.length === 1) {
-        const worker = await renameWorker(targetWorkerIds[0], renameDraft);
+        const worker = await renameWorker(targetWorkerIds[0], draft);
         setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
       } else {
-        const baseName = renameDraft.trim();
+        const baseName = draft.trim();
         const renamedWorkers = await Promise.all(
           targetWorkerIds.map((workerId, index) => renameWorker(workerId, baseName.length > 0 ? `${baseName} ${index + 1}` : ""))
         );
@@ -86,7 +84,7 @@ export function useWorkerMutationActions({
     } catch (error) {
       showError(error);
     }
-  }, [closeRenameModal, renameDraft, renameTargetWorkerIds, setWorkers, showError]);
+  }, [closeRenameModal, renameTargetWorkerIds, setWorkers, showError]);
 
   const onToggleMovementModeSelected = useCallback(async () => {
     if (selectedWorkers.length === 0) {

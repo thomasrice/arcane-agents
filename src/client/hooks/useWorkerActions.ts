@@ -25,7 +25,6 @@ interface UseWorkerActionsParams {
   setRenameModalOpen: Dispatch<SetStateAction<boolean>>;
   renameTargetWorkerIds: string[];
   setRenameTargetWorkerIds: Dispatch<SetStateAction<string[]>>;
-  renameDraft: string;
   setRenameDraft: Dispatch<SetStateAction<string>>;
   killConfirmWorkerIds: string[];
   setKillConfirmWorkerIds: Dispatch<SetStateAction<string[]>>;
@@ -47,7 +46,7 @@ interface UseWorkerActionsResult {
   closeRenameModal: () => void;
   closeKillConfirm: () => void;
   openRenameForWorkers: (workersToRename: Worker[]) => void;
-  submitRename: () => Promise<void>;
+  submitRename: (draft: string) => Promise<void>;
   onKillSelected: () => void;
   onKillRosterActive: () => void;
   confirmKillSelection: () => void;
@@ -79,7 +78,6 @@ export function useWorkerActions({
   setRenameModalOpen,
   renameTargetWorkerIds,
   setRenameTargetWorkerIds,
-  renameDraft,
   setRenameDraft,
   killConfirmWorkerIds,
   setKillConfirmWorkerIds,
@@ -122,7 +120,6 @@ export function useWorkerActions({
       setSpawnDialogOpen,
       setPaletteOpen,
       renameTargetWorkerIds,
-      renameDraft,
       closeRenameModal,
       showError
     });
