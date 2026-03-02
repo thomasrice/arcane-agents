@@ -9,6 +9,11 @@ export function useAppHotkeys(context: AppHotkeyContext): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const current = contextRef.current;
+
+      if (shouldBypassHotkeyRoutingForTerminalInput(event, current)) {
+        return;
+      }
+
       if (handleSystemHotkeys(event, current)) {
         return;
       }
@@ -23,4 +28,26 @@ export function useAppHotkeys(context: AppHotkeyContext): void {
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, []);
+}
+
+function shouldBypassHotkeyRoutingForTerminalInput(event: KeyboardEvent, context: AppHotkeyContext): boolean {
+  if (!context.isTerminalTarget(event.target)) {
+    return false;
+  }
+
+  if (
+    context.killConfirmWorkerIds.length > 0 ||
+    context.renameModalOpen ||
+    context.shortcutsOverlayOpen ||
+    context.paletteOpen ||
+    context.spawnDialogOpen
+  ) {
+    return false;
+  }
+
+  if (event.key === "Escape" || context.isTerminalEscapeShortcut(event)) {
+    return false;
+  }
+
+  return true;
 }

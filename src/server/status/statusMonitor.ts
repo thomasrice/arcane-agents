@@ -297,7 +297,7 @@ function resolveStatusTraceMode(): StatusTraceMode {
     return "off";
   }
 
-  return process.env.NODE_ENV === "production" ? "off" : "transitions";
+  return "off";
 }
 
 function formatReason(code: string, detail: string | undefined): string {
