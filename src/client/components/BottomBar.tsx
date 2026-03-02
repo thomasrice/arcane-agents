@@ -3,6 +3,7 @@ import type { ShortcutConfig, Worker } from "../../shared/types";
 interface BottomBarProps {
   shortcuts: ShortcutConfig[];
   selectedWorker?: Worker;
+  selectedWorkers?: Worker[];
   onSpawnShortcut: (shortcutIndex: number) => void;
   onOpenSpawnDialog: () => void;
   onOpenPalette: () => void;
@@ -15,6 +16,7 @@ interface BottomBarProps {
 export function BottomBar({
   shortcuts,
   selectedWorker,
+  selectedWorkers = selectedWorker ? [selectedWorker] : [],
   onSpawnShortcut,
   onOpenSpawnDialog,
   onOpenPalette,
@@ -23,10 +25,23 @@ export function BottomBar({
   onRenameSelected,
   onToggleMovementMode
 }: BottomBarProps): JSX.Element {
-  if (selectedWorker) {
-    const stopped = selectedWorker.status === "stopped";
-    const displayLabel = selectedWorker.displayName ?? selectedWorker.name;
-    const movementModeLabel = selectedWorker.movementMode === "wander" ? "Wander" : "Hold";
+  if (selectedWorkers.length > 0) {
+    const stopped = selectedWorkers.every((worker) => worker.status === "stopped");
+    const movementModes = new Set(selectedWorkers.map((worker) => worker.movementMode));
+    const movementModeLabel =
+      movementModes.size === 1
+        ? selectedWorkers[0]?.movementMode === "wander"
+          ? "Wander"
+          : "Hold"
+        : "Mixed";
+    const displayLabel =
+      selectedWorkers.length === 1
+        ? (selectedWorkers[0]?.displayName ?? selectedWorkers[0]?.name ?? "Selected")
+        : `${selectedWorkers.length} selected agents`;
+    const subline =
+      selectedWorkers.length === 1
+        ? `${selectedWorkers[0]?.projectId} · ${selectedWorkers[0]?.runtimeId} · ${selectedWorkers[0]?.status} · ${movementModeLabel}`
+        : `${selectedWorkers.filter((worker) => worker.status === "working").length} working · ${selectedWorkers.filter((worker) => worker.status === "idle").length} idle · ${movementModeLabel}`;
 
     return (
       <div className="bottom-bar">
@@ -35,13 +50,11 @@ export function BottomBar({
         </button>
         <div className="selected-worker-meta">
           <div className="selected-worker-name">{displayLabel}</div>
-          <div className="selected-worker-subline">
-            {selectedWorker.projectId} · {selectedWorker.runtimeId} · {selectedWorker.status} · {movementModeLabel}
-          </div>
+          <div className="selected-worker-subline">{subline}</div>
         </div>
 
         <button className="bar-btn" onClick={onToggleMovementMode}>
-          {movementModeLabel === "Wander" ? "Mode: Wander" : "Mode: Hold"}
+          {movementModeLabel === "Mixed" ? "Mode: Mixed" : `Mode: ${movementModeLabel}`}
         </button>
         <button className="bar-btn" onClick={onRenameSelected}>
           Rename
