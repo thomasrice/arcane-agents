@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
 import type { Worker, WorkerPosition } from "../../shared/types";
-import { cornerKey, useOutpostMap, type LoadedOutpostMap } from "../map/tileMapLoader";
+import { useOutpostMap, type LoadedOutpostMap } from "../map/tileMapLoader";
 import {
   getSpriteFrame,
   type CharacterSpriteSet,
@@ -13,7 +13,9 @@ interface MapCanvasProps {
   fadingWorkers?: Array<{ worker: Worker; startedAtMs: number }>;
   selectedWorkerId?: string;
   selectedWorkerIds?: string[];
+  focusedSelectedWorkerId?: string;
   terminalFocusedSelected?: boolean;
+  terminalFocusedWorkerId?: string;
   controlGroups?: Partial<Record<number, string[]>>;
   onSelect: (workerId: string | undefined) => void;
   onSelectionChange?: (workerIds: string[]) => void;
@@ -70,6 +72,7 @@ interface PanDragState {
   pointerId: number;
   mode: "pan" | "click" | "marquee";
   clickedWorkerId?: string;
+  toggleSelectionOnRelease?: boolean;
   issueMoveOnClick?: boolean;
   startX: number;
   startY: number;
@@ -140,10 +143,6 @@ const summonWorkerDurationMs = 520;
 const commandFeedbackDurationMs = 900;
 const blockedFeedbackDurationMs = 750;
 const workerPersonalSpacePx = 26;
-const blockedTerrainValues = new Set([3]);
-const nonBlockingObjectTypes = new Set(["torch", "signpost", "barrel", "crate", "bush"]);
-const fullBodyCollisionObjectTypes = new Set(["oak-tree", "pine-tree", "tent"]);
-const defaultMapPreviewImageUrl = "/api/assets/maps/backgrounds/outpost-v1-2x.png";
 const occlusionOverlayAlpha = 0.98;
 const occludedGhostAlpha = 0.44;
 const activityOverlayTypingCharIntervalMs = 30;
@@ -160,7 +159,9 @@ export function MapCanvas({
   fadingWorkers,
   selectedWorkerId,
   selectedWorkerIds,
+  focusedSelectedWorkerId,
   terminalFocusedSelected,
+  terminalFocusedWorkerId,
   controlGroups,
   onSelect,
   onSelectionChange,
@@ -198,12 +199,13 @@ export function MapCanvas({
   const [hasCenteredOnMap, setHasCenteredOnMap] = useState(false);
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null);
   const [mapPreviewImage, setMapPreviewImage] = useState<HTMLImageElement | undefined>(undefined);
+  const [mapPreviewLoadError, setMapPreviewLoadError] = useState<string | undefined>(undefined);
   const [marqueeSelection, setMarqueeSelection] = useState<SelectionBox | null>(null);
   const [multiSelectedWorkerIds, setMultiSelectedWorkerIds] = useState<string[]>(selectedWorkerId ? [selectedWorkerId] : []);
   const effectiveSelectedWorkerIds = selectedWorkerIds ?? multiSelectedWorkerIds;
 
   const { mapData, errorText: mapErrorText } = useOutpostMap();
-  const mapPreviewImageUrl = mapData?.backgroundImageUrl ?? defaultMapPreviewImageUrl;
+  const mapRenderError = mapErrorText ?? mapPreviewLoadError;
 
   useEffect(() => {
     multiSelectedWorkerIdsRef.current = new Set(effectiveSelectedWorkerIds);
@@ -223,6 +225,15 @@ export function MapCanvas({
 
   useEffect(() => {
     let cancelled = false;
+    setMapPreviewImage(undefined);
+    setMapPreviewLoadError(undefined);
+
+    if (!mapData) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const image = new Image();
     image.onload = () => {
       if (!cancelled) {
@@ -231,15 +242,15 @@ export function MapCanvas({
     };
     image.onerror = () => {
       if (!cancelled) {
-        setMapPreviewImage(undefined);
+        setMapPreviewLoadError(`Failed to load map preview image: ${mapData.backgroundImageUrl}`);
       }
     };
-    image.src = mapPreviewImageUrl;
+    image.src = mapData.backgroundImageUrl;
 
     return () => {
       cancelled = true;
     };
-  }, [mapPreviewImageUrl]);
+  }, [mapData]);
 
   const workerPositionLookup = useMemo(
     () => new Map<string, WorkerPosition>(workers.map((worker) => [worker.id, animatedPositions[worker.id] ?? worker.position])),
@@ -248,9 +259,7 @@ export function MapCanvas({
 
   const spriteTypes = useMemo(() => Array.from(new Set(workers.map((worker) => worker.avatarType))), [workers]);
   const spriteLibrary = useCharacterSpriteLibrary(spriteTypes);
-  const useLegacyMapBlockers = !mapData?.backgroundImageUrl;
-  const mapCollisionRects = useMemo(() => buildObjectCollisionRects(mapData, useLegacyMapBlockers), [mapData, useLegacyMapBlockers]);
-  const blockedTileKeys = useMemo(() => buildBlockedTileSet(mapData, mapCollisionRects), [mapCollisionRects, mapData]);
+  const blockedTileKeys = useMemo(() => buildBlockedTileSet(mapData), [mapData]);
 
   useEffect(() => {
     animatedPositionsRef.current = animatedPositions;
@@ -346,7 +355,6 @@ export function MapCanvas({
       let changed = false;
       const now = performance.now();
       const tileSize = mapData?.tileSize ?? 32;
-      const collisionRects = mapCollisionRects;
 
       if (selectedWorkerId) {
         const selectedOrder = orders[selectedWorkerId];
@@ -392,7 +400,7 @@ export function MapCanvas({
           continue;
         }
 
-        const nextTarget = randomWanderTarget(wanderState.anchor, tileSize, mapData, collisionRects);
+        const nextTarget = randomWanderTarget(wanderState.anchor, tileSize, mapData);
         const currentPosition = nextPositions[worker.id] ?? worker.position;
         const distance = Math.hypot(nextTarget.x - currentPosition.x, nextTarget.y - currentPosition.y);
         if (distance < 6) {
@@ -466,7 +474,7 @@ export function MapCanvas({
             continue;
           }
 
-          if (!isWorldPositionWalkable(finalPosition, mapData, collisionRects)) {
+          if (!isWorldPositionWalkable(finalPosition, mapData)) {
             delete orders[workerId];
             const wanderState = wanderStateRef.current[workerId];
             if (wanderState) {
@@ -515,7 +523,7 @@ export function MapCanvas({
           continue;
         }
 
-        if (!isWorldPositionWalkable(proposedPosition, mapData, collisionRects)) {
+        if (!isWorldPositionWalkable(proposedPosition, mapData)) {
           delete orders[workerId];
           const wanderState = wanderStateRef.current[workerId];
           if (wanderState) {
@@ -535,8 +543,8 @@ export function MapCanvas({
         }
 
         const currentPosition = nextPositions[worker.id] ?? worker.position;
-        if (!isWorldPositionWalkable(currentPosition, mapData, collisionRects)) {
-          const safePosition = findNearestWalkablePosition(currentPosition, mapData, collisionRects);
+        if (!isWorldPositionWalkable(currentPosition, mapData)) {
+          const safePosition = findNearestWalkablePosition(currentPosition, mapData);
           if (safePosition) {
             nextPositions[worker.id] = safePosition;
             commitQueue.push({
@@ -574,7 +582,7 @@ export function MapCanvas({
     return () => {
       clearInterval(animationInterval);
     };
-  }, [mapCollisionRects, mapData, onPositionCommit, selectedWorkerId, workers]);
+  }, [mapData, onPositionCommit, selectedWorkerId, workers]);
 
   useEffect(() => {
     if (!mapData || hasCenteredOnMap) {
@@ -671,7 +679,9 @@ export function MapCanvas({
       workerMotion,
       selectedWorkerId,
       selectedWorkerIds: effectiveSelectedWorkerIds,
+      focusedSelectedWorkerId,
       terminalFocusedSelected,
+      terminalFocusedWorkerId,
       controlGroups,
       viewport,
       mapData,
@@ -693,7 +703,9 @@ export function MapCanvas({
     mapData,
     selectedWorkerId,
     effectiveSelectedWorkerIds,
+    focusedSelectedWorkerId,
     terminalFocusedSelected,
+    terminalFocusedWorkerId,
     spriteLibrary,
     commandFeedback,
     mapPreviewImage,
@@ -1024,6 +1036,7 @@ export function MapCanvas({
       pointerId: event.pointerId,
       mode: "click",
       clickedWorkerId: hit?.id,
+      toggleSelectionOnRelease: event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey,
       startX: point.x,
       startY: point.y,
       lastX: point.x,
@@ -1115,12 +1128,35 @@ export function MapCanvas({
       }
 
       const selectedIds = findWorkersInSelectionBox(rect, workers, workerPositionLookup, viewport);
+      if (panDrag.toggleSelectionOnRelease) {
+        const nextSelectionSet = new Set(multiSelectedWorkerIdsRef.current);
+        for (const selectedId of selectedIds) {
+          if (nextSelectionSet.has(selectedId)) {
+            nextSelectionSet.delete(selectedId);
+          } else {
+            nextSelectionSet.add(selectedId);
+          }
+        }
+
+        applyWorkerSelection(Array.from(nextSelectionSet));
+        return;
+      }
+
       applyWorkerSelection(selectedIds);
       return;
     }
 
     if (panDrag.clickedWorkerId) {
       const clickedWorkerId = panDrag.clickedWorkerId;
+
+      if (panDrag.toggleSelectionOnRelease) {
+        const nextSelection = multiSelectedWorkerIdsRef.current.has(clickedWorkerId)
+          ? Array.from(multiSelectedWorkerIdsRef.current).filter((workerId) => workerId !== clickedWorkerId)
+          : [...multiSelectedWorkerIdsRef.current, clickedWorkerId];
+        applyWorkerSelection(nextSelection);
+        return;
+      }
+
       const isAlreadyPrimary = selectedWorkerId === clickedWorkerId;
       const hasOnlyThisSelection =
         multiSelectedWorkerIdsRef.current.size === 1 && multiSelectedWorkerIdsRef.current.has(clickedWorkerId);
@@ -1220,9 +1256,9 @@ export function MapCanvas({
         </div>
       ) : null}
 
-      {mapErrorText ? (
+      {mapRenderError ? (
         <div className="map-tooltip" style={{ left: 14, top: 14 }}>
-          Map assets failed to load: {mapErrorText}
+          Map assets failed to load: {mapRenderError}
         </div>
       ) : null}
     </div>
@@ -1239,7 +1275,9 @@ interface DrawSceneInput {
   workerMotion: Record<string, WorkerMotion>;
   selectedWorkerId: string | undefined;
   selectedWorkerIds: string[];
+  focusedSelectedWorkerId: string | undefined;
   terminalFocusedSelected: boolean | undefined;
+  terminalFocusedWorkerId: string | undefined;
   controlGroups?: Partial<Record<number, string[]>>;
   viewport: ViewportState;
   mapData: LoadedOutpostMap | undefined;
@@ -1262,7 +1300,9 @@ function drawScene({
   workerMotion,
   selectedWorkerId,
   selectedWorkerIds,
+  focusedSelectedWorkerId,
   terminalFocusedSelected,
+  terminalFocusedWorkerId,
   controlGroups,
   viewport,
   mapData,
@@ -1279,19 +1319,8 @@ function drawScene({
 
   const controlGroupsByWorker = groupControlKeysByWorker(controlGroups);
 
-  if (mapData) {
-    if (mapPreviewImage) {
-      drawOutpostPreviewBackground(context, viewport, mapData, mapPreviewImage);
-    } else {
-      drawOutpostTerrain(context, viewport, width, height, mapData);
-      drawOutpostObjects(context, viewport, width, height, mapData, animationTick);
-    }
-  } else {
-    const gradient = context.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, "#7fc08b");
-    gradient.addColorStop(1, "#4d9f60");
-    context.fillStyle = gradient;
-    context.fillRect(0, 0, width, height);
+  if (mapData && mapPreviewImage) {
+    drawOutpostPreviewBackground(context, viewport, mapData, mapPreviewImage);
   }
 
   if (commandFeedback) {
@@ -1509,8 +1538,22 @@ function drawScene({
 
   drawWorkerNameplates(context, pendingNameplates);
 
+  const isGroupSelection = selectedWorkerIds.length > 1;
   for (const selectedOutline of selectedOutlines) {
-    drawSelectedWorkerOutline(context, selectedOutline, viewport.scale, Boolean(terminalFocusedSelected && selectedWorkerId === selectedOutline.workerId));
+    const isGroupFocused =
+      isGroupSelection && Boolean(focusedSelectedWorkerId && selectedOutline.workerId === focusedSelectedWorkerId);
+    const isTerminalFocused =
+      Boolean(terminalFocusedWorkerId && selectedOutline.workerId === terminalFocusedWorkerId) ||
+      Boolean(terminalFocusedSelected && selectedWorkerId === selectedOutline.workerId);
+    const outlineState: SelectedOutlineState = isGroupFocused
+      ? isTerminalFocused
+        ? "group-focused-terminal"
+        : "group-focused"
+      : isTerminalFocused
+      ? "terminal-focused"
+      : "selected";
+
+    drawSelectedWorkerOutline(context, selectedOutline, viewport.scale, outlineState);
   }
 
   if (marqueeSelection) {
@@ -1584,11 +1627,12 @@ function drawSelectedWorkerOutline(
   context: CanvasRenderingContext2D,
   selectedOutline: SelectedWorkerOutline,
   scale: number,
-  terminalFocused: boolean
+  state: SelectedOutlineState
 ): void {
+  const style = selectedOutlineStyle(state);
   context.save();
-  context.strokeStyle = terminalFocused ? "#8ce8ff" : "#f1f2d4";
-  context.lineWidth = terminalFocused ? 2.4 : 2;
+  context.strokeStyle = style.stroke;
+  context.lineWidth = style.lineWidth;
 
   if (selectedOutline.spriteBounds) {
     const bounds = selectedOutline.spriteBounds;
@@ -1605,6 +1649,34 @@ function drawSelectedWorkerOutline(
   }
 
   context.restore();
+}
+
+type SelectedOutlineState = "selected" | "terminal-focused" | "group-focused" | "group-focused-terminal";
+
+function selectedOutlineStyle(state: SelectedOutlineState): { stroke: string; lineWidth: number } {
+  switch (state) {
+    case "terminal-focused":
+      return {
+        stroke: "#8ce8ff",
+        lineWidth: 2.4
+      };
+    case "group-focused":
+      return {
+        stroke: "#ffd27a",
+        lineWidth: 2.2
+      };
+    case "group-focused-terminal":
+      return {
+        stroke: "#8ce8ff",
+        lineWidth: 2.4
+      };
+    case "selected":
+    default:
+      return {
+        stroke: "#f1f2d4",
+        lineWidth: 2
+      };
+  }
 }
 
 function drawControlGroupIndicator(
@@ -2069,64 +2141,6 @@ function getWorkerSummonProgress(createdAtIso: string, nowMs: number): number | 
   return clamp(elapsed / summonWorkerDurationMs, 0, 1);
 }
 
-function drawOutpostTerrain(
-  context: CanvasRenderingContext2D,
-  viewport: ViewportState,
-  width: number,
-  height: number,
-  mapData: LoadedOutpostMap
-): void {
-  const tileSize = mapData.tileSize;
-  const worldMinX = (-viewport.offsetX / viewport.scale) - tileSize;
-  const worldMinY = (-viewport.offsetY / viewport.scale) - tileSize;
-  const worldMaxX = ((width - viewport.offsetX) / viewport.scale) + tileSize;
-  const worldMaxY = ((height - viewport.offsetY) / viewport.scale) + tileSize;
-
-  const minTileX = clamp(Math.floor(worldMinX / tileSize), 0, mapData.width - 1);
-  const minTileY = clamp(Math.floor(worldMinY / tileSize), 0, mapData.height - 1);
-  const maxTileX = clamp(Math.ceil(worldMaxX / tileSize), 0, mapData.width - 1);
-  const maxTileY = clamp(Math.ceil(worldMaxY / tileSize), 0, mapData.height - 1);
-
-  const baseTile = mapData.baseGrassTile;
-  for (let tileY = minTileY; tileY <= maxTileY; tileY += 1) {
-    for (let tileX = minTileX; tileX <= maxTileX; tileX += 1) {
-      const screen = worldToScreen(tileX * tileSize, tileY * tileSize, viewport);
-      const drawSize = tileSize * viewport.scale;
-
-      if (baseTile) {
-        context.drawImage(baseTile, screen.x, screen.y, drawSize, drawSize);
-      } else {
-        context.fillStyle = "#6eb574";
-        context.fillRect(screen.x, screen.y, drawSize, drawSize);
-      }
-
-      const terrainValue = mapData.terrain[tileY]?.[tileX] ?? 0;
-      if (terrainValue <= 0) {
-        continue;
-      }
-
-      const tileset = mapData.tilesetsByTerrain[terrainValue];
-      if (!tileset) {
-        continue;
-      }
-
-      const minCornerMatches = tileset.name.includes("water") ? 1 : 2;
-
-      const key = cornerKey(
-        cornerStateAtVertex(mapData, terrainValue, tileX, tileY, minCornerMatches),
-        cornerStateAtVertex(mapData, terrainValue, tileX + 1, tileY, minCornerMatches),
-        cornerStateAtVertex(mapData, terrainValue, tileX, tileY + 1, minCornerMatches),
-        cornerStateAtVertex(mapData, terrainValue, tileX + 1, tileY + 1, minCornerMatches)
-      );
-
-      const overlayTile = tileset.tilesByCornerKey[key] ?? tileset.fallbackTile;
-      if (overlayTile) {
-        context.drawImage(overlayTile, screen.x, screen.y, drawSize, drawSize);
-      }
-    }
-  }
-}
-
 function drawOutpostPreviewBackground(
   context: CanvasRenderingContext2D,
   viewport: ViewportState,
@@ -2186,144 +2200,6 @@ function drawOutpostOcclusionOverlay(
   context.restore();
 }
 
-function drawOutpostObjects(
-  context: CanvasRenderingContext2D,
-  viewport: ViewportState,
-  width: number,
-  height: number,
-  mapData: LoadedOutpostMap,
-  animationTick: number
-): void {
-  const drawObjects = [...mapData.objects].sort((a, b) => a.y - b.y || a.x - b.x);
-  const worldMinX = (-viewport.offsetX / viewport.scale) - 128;
-  const worldMinY = (-viewport.offsetY / viewport.scale) - 128;
-  const worldMaxX = ((width - viewport.offsetX) / viewport.scale) + 128;
-  const worldMaxY = ((height - viewport.offsetY) / viewport.scale) + 128;
-
-  for (const placedObject of drawObjects) {
-    // Check for animated version first
-    const animatedDef = mapData.animatedObjectDefinitions[placedObject.type];
-    const staticDef = mapData.objectDefinitions[placedObject.type];
-    
-    const definition = staticDef;
-    if (!definition) {
-      continue;
-    }
-
-    const worldX = placedObject.x * mapData.tileSize + mapData.tileSize / 2 - definition.width / 2;
-    const worldY = (placedObject.y + 1) * mapData.tileSize - definition.height;
-
-    if (
-      worldX > worldMaxX ||
-      worldY > worldMaxY ||
-      worldX + definition.width < worldMinX ||
-      worldY + definition.height < worldMinY
-    ) {
-      continue;
-    }
-
-    const screen = worldToScreen(worldX, worldY, viewport);
-    const drawWidth = definition.width * viewport.scale;
-    const drawHeight = definition.height * viewport.scale;
-
-    // Use animated frame if available
-    if (animatedDef && animatedDef.frames.length > 0) {
-      const frameIndex = animationTick % animatedDef.frames.length;
-      const frame = animatedDef.frames[frameIndex];
-      if (frame) {
-        context.drawImage(frame, screen.x, screen.y, drawWidth, drawHeight);
-        continue;
-      }
-    }
-
-    // Fall back to static image
-    if (definition.image) {
-      context.drawImage(definition.image, screen.x, screen.y, drawWidth, drawHeight);
-      continue;
-    }
-
-    context.fillStyle = "rgba(32, 45, 35, 0.65)";
-    context.fillRect(screen.x, screen.y, drawWidth, drawHeight);
-  }
-}
-
-function drawOutpostZoneLabels(
-  context: CanvasRenderingContext2D,
-  viewport: ViewportState,
-  width: number,
-  height: number,
-  mapData: LoadedOutpostMap
-): void {
-  if (!mapData.zones.length) {
-    return;
-  }
-
-  context.save();
-  context.textAlign = "center";
-  context.font = "11px 'Trebuchet MS', sans-serif";
-
-  for (const zone of mapData.zones) {
-    const centerTileX = (zone.x1 + zone.x2 + 1) / 2;
-    const centerTileY = (zone.y1 + zone.y2 + 1) / 2;
-    const worldX = centerTileX * mapData.tileSize;
-    const worldY = (centerTileY - 0.45) * mapData.tileSize;
-
-    const screen = worldToScreen(worldX, worldY, viewport);
-    if (screen.x < -120 || screen.x > width + 120 || screen.y < -30 || screen.y > height + 30) {
-      continue;
-    }
-
-    const label = zone.label.toUpperCase();
-    const textWidth = context.measureText(label).width;
-    const badgeWidth = Math.max(70, textWidth + 14);
-    const badgeHeight = 16;
-
-    context.fillStyle = "rgba(8, 14, 12, 0.42)";
-    context.fillRect(screen.x - badgeWidth / 2, screen.y - badgeHeight / 2, badgeWidth, badgeHeight);
-    context.strokeStyle = "rgba(227, 235, 205, 0.38)";
-    context.lineWidth = 1;
-    context.strokeRect(screen.x - badgeWidth / 2, screen.y - badgeHeight / 2, badgeWidth, badgeHeight);
-
-    context.fillStyle = "rgba(238, 245, 220, 0.8)";
-    context.fillText(label, screen.x, screen.y + 4);
-  }
-
-  context.restore();
-}
-
-function cornerStateAtVertex(
-  mapData: LoadedOutpostMap,
-  terrainValue: number,
-  vertexTileX: number,
-  vertexTileY: number,
-  minimumMatches: number
-): "lower" | "upper" {
-  let matchCount = 0;
-
-  if (terrainAt(mapData, vertexTileX - 1, vertexTileY - 1) === terrainValue) {
-    matchCount += 1;
-  }
-  if (terrainAt(mapData, vertexTileX, vertexTileY - 1) === terrainValue) {
-    matchCount += 1;
-  }
-  if (terrainAt(mapData, vertexTileX - 1, vertexTileY) === terrainValue) {
-    matchCount += 1;
-  }
-  if (terrainAt(mapData, vertexTileX, vertexTileY) === terrainValue) {
-    matchCount += 1;
-  }
-
-  return matchCount >= minimumMatches ? "upper" : "lower";
-}
-
-function terrainAt(mapData: LoadedOutpostMap, tileX: number, tileY: number): number {
-  if (tileX < 0 || tileY < 0 || tileX >= mapData.width || tileY >= mapData.height) {
-    return 0;
-  }
-
-  return mapData.terrain[tileY]?.[tileX] ?? 0;
-}
-
 function clampWorldPosition(position: WorkerPosition, mapData: LoadedOutpostMap | undefined): WorkerPosition {
   if (!mapData) {
     return position;
@@ -2374,8 +2250,7 @@ function createCardinalWaypoints(from: WorkerPosition, to: WorkerPosition): Work
 function randomWanderTarget(
   anchor: WorkerPosition,
   tileSize: number,
-  mapData: LoadedOutpostMap | undefined,
-  collisionRects: CollisionRect[]
+  mapData: LoadedOutpostMap | undefined
 ): WorkerPosition {
   let fallback: WorkerPosition | undefined;
 
@@ -2390,7 +2265,7 @@ function randomWanderTarget(
       mapData
     );
 
-    if (isWorldPositionWalkable(candidate, mapData, collisionRects)) {
+    if (isWorldPositionWalkable(candidate, mapData)) {
       return candidate;
     }
 
@@ -2403,63 +2278,12 @@ function randomWanderTarget(
     return anchor;
   }
 
-  return findNearestWalkablePosition(fallback, mapData, collisionRects) ?? anchor;
-}
-
-function buildObjectCollisionRects(mapData: LoadedOutpostMap | undefined, includeLegacyObjectBlockers: boolean): CollisionRect[] {
-  if (!mapData || !includeLegacyObjectBlockers) {
-    return [];
-  }
-
-  const collisionRects: CollisionRect[] = [];
-  for (const placedObject of mapData.objects) {
-    if (nonBlockingObjectTypes.has(placedObject.type)) {
-      continue;
-    }
-
-    const definition = mapData.objectDefinitions[placedObject.type];
-    if (!definition) {
-      continue;
-    }
-
-    const worldX = placedObject.x * mapData.tileSize + mapData.tileSize / 2 - definition.width / 2;
-    const worldY = (placedObject.y + 1) * mapData.tileSize - definition.height;
-    let left: number;
-    let top: number;
-    let right: number;
-    let bottom: number;
-
-    if (fullBodyCollisionObjectTypes.has(placedObject.type)) {
-      const insetX = Math.max(2, Math.min(8, definition.width * 0.06));
-      const insetY = Math.max(2, Math.min(10, definition.height * 0.06));
-      left = worldX + insetX;
-      top = worldY + insetY;
-      right = worldX + definition.width - insetX;
-      bottom = worldY + definition.height - insetY;
-    } else {
-      const footprintWidth = clamp(definition.width * 0.62, mapData.tileSize * 0.42, mapData.tileSize * 1.12);
-      const footprintHeight = clamp(definition.height * 0.34, mapData.tileSize * 0.28, mapData.tileSize * 0.88);
-      left = worldX + (definition.width - footprintWidth) / 2;
-      top = worldY + definition.height - footprintHeight;
-      right = left + footprintWidth;
-      bottom = top + footprintHeight;
-    }
-
-    collisionRects.push({
-      left,
-      top,
-      right,
-      bottom
-    });
-  }
-
-  return collisionRects;
+  return findNearestWalkablePosition(fallback, mapData) ?? anchor;
 }
 
 function isWorldPositionWalkable(
   position: WorkerPosition,
-  mapData: LoadedOutpostMap | undefined,
-  collisionRects: CollisionRect[]
+  mapData: LoadedOutpostMap | undefined
 ): boolean {
   if (!mapData) {
     return true;
@@ -2477,37 +2301,18 @@ function isWorldPositionWalkable(
     return false;
   }
 
-  const terrainValue = mapData.terrain[tileY]?.[tileX] ?? 0;
-  if (blockedTerrainValues.has(terrainValue) && !mapData.backgroundImageUrl) {
-    return false;
-  }
-
-  const workerFootprint: CollisionRect = {
-    left: position.x - 10,
-    top: position.y - 9,
-    right: position.x + 10,
-    bottom: position.y + 7
-  };
-
-  for (const rect of collisionRects) {
-    if (intersectsRect(workerFootprint, rect)) {
-      return false;
-    }
-  }
-
   return true;
 }
 
 function findNearestWalkablePosition(
   target: WorkerPosition,
-  mapData: LoadedOutpostMap | undefined,
-  collisionRects: CollisionRect[]
+  mapData: LoadedOutpostMap | undefined
 ): WorkerPosition | undefined {
   if (!mapData) {
     return target;
   }
 
-  if (isWorldPositionWalkable(target, mapData, collisionRects)) {
+  if (isWorldPositionWalkable(target, mapData)) {
     return target;
   }
 
@@ -2525,7 +2330,7 @@ function findNearestWalkablePosition(
         mapData
       );
 
-      if (isWorldPositionWalkable(candidate, mapData, collisionRects)) {
+      if (isWorldPositionWalkable(candidate, mapData)) {
         return candidate;
       }
     }
@@ -2539,28 +2344,12 @@ interface TileCoord {
   y: number;
 }
 
-function buildBlockedTileSet(mapData: LoadedOutpostMap | undefined, collisionRects: CollisionRect[]): Set<string> {
+function buildBlockedTileSet(mapData: LoadedOutpostMap | undefined): Set<string> {
   if (!mapData) {
     return new Set<string>();
   }
 
-  const blocked = new Set<string>(mapData.collisionTileKeys);
-  const tileSize = mapData.tileSize;
-
-  for (const rect of collisionRects) {
-    const minTileX = clamp(Math.floor(rect.left / tileSize), 0, mapData.width - 1);
-    const maxTileX = clamp(Math.floor((rect.right - 0.01) / tileSize), 0, mapData.width - 1);
-    const minTileY = clamp(Math.floor(rect.top / tileSize), 0, mapData.height - 1);
-    const maxTileY = clamp(Math.floor((rect.bottom - 0.01) / tileSize), 0, mapData.height - 1);
-
-    for (let tileY = minTileY; tileY <= maxTileY; tileY += 1) {
-      for (let tileX = minTileX; tileX <= maxTileX; tileX += 1) {
-        blocked.add(tileCoordKey(tileX, tileY));
-      }
-    }
-  }
-
-  return blocked;
+  return new Set<string>(mapData.collisionTileKeys);
 }
 
 function worldPositionToTile(position: WorkerPosition, mapData: LoadedOutpostMap): TileCoord {
@@ -2579,11 +2368,6 @@ function tileToWorldCenter(tile: TileCoord, mapData: LoadedOutpostMap): WorkerPo
 
 function isTileWalkable(tileX: number, tileY: number, mapData: LoadedOutpostMap, blockedTileKeys: Set<string>): boolean {
   if (tileX < 0 || tileY < 0 || tileX >= mapData.width || tileY >= mapData.height) {
-    return false;
-  }
-
-  const terrainValue = mapData.terrain[tileY]?.[tileX] ?? 0;
-  if (blockedTerrainValues.has(terrainValue) && !mapData.backgroundImageUrl) {
     return false;
   }
 

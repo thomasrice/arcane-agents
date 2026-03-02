@@ -69,6 +69,7 @@ export default function App(): JSX.Element {
   const [mapColumnRatio, setMapColumnRatio] = useState<number>(() => loadMapColumnRatioFromStorage());
   const [rosterActiveIndex, setRosterActiveIndex] = useState(0);
   const [selectedGroupActiveIndex, setSelectedGroupActiveIndex] = useState(0);
+  const [focusedSelectedWorkerId, setFocusedSelectedWorkerId] = useState<string | undefined>(undefined);
   const [terminalFocused, setTerminalFocused] = useState(false);
   const [workersHydrated, setWorkersHydrated] = useState(false);
   const [controlGroups, setControlGroups] = useState<ControlGroupMap>(() => loadControlGroupsFromStorage());
@@ -88,6 +89,17 @@ export default function App(): JSX.Element {
     () => activeWorkers.find((worker) => worker.id === selectedWorkerId),
     [activeWorkers, selectedWorkerId]
   );
+
+  const focusedSelectedWorker = useMemo(() => {
+    if (!focusedSelectedWorkerId) {
+      return undefined;
+    }
+
+    return selectedWorkers.find((worker) => worker.id === focusedSelectedWorkerId);
+  }, [focusedSelectedWorkerId, selectedWorkers]);
+
+  const terminalWorker = selectedWorker ?? (selectedWorkers.length > 1 ? focusedSelectedWorker : undefined);
+  const terminalWorkerId = terminalWorker?.id;
 
   const renameTargetWorkers = useMemo(() => {
     if (renameTargetWorkerIds.length === 0) {
@@ -147,11 +159,22 @@ export default function App(): JSX.Element {
   useEffect(() => {
     if (selectedWorkers.length <= 1) {
       setSelectedGroupActiveIndex(0);
+      setFocusedSelectedWorkerId(undefined);
       return;
     }
 
+    if (focusedSelectedWorkerId) {
+      const focusedIndex = selectedWorkers.findIndex((worker) => worker.id === focusedSelectedWorkerId);
+      if (focusedIndex >= 0) {
+        setSelectedGroupActiveIndex(focusedIndex);
+        return;
+      }
+
+      setFocusedSelectedWorkerId(undefined);
+    }
+
     setSelectedGroupActiveIndex((current) => clampNumber(current, 0, selectedWorkers.length - 1));
-  }, [selectedWorkers]);
+  }, [focusedSelectedWorkerId, selectedWorkers]);
 
   useEffect(() => {
     const activeIds = new Set(activeWorkers.map((worker) => worker.id));
@@ -159,14 +182,10 @@ export default function App(): JSX.Element {
   }, [activeWorkers]);
 
   useEffect(() => {
-    setTerminalFocusToken(undefined);
-  }, [selectedWorkerId]);
-
-  useEffect(() => {
-    if (!selectedWorkerId) {
+    if (!terminalWorkerId) {
       setTerminalFocused(false);
     }
-  }, [selectedWorkerId]);
+  }, [terminalWorkerId]);
 
   useEffect(() => {
     const updateTerminalFocus = () => {
@@ -327,6 +346,7 @@ export default function App(): JSX.Element {
     (workerIds: string[], options?: { center?: boolean; focusTerminal?: boolean }) => {
       const deduped = Array.from(new Set(workerIds));
       setSelectedWorkerIds(deduped);
+      setFocusedSelectedWorkerId(undefined);
 
       const primaryWorkerId = deduped.length === 1 ? deduped[0] : undefined;
       if (options?.center && primaryWorkerId) {
@@ -545,6 +565,28 @@ export default function App(): JSX.Element {
     [idleWorkers, selectedWorkerId]
   );
 
+  const cycleSelectedGroupFocus = useCallback(
+    (direction: 1 | -1) => {
+      if (selectedWorkers.length <= 1) {
+        return;
+      }
+
+      const currentIndex = focusedSelectedWorkerId
+        ? selectedWorkers.findIndex((worker) => worker.id === focusedSelectedWorkerId)
+        : clampNumber(selectedGroupActiveIndex, 0, selectedWorkers.length - 1);
+      const startIndex = currentIndex >= 0 ? currentIndex : direction > 0 ? -1 : 0;
+      const nextIndex = (startIndex + direction + selectedWorkers.length) % selectedWorkers.length;
+      const nextWorker = selectedWorkers[nextIndex];
+      if (!nextWorker) {
+        return;
+      }
+
+      setSelectedGroupActiveIndex(nextIndex);
+      setFocusedSelectedWorkerId(nextWorker.id);
+    },
+    [focusedSelectedWorkerId, selectedGroupActiveIndex, selectedWorkers]
+  );
+
   const onActivateRosterIndex = useCallback(
     (index: number) => {
       const entry = rosterEntries[index];
@@ -642,6 +684,23 @@ export default function App(): JSX.Element {
       }
 
       if (isTerminalEscapeShortcut(event)) {
+        if (
+          !renameModalOpen &&
+          !shortcutsOverlayOpen &&
+          !paletteOpen &&
+          !spawnDialogOpen &&
+          selectedWorkers.length > 1 &&
+          focusedSelectedWorkerId
+        ) {
+          const escaped = escapeTerminalFocus();
+          event.preventDefault();
+          if (escaped) {
+            event.stopPropagation();
+          }
+          setFocusedSelectedWorkerId(undefined);
+          return;
+        }
+
         const escaped = escapeTerminalFocus();
         if (escaped) {
           event.preventDefault();
@@ -696,6 +755,11 @@ export default function App(): JSX.Element {
         }
 
         event.preventDefault();
+        if (selectedWorkers.length > 1) {
+          cycleSelectedGroupFocus(event.shiftKey ? -1 : 1);
+          return;
+        }
+
         cycleSelection(event.shiftKey ? -1 : 1);
         return;
       }
@@ -816,21 +880,28 @@ export default function App(): JSX.Element {
         const keyLower = event.key.toLowerCase();
         if ((keyLower === "j" || keyLower === "k") && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
           event.preventDefault();
-          setSelectedGroupActiveIndex((current) => {
-            const delta = keyLower === "j" ? 1 : -1;
-            return clampNumber(current + delta, 0, selectedWorkers.length - 1);
-          });
+          const delta = keyLower === "j" ? 1 : -1;
+          const nextIndex = clampNumber(selectedGroupActiveIndex + delta, 0, selectedWorkers.length - 1);
+          const nextWorker = selectedWorkers[nextIndex];
+          setSelectedGroupActiveIndex(nextIndex);
+          if (focusedSelectedWorkerId && nextWorker) {
+            setFocusedSelectedWorkerId(nextWorker.id);
+          }
           return;
         }
 
         if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
-          const focusedWorker = selectedWorkers[selectedGroupActiveIndex] ?? selectedWorkers[0];
+          const focusedWorker =
+            selectedWorkers.find((worker) => worker.id === focusedSelectedWorkerId) ??
+            selectedWorkers[selectedGroupActiveIndex] ??
+            selectedWorkers[0];
           if (!focusedWorker) {
             return;
           }
 
           event.preventDefault();
-          applySelection([focusedWorker.id], { center: true });
+          setFocusedSelectedWorkerId(focusedWorker.id);
+          requestTerminalFocus();
           return;
         }
       }
@@ -909,6 +980,7 @@ export default function App(): JSX.Element {
   }, [
     applySelection,
     activeWorkers,
+    cycleSelectedGroupFocus,
     closeKillConfirm,
     closeRenameModal,
     cycleIdleSelection,
@@ -930,6 +1002,7 @@ export default function App(): JSX.Element {
     requestTerminalFocus,
     rosterEntries,
     rosterActiveIndex,
+    focusedSelectedWorkerId,
     selectedGroupActiveIndex,
     selectedWorkers,
     selectedWorkerId,
@@ -955,16 +1028,16 @@ export default function App(): JSX.Element {
   }, [applySelection]);
 
   const onOpenSelectedInTerminal = useCallback(async () => {
-    if (!selectedWorkerId) {
+    if (!terminalWorkerId) {
       return;
     }
 
     try {
-      await openWorkerInTerminal(selectedWorkerId);
+      await openWorkerInTerminal(terminalWorkerId);
     } catch (error) {
       showError(error);
     }
-  }, [selectedWorkerId, showError]);
+  }, [showError, terminalWorkerId]);
 
   const onRenameSelected = useCallback(() => {
     if (selectedWorkers.length === 0) {
@@ -1000,7 +1073,9 @@ export default function App(): JSX.Element {
           fadingWorkers={fadingWorkers}
           selectedWorkerId={selectedWorkerId}
           selectedWorkerIds={selectedWorkerIds}
+          focusedSelectedWorkerId={focusedSelectedWorkerId}
           terminalFocusedSelected={Boolean(selectedWorkerId && terminalFocused)}
+          terminalFocusedWorkerId={terminalFocused ? terminalWorkerId : undefined}
           controlGroups={controlGroups}
           onSelect={onSelectWorker}
           onSelectionChange={onSelectionChange}
@@ -1038,26 +1113,26 @@ export default function App(): JSX.Element {
       </div>
 
       <div
-        className={`terminal-column${selectedWorker ? " terminal-column-selected" : ""}${
-          selectedWorker && terminalFocused ? " terminal-column-focused" : ""
+        className={`terminal-column${terminalWorker ? " terminal-column-selected" : ""}${
+          terminalWorker && terminalFocused ? " terminal-column-focused" : ""
         }`}
       >
         <div className="terminal-header">
             <div className="terminal-header-title">
-              {selectedWorkers.length > 1
+              {selectedWorkers.length > 1 && !terminalWorker
                 ? `${selectedWorkers.length} selected agents`
-                : selectedWorker
-                ? `${selectedWorker.displayName ?? selectedWorker.name} (${selectedWorker.status})`
+                : terminalWorker
+                ? `${terminalWorker.displayName ?? terminalWorker.name} (${terminalWorker.status})`
                 : `Agents (${activeWorkers.length})`}
             </div>
 
-          {selectedWorker ? (
+          {terminalWorker ? (
             <button
               className="terminal-open-external"
               onClick={() => {
                 void onOpenSelectedInTerminal();
               }}
-              disabled={selectedWorker.status === "stopped"}
+              disabled={terminalWorker.status === "stopped"}
               title="Open in external terminal"
               type="button"
             >
@@ -1066,7 +1141,7 @@ export default function App(): JSX.Element {
           ) : null}
         </div>
 
-        {selectedWorkers.length > 1 ? (
+        {selectedWorkers.length > 1 && !terminalWorker ? (
           <div className="worker-roster">
             <div className="worker-roster-section-label">Selected Group</div>
             {selectedWorkers.map((worker, index) => (
@@ -1074,7 +1149,10 @@ export default function App(): JSX.Element {
                 key={worker.id}
                 className={`worker-roster-item ${index === selectedGroupActiveIndex ? "active" : ""}`}
                 onMouseEnter={() => setSelectedGroupActiveIndex(index)}
-                onClick={() => applySelection([worker.id], { center: true })}
+                onClick={() => {
+                  setSelectedGroupActiveIndex(index);
+                  setFocusedSelectedWorkerId(worker.id);
+                }}
                 type="button"
               >
                 <div className="worker-roster-main">
@@ -1096,10 +1174,10 @@ export default function App(): JSX.Element {
               </button>
             ))}
           </div>
-        ) : selectedWorker ? (
+        ) : terminalWorker ? (
           <TerminalPanel
-            workerId={selectedWorker.id}
-            workerName={selectedWorker.displayName ?? selectedWorker.name}
+            workerId={terminalWorker.id}
+            workerName={terminalWorker.displayName ?? terminalWorker.name}
             focusRequestKey={terminalFocusToken}
           />
         ) : (
@@ -1211,11 +1289,11 @@ export default function App(): JSX.Element {
               </div>
               <div className="shortcut-row">
                 <kbd>Tab</kbd>
-                <span>Select next agent</span>
+                <span>Select next agent (or cycle selected group focus)</span>
               </div>
               <div className="shortcut-row">
                 <kbd>Shift+Tab</kbd>
-                <span>Select previous agent</span>
+                <span>Select previous agent (or cycle selected group focus)</span>
               </div>
               <div className="shortcut-row">
                 <kbd>. / , / Shift+.</kbd>
@@ -1247,7 +1325,7 @@ export default function App(): JSX.Element {
               </div>
               <div className="shortcut-row">
                 <kbd>Ctrl+] / Ctrl+D</kbd>
-                <span>Leave terminal focus, then deselect agent</span>
+                <span>Leave terminal focus; in selected group view, return to group list</span>
               </div>
               <div className="shortcut-row">
                 <kbd>R</kbd>

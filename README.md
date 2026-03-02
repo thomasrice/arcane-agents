@@ -28,7 +28,7 @@ src/
   client/   UI, map renderer, xterm terminal panel
   server/   API, orchestration, tmux adapter, status monitor
   shared/   Shared types/config models
-assets/     Maps, tilesets, character/object art
+assets/     Maps, character art
 ```
 
 ## Running Locally
