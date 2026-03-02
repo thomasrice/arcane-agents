@@ -120,8 +120,8 @@ export class OrchestratorService {
 
   async stop(workerId: string): Promise<string> {
     const worker = this.requireWorker(workerId);
-    await this.tmux.stop(worker.tmuxRef).catch(() => undefined);
     this.workers.deleteWorker(workerId);
+    await this.tmux.stop(worker.tmuxRef, { background: true }).catch(() => undefined);
     return workerId;
   }
 
@@ -208,7 +208,7 @@ export class OrchestratorService {
     }
 
     if (worker.status !== "stopped") {
-      await this.tmux.stop(worker.tmuxRef).catch(() => undefined);
+      await this.tmux.stop(worker.tmuxRef, { background: true }).catch(() => undefined);
     }
 
     return this.workers.deleteWorker(workerId);

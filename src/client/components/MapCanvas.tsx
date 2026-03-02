@@ -891,7 +891,7 @@ export function MapCanvas({
         return;
       }
 
-      if (wasdKey && !event.shiftKey) {
+      if (wasdKey && (!event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) {
         return;
       }
 

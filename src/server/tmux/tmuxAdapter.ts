@@ -25,6 +25,10 @@ interface WindowSummary {
   id: string;
 }
 
+interface StopOptions {
+  background?: boolean;
+}
+
 export interface ManagedWindow {
   window: string;
   pane: string;
@@ -98,9 +102,13 @@ export class TmuxAdapter {
     };
   }
 
-  async stop(ref: TmuxRef): Promise<void> {
-    const target = this.target(ref);
-    await this.runTmux(["kill-window", "-t", target]).catch(() => undefined);
+  async stop(ref: TmuxRef, options?: StopOptions): Promise<void> {
+    if (options?.background) {
+      void this.stopGracefully(ref).catch(() => undefined);
+      return;
+    }
+
+    await this.stopGracefully(ref);
   }
 
   async listWindows(): Promise<WindowSummary[]> {
@@ -279,6 +287,36 @@ export class TmuxAdapter {
       await this.runTmux(["set-option", "-w", "-t", target, key, value]);
     }
   }
+
+  private async stopGracefully(ref: TmuxRef): Promise<void> {
+    const target = this.target(ref);
+    const exists = await this.windowExists(ref);
+    if (!exists) {
+      return;
+    }
+
+    await this.runTmux(["send-keys", "-t", target, "C-c"]).catch(() => undefined);
+    await delay(220);
+
+    const paneInfo = await this.runTmux([
+      "list-panes",
+      "-t",
+      target,
+      "-F",
+      "#{pane_pid}\t#{pane_current_command}\t#{pane_dead}"
+    ]).catch(() => "");
+    const [panePidText = "", paneCommand = "", paneDeadFlag = "1"] = firstLine(paneInfo).split("\t");
+    const panePid = Number.parseInt(panePidText, 10);
+    const currentCommand = paneCommand.trim().toLowerCase();
+    const paneDead = paneDeadFlag === "1";
+
+    if (!paneDead && Number.isFinite(panePid) && panePid > 1 && currentCommand !== "bash" && currentCommand !== "zsh") {
+      await terminateProcessGroup(panePid).catch(() => undefined);
+      await delay(90);
+    }
+
+    await this.runTmux(["kill-window", "-t", target]).catch(() => undefined);
+  }
 }
 
 function firstLine(input: string): string {
@@ -310,4 +348,18 @@ function normalizeOption(value: string | undefined): string | undefined {
     return undefined;
   }
   return value;
+}
+
+async function terminateProcessGroup(panePid: number): Promise<void> {
+  const { stdout } = await execFileAsync("ps", ["-o", "pgid=", "-p", String(panePid)], {
+    maxBuffer: 1024 * 64
+  });
+  const pgid = Number.parseInt(stdout.trim(), 10);
+  if (!Number.isFinite(pgid) || pgid <= 1) {
+    return;
+  }
+
+  await execFileAsync("kill", ["-TERM", `-${pgid}`], { maxBuffer: 1024 * 64 }).catch(() => undefined);
+  await delay(120);
+  await execFileAsync("kill", ["-KILL", `-${pgid}`], { maxBuffer: 1024 * 64 }).catch(() => undefined);
 }
