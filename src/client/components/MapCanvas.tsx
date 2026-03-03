@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+  type SetStateAction,
+  type WheelEvent
+} from "react";
 import type { Worker, WorkerPosition } from "../../shared/types";
 import { useOutpostMap, type LoadedOutpostMap } from "../map/tileMapLoader";
 import {
@@ -95,6 +105,7 @@ const keyboardMoveUnitsPerSecond = (moveSpeedPerTick * 1000) / movementIntervalM
 const keyboardMoveCommitIntervalMs = 160;
 const pointerPanDragThreshold = 4;
 const defaultZoomScale = 1.45;
+const maxZoomScale = 2.4;
 const recenterVisibilityPaddingPx = 56;
 const commandFeedbackDurationMs = 900;
 const blockedFeedbackDurationMs = 750;
@@ -162,6 +173,17 @@ export function MapCanvas({
 
   const { mapData, errorText: mapErrorText } = useOutpostMap();
   const mapRenderError = mapErrorText ?? mapPreviewLoadError;
+
+  const setConstrainedViewport = useCallback(
+    (nextState: SetStateAction<ViewportState>) => {
+      setViewport((current) => {
+        const resolved =
+          typeof nextState === "function" ? (nextState as (state: ViewportState) => ViewportState)(current) : nextState;
+        return constrainViewportToContainMap(resolved, canvasSize, mapData);
+      });
+    },
+    [canvasSize, mapData]
+  );
 
   useEffect(() => {
     multiSelectedWorkerIdsRef.current = new Set(effectiveSelectedWorkerIds);
@@ -262,6 +284,10 @@ export function MapCanvas({
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    setViewport((current) => constrainViewportToContainMap(current, canvasSize, mapData));
+  }, [canvasSize, mapData]);
 
   useEffect(() => {
     const activeWorkerIds = new Set(workers.map((worker) => worker.id));
@@ -572,13 +598,13 @@ export function MapCanvas({
     const centerX = (mapData.width * mapData.tileSize) / 2;
     const centerY = (mapData.height * mapData.tileSize) / 2;
 
-    setViewport((current) => ({
+    setConstrainedViewport((current) => ({
       ...current,
       offsetX: canvasSize.width / 2 - centerX * current.scale,
       offsetY: canvasSize.height / 2 - centerY * current.scale
     }));
     setHasCenteredOnMap(true);
-  }, [canvasSize.height, canvasSize.width, hasCenteredOnMap, mapData]);
+  }, [canvasSize.height, canvasSize.width, hasCenteredOnMap, mapData, setConstrainedViewport]);
 
   useEffect(() => {
     if (!centerOnWorkerId || centerRequestKey === undefined) {
@@ -609,12 +635,12 @@ export function MapCanvas({
       return;
     }
 
-    setViewport((current) => ({
+    setConstrainedViewport((current) => ({
       ...current,
       offsetX: canvasSize.width / 2 - position.x * current.scale,
       offsetY: canvasSize.height / 2 - position.y * current.scale
     }));
-  }, [animatedPositions, canvasSize.height, canvasSize.width, centerOnWorkerId, centerRequestKey, viewport, workers]);
+  }, [animatedPositions, canvasSize.height, canvasSize.width, centerOnWorkerId, centerRequestKey, setConstrainedViewport, viewport, workers]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -914,7 +940,7 @@ export function MapCanvas({
     lastMoveFrameRef,
     workerFacingRef,
     multiSelectedWorkerIdsRef,
-    setViewport,
+    setViewport: setConstrainedViewport,
     nudgeSelectedWorkers,
     flushPendingKeyboardMoveCommits,
     keyboardPanSpeedPerSecond,
@@ -1048,7 +1074,7 @@ export function MapCanvas({
       }
 
       if (panDrag.mode === "pan" && panDrag.moved && (deltaX !== 0 || deltaY !== 0)) {
-        setViewport((current) => ({
+        setConstrainedViewport((current) => ({
           ...current,
           offsetX: current.offsetX + deltaX,
           offsetY: current.offsetY + deltaY
@@ -1205,8 +1231,8 @@ export function MapCanvas({
     const worldBeforeZoom = screenToWorld(point.x, point.y, viewport);
     const zoomDelta = event.deltaY < 0 ? 1.1 : 0.9;
 
-    setViewport((current) => {
-      const nextScale = clamp(current.scale * zoomDelta, 0.55, 2.4);
+    setConstrainedViewport((current) => {
+      const nextScale = clamp(current.scale * zoomDelta, 0.05, maxZoomScale);
       return {
         scale: nextScale,
         offsetX: point.x - worldBeforeZoom.x * nextScale,
@@ -1252,6 +1278,52 @@ export function MapCanvas({
       ) : null}
     </div>
   );
+}
+
+function constrainViewportToContainMap(
+  viewport: ViewportState,
+  canvasSize: { width: number; height: number },
+  mapData: LoadedOutpostMap | undefined
+): ViewportState {
+  if (!mapData) {
+    return viewport;
+  }
+
+  const worldWidth = mapData.width * mapData.tileSize;
+  const worldHeight = mapData.height * mapData.tileSize;
+  if (worldWidth <= 0 || worldHeight <= 0 || canvasSize.width <= 0 || canvasSize.height <= 0) {
+    return viewport;
+  }
+
+  const containScale = Math.min(canvasSize.width / worldWidth, canvasSize.height / worldHeight);
+  if (!Number.isFinite(containScale) || containScale <= 0) {
+    return viewport;
+  }
+
+  const minScale = containScale;
+  const boundedScale = clamp(viewport.scale, minScale, Math.max(minScale, maxZoomScale));
+
+  const scaledMapWidth = worldWidth * boundedScale;
+  const scaledMapHeight = worldHeight * boundedScale;
+
+  const offsetX =
+    scaledMapWidth <= canvasSize.width
+      ? (canvasSize.width - scaledMapWidth) / 2
+      : clamp(viewport.offsetX, canvasSize.width - scaledMapWidth, 0);
+  const offsetY =
+    scaledMapHeight <= canvasSize.height
+      ? (canvasSize.height - scaledMapHeight) / 2
+      : clamp(viewport.offsetY, canvasSize.height - scaledMapHeight, 0);
+
+  if (boundedScale === viewport.scale && offsetX === viewport.offsetX && offsetY === viewport.offsetY) {
+    return viewport;
+  }
+
+  return {
+    scale: boundedScale,
+    offsetX,
+    offsetY
+  };
 }
 
 function readPointerOnCanvas(event: PointerEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement> | MouseEvent<HTMLCanvasElement>): {
