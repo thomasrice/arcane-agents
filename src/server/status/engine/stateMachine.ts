@@ -355,20 +355,25 @@ function collectWorkingEvidence(context: WorkerStatusSignalContext, hasRecoverab
 }
 
 function detectIdleBlocker(context: WorkerStatusSignalContext, evidence: WorkingEvidence): IdleBlocker | undefined {
-  if (isShellCommand(context.commandLower) && context.transcriptSnapshot?.status !== "working") {
-    return {
-      reason: {
-        code: "shell-command-idle",
-        message: "Foreground command is shell; no explicit active-work transcript signal."
-      }
-    };
-  }
-
   if (context.isOpenCodeSession && context.hasOpenCodePromptSignal && !context.hasOpenCodeActiveSignal) {
     return {
       reason: {
         code: "opencode-prompt-idle",
         message: "OpenCode prompt is visible without active execution signal."
+      }
+    };
+  }
+
+  if (isShellCommand(context.commandLower) && context.transcriptSnapshot?.status !== "working") {
+    const hasWorkingEvidence = evidence.strongReasons.length > 0 || evidence.weakReasons.length > 0;
+    if (hasWorkingEvidence) {
+      return undefined;
+    }
+
+    return {
+      reason: {
+        code: "shell-command-idle",
+        message: "Foreground command is shell; no explicit active-work transcript signal."
       }
     };
   }

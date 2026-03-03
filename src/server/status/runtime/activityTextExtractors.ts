@@ -1,4 +1,5 @@
 import type { Worker } from "../../../shared/types";
+import { hasOpenCodeActiveSignal, hasOpenCodePromptSignal } from "./openCodeSignals";
 import { isLikelyClaudeSession, isLikelyOpenCodeSession } from "./sessionDetection";
 
 const openCodeCapturePaneLines = 420;
@@ -10,7 +11,8 @@ export function extractRuntimeActivityText(worker: Worker, currentCommand: strin
     return extractClaudeRuntimeActivityText(output);
   }
 
-  if (isLikelyOpenCodeSession(worker, commandLower)) {
+  const hasOpenCodeOutputSignal = hasOpenCodePromptSignal(output) || hasOpenCodeActiveSignal(output);
+  if (isLikelyOpenCodeSession(worker, commandLower) || hasOpenCodeOutputSignal) {
     return extractOpenCodeRuntimeActivityText(output);
   }
 

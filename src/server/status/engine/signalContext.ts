@@ -33,12 +33,14 @@ export function buildWorkerStatusSignalContext({
   const parsed = parseActivity(currentCommand, output);
   const commandLower = currentCommand.toLowerCase();
   const isClaude = isLikelyClaudeSession(worker, commandLower);
-  const isOpenCode = isLikelyOpenCodeSession(worker, commandLower);
+  const rawOpenCodePromptSignal = hasOpenCodePromptSignal(output);
+  const rawOpenCodeActiveSignal = hasOpenCodeActiveSignal(output);
+  const isOpenCode = isLikelyOpenCodeSession(worker, commandLower) || rawOpenCodePromptSignal || rawOpenCodeActiveSignal;
   const runtimeActivityText = extractRuntimeActivityText(worker, currentCommand, output);
   const activeClaudeTask = extractClaudeActiveTask(output);
   const hasClaudeProgressSignal = isClaude && hasClaudeLiveProgressSignal(output);
-  const openCodePromptSignal = isOpenCode && hasOpenCodePromptSignal(output);
-  const openCodeActiveSignal = isOpenCode && hasOpenCodeActiveSignal(output);
+  const openCodePromptSignal = isOpenCode && rawOpenCodePromptSignal;
+  const openCodeActiveSignal = isOpenCode && rawOpenCodeActiveSignal;
   const outputQuietForMs = Math.max(0, nowMs - observation.lastOutputChangeAtMs);
   const commandQuietForMs = Math.max(0, nowMs - observation.lastCommandChangeAtMs);
   const createdAtMs = Date.parse(worker.createdAt);
