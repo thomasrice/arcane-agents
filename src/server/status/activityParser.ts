@@ -35,6 +35,9 @@ const inputPromptLineMatchers: RegExp[] = [
   /\b(?:select (?:an )?option|enter choice|choose (?:an )?option)\b[:?]?\s*$/i,
   /\b(?:allow|approve|confirm|continue|proceed)\b[^\n]{0,40}\?\s*$/i
 ];
+
+const generalInputPromptRecentLineWindow = 6;
+const permissionPromptRecentLineWindow = 18;
 const errorLineMatchers: RegExp[] = [
   /\btraceback\b/i,
   /\bexception\b/i,
@@ -104,7 +107,46 @@ function hasInputPromptSignal(linesNewestFirst: string[]): boolean {
     return true;
   }
 
-  return isShellPromptLine(latest) && isInputPromptLine(secondLatest);
+  if (isShellPromptLine(latest) && isInputPromptLine(secondLatest)) {
+    return true;
+  }
+
+  for (const line of linesNewestFirst.slice(0, generalInputPromptRecentLineWindow)) {
+    if (isInputPromptLine(line)) {
+      return true;
+    }
+  }
+
+  return hasPermissionRequiredPromptSignal(linesNewestFirst.slice(0, permissionPromptRecentLineWindow));
+}
+
+function hasPermissionRequiredPromptSignal(linesNewestFirst: string[]): boolean {
+  const recent = linesNewestFirst
+    .map((line) => normalizeStatusLine(line))
+    .map((line) => line.toLowerCase())
+    .filter((line) => line.length > 0);
+
+  if (!recent.some((line) => line.includes("permission required"))) {
+    return false;
+  }
+
+  const hasAllowOnce = recent.some((line) => line.includes("allow once"));
+  const hasAllowAlways = recent.some((line) => line.includes("allow always"));
+  const hasReject = recent.some((line) => /\breject\b/.test(line));
+  const hasAccessScope = recent.some(
+    (line) => line.includes("access external directory") || line.includes("access external") || line.includes("patterns")
+  );
+  const hasConfirmHint = recent.some((line) => line.includes("enter confirm"));
+
+  if (hasAllowOnce && hasAllowAlways && hasReject) {
+    return true;
+  }
+
+  if (hasAccessScope && hasAllowOnce && hasReject) {
+    return true;
+  }
+
+  return hasAccessScope && hasConfirmHint;
 }
 
 function isInputPromptLine(line: string): boolean {

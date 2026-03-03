@@ -19,6 +19,7 @@ export interface WorkerNameplate {
   label: string;
   visible: boolean;
   completionKey?: string;
+  attentionKey?: string;
 }
 
 const completionShimmerBandWidth = 16;
@@ -36,6 +37,18 @@ interface CompletionPlaquePalette {
   bevelDark: string;
   shimmerOuter: string;
   shimmerInner: string;
+  textShadow: string;
+  textFill: string;
+}
+
+interface AttentionPlaquePalette {
+  pulseCycleMs: number;
+  baseTop: string;
+  baseMid: string;
+  baseBottom: string;
+  borderLight: string;
+  borderDark: string;
+  pulseGlowRgb: string;
   textShadow: string;
   textFill: string;
 }
@@ -76,6 +89,18 @@ const completionPlaquePalettes = {
 } satisfies Record<string, CompletionPlaquePalette>;
 
 const completionPlaquePalette = completionPlaquePalettes.muted;
+
+const attentionPlaquePalette: AttentionPlaquePalette = {
+  pulseCycleMs: 1700,
+  baseTop: "rgba(168, 92, 27, 0.96)",
+  baseMid: "rgba(207, 122, 44, 0.95)",
+  baseBottom: "rgba(139, 77, 21, 0.97)",
+  borderLight: "rgba(241, 177, 98, 0.88)",
+  borderDark: "rgba(97, 49, 11, 0.92)",
+  pulseGlowRgb: "255, 212, 138",
+  textShadow: "rgba(255, 228, 178, 0.54)",
+  textFill: "#251003"
+};
 
 export type SelectedOutlineState = "selected" | "terminal-focused" | "group-focused" | "group-focused-terminal";
 
@@ -254,6 +279,12 @@ export function drawWorkerNameplates(
       context.fillStyle = completionPlaquePalette.textShadow;
       context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 14);
       context.fillStyle = completionPlaquePalette.textFill;
+    } else if (nameplate.attentionKey !== undefined) {
+      const seed = hashString(nameplate.attentionKey);
+      drawAttentionNameplate(context, left, nameplate.topY, labelWidth, labelHeight, nowMs, seed);
+      context.fillStyle = attentionPlaquePalette.textShadow;
+      context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 14);
+      context.fillStyle = attentionPlaquePalette.textFill;
     } else {
       context.fillStyle = "rgba(0, 0, 0, 0.56)";
       context.fillRect(left, nameplate.topY, labelWidth, labelHeight);
@@ -321,6 +352,42 @@ function drawCompletionNameplate(
   shimmerGradient.addColorStop(1, palette.shimmerOuter);
   context.fillStyle = shimmerGradient;
   context.fillRect(x, y, w, h);
+}
+
+function drawAttentionNameplate(
+  context: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  nowMs: number,
+  seed: number
+): void {
+  const palette = attentionPlaquePalette;
+  const x = Math.round(left);
+  const y = Math.round(top);
+  const w = Math.max(1, Math.round(width));
+  const h = Math.max(1, Math.round(height));
+
+  const baseGradient = context.createLinearGradient(0, y, 0, y + h);
+  baseGradient.addColorStop(0, palette.baseTop);
+  baseGradient.addColorStop(0.54, palette.baseMid);
+  baseGradient.addColorStop(1, palette.baseBottom);
+  context.fillStyle = baseGradient;
+  context.fillRect(x, y, w, h);
+
+  const pulsePhase = ((nowMs + seed * 41) % palette.pulseCycleMs) / palette.pulseCycleMs;
+  const pulseAlpha = 0.16 + 0.22 * (0.5 + 0.5 * Math.sin(pulsePhase * Math.PI * 2));
+  context.fillStyle = `rgba(${palette.pulseGlowRgb}, ${pulseAlpha.toFixed(3)})`;
+  context.fillRect(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, h - 2));
+
+  context.fillStyle = palette.borderLight;
+  context.fillRect(x, y, w, 1);
+  context.fillRect(x, y, 1, h);
+
+  context.fillStyle = palette.borderDark;
+  context.fillRect(x, y + h - 1, w, 1);
+  context.fillRect(x + w - 1, y, 1, h);
 }
 
 function hashString(text: string): number {

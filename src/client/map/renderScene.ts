@@ -207,20 +207,6 @@ export function drawScene({
       drawActivityOverlayLabel(context, activityOverlay, screen.x, badgeY + 11);
     }
 
-    if (worker.status === "attention") {
-      const bubbleX = spriteBounds ? spriteBounds.x + spriteBounds.width + 7 * viewport.scale : screen.x + radius + 9 * viewport.scale;
-      const bubbleY = spriteBounds ? spriteBounds.y + 10 * viewport.scale : screen.y - radius - 8 * viewport.scale;
-
-      context.fillStyle = "rgba(245, 185, 78, 0.95)";
-      context.beginPath();
-      context.arc(bubbleX, bubbleY, 8 * viewport.scale, 0, Math.PI * 2);
-      context.fill();
-
-      context.fillStyle = "#35220d";
-      context.font = "11px 'Trebuchet MS', sans-serif";
-      context.fillText("!", bubbleX, bubbleY + 4 * viewport.scale);
-    }
-
     if (controlKeys.length > 0) {
       const indicatorAnchorX = spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x;
       let indicatorY = spriteBounds ? spriteBounds.y - 12 * viewport.scale : screen.y - radius - 18 * viewport.scale;
@@ -233,12 +219,14 @@ export function drawScene({
 
     if (queueNameplate) {
       const completionPending = completionPendingWorkerIds?.has(worker.id) && worker.status === "idle";
+      const attentionPending = worker.status === "attention";
       pendingNameplates.push({
         anchorX: spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x,
         topY: (spriteBounds ? spriteBounds.y + spriteBounds.height : screen.y + radius) + 4 * viewport.scale,
         label: displayLabel,
         visible: !occludedWorkerIds.has(worker.id),
-        completionKey: completionPending ? worker.id : undefined
+        completionKey: completionPending ? worker.id : undefined,
+        attentionKey: attentionPending ? worker.id : undefined
       });
     }
   };
