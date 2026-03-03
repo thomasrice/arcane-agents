@@ -1,5 +1,5 @@
 import type { Worker } from "../../../../shared/types";
-import { detectIdleBlocker } from "./idleBlockers";
+import { detectIdleBlocker, isPromptDominantOpenCodeIdle } from "./idleBlockers";
 import { classifyParserError } from "./parserErrorRules";
 import { resolveWorkingActivity } from "./activity";
 import { collectWorkingEvidence, shouldKeepStickyWorking } from "./workingEvidence";
@@ -59,6 +59,25 @@ function deriveWorkerStatusDecision(context: WorkerStatusSignalContext): WorkerS
         activityTool: context.transcriptSnapshot?.activityTool ?? "terminal",
         activityPath: context.transcriptSnapshot?.activityPath,
         confidence: 0.92,
+        reasons,
+        parsedStrongSignal: false
+      }
+    );
+  }
+
+  if (isPromptDominantOpenCodeIdle(context)) {
+    pushReason({
+      code: "opencode-prompt-idle",
+      message: "OpenCode prompt is visible without a fresh active execution signal."
+    });
+    return finalizeDecision(
+      context,
+      {
+        status: "idle",
+        activityText: undefined,
+        activityTool: undefined,
+        activityPath: undefined,
+        confidence: 0.9,
         reasons,
         parsedStrongSignal: false
       }

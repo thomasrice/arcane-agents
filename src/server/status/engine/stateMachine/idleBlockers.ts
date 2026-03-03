@@ -3,12 +3,16 @@ import { claudeSpawnGraceMs } from "./constants";
 import { hasAnyWorkingEvidence, isShellCommand, statusFreshnessWindowMs } from "./helpers";
 import type { IdleBlocker, WorkingEvidence } from "./types";
 
+function isPromptDominantOpenCodeIdle(context: WorkerStatusSignalContext): boolean {
+  return context.isOpenCodeSession && context.hasOpenCodePromptSignal && !context.hasOpenCodeActiveSignal;
+}
+
 function detectIdleBlocker(context: WorkerStatusSignalContext, evidence: WorkingEvidence): IdleBlocker | undefined {
-  if (context.isOpenCodeSession && context.hasOpenCodePromptSignal && !context.hasOpenCodeActiveSignal) {
+  if (isPromptDominantOpenCodeIdle(context)) {
     return {
       reason: {
         code: "opencode-prompt-idle",
-        message: "OpenCode prompt is visible without active execution signal."
+        message: "OpenCode prompt is visible without a fresh active execution signal."
       }
     };
   }
@@ -57,4 +61,4 @@ function detectIdleBlocker(context: WorkerStatusSignalContext, evidence: Working
   return undefined;
 }
 
-export { detectIdleBlocker };
+export { detectIdleBlocker, isPromptDominantOpenCodeIdle };
