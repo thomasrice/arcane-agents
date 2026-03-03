@@ -40,6 +40,9 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
   const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const fitRafRef = useRef<number | null>(null);
+  const transientSelectionRef = useRef<string>("");
+  const transientSelectionAtMsRef = useRef<number>(0);
+  const lastCopiedSelectionRef = useRef<string>("");
   const lastFocusRequestRef = useRef<number | undefined>(undefined);
 
   const focusTerminal = useCallback(() => {
@@ -118,6 +121,29 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
     [fitIfVisible, sendResizeMessage]
   );
 
+  const copyTerminalSelection = useCallback((selection: string) => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+
+    const normalizedSelection = selection;
+    if (!normalizedSelection || normalizedSelection.length === 0) {
+      lastCopiedSelectionRef.current = "";
+      return;
+    }
+
+    if (normalizedSelection === lastCopiedSelectionRef.current) {
+      return;
+    }
+
+    void copyTextToClipboard(normalizedSelection).then((copied) => {
+      if (copied) {
+        lastCopiedSelectionRef.current = normalizedSelection;
+      }
+    });
+  }, []);
+
   useEffect(() => {
     if (!containerRef.current) {
       return;
@@ -151,6 +177,42 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
     });
     terminal.open(containerRef.current);
 
+    const selectionDisposable = terminal.onSelectionChange(() => {
+      const selection = terminal.getSelection();
+      if (!selection || selection.length === 0) {
+        return;
+      }
+
+      transientSelectionRef.current = selection;
+      transientSelectionAtMsRef.current = Date.now();
+      copyTerminalSelection(selection);
+    });
+
+    const copyCurrentSelection = () => {
+      const directSelection = terminal.getSelection();
+      if (directSelection && directSelection.length > 0) {
+        copyTerminalSelection(directSelection);
+        return;
+      }
+
+      const ageMs = Date.now() - transientSelectionAtMsRef.current;
+      if (transientSelectionRef.current && ageMs >= 0 && ageMs <= 1400) {
+        copyTerminalSelection(transientSelectionRef.current);
+      }
+    };
+
+    const terminalContainer = containerRef.current;
+    terminalContainer.addEventListener("mouseup", copyCurrentSelection, true);
+    terminalContainer.addEventListener("touchend", copyCurrentSelection, true);
+    terminalContainer.addEventListener("pointerup", copyCurrentSelection, true);
+
+    const onWindowBlur = () => {
+      transientSelectionRef.current = "";
+      transientSelectionAtMsRef.current = 0;
+      lastCopiedSelectionRef.current = "";
+    };
+    window.addEventListener("blur", onWindowBlur);
+
     terminal.writeln("Select a worker to connect its terminal.");
 
     terminalRef.current = terminal;
@@ -169,12 +231,17 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
         cancelAnimationFrame(fitRafRef.current);
         fitRafRef.current = null;
       }
+      window.removeEventListener("blur", onWindowBlur);
+      terminalContainer.removeEventListener("mouseup", copyCurrentSelection, true);
+      terminalContainer.removeEventListener("touchend", copyCurrentSelection, true);
+      terminalContainer.removeEventListener("pointerup", copyCurrentSelection, true);
+      selectionDisposable.dispose();
       socketRef.current?.close();
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [scheduleFit]);
+  }, [copyTerminalSelection, scheduleFit]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -185,6 +252,10 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
     socketRef.current?.close();
     socketRef.current = null;
     terminal.clear();
+    terminal.clearSelection();
+    transientSelectionRef.current = "";
+    transientSelectionAtMsRef.current = 0;
+    lastCopiedSelectionRef.current = "";
     scheduleFit();
 
     if (!workerId) {
@@ -271,4 +342,45 @@ function isShiftEnterEvent(event: KeyboardEvent): boolean {
     !event.metaKey &&
     !event.altKey
   );
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (!text) {
+    return false;
+  }
+
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fall through to execCommand fallback
+    }
+  }
+
+  return copyTextWithExecCommand(text);
+}
+
+function copyTextWithExecCommand(text: string): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const onCopy = (event: ClipboardEvent) => {
+    event.clipboardData?.setData("text/plain", text);
+    event.preventDefault();
+  };
+
+  document.addEventListener("copy", onCopy, { once: true });
+
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+
+  document.removeEventListener("copy", onCopy);
+
+  return copied;
 }
