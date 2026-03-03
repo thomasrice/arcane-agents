@@ -148,3 +148,30 @@ Health check:
 ```bash
 curl http://127.0.0.1:7601/api/health
 ```
+
+## Status Debugging
+
+To log status transitions (for example `working -> idle`) in the server terminal, set
+`OVERWORLD_STATUS_TRACE` when launching the backend:
+
+```bash
+OVERWORLD_STATUS_TRACE=transitions npm run dev:server
+```
+
+Useful modes:
+
+- `OVERWORLD_STATUS_TRACE=off` (default)
+- `OVERWORLD_STATUS_TRACE=transitions` (only status changes; no output when status stays the same)
+- `OVERWORLD_STATUS_TRACE=verbose` (every status evaluation)
+
+If you run full dev mode:
+
+```bash
+OVERWORLD_STATUS_TRACE=transitions npm run dev
+```
+
+Status debugging APIs:
+
+- `GET /api/status-debug`
+- `GET /api/workers/:workerId/status-debug`
+- `GET /api/workers/:workerId/status-history`

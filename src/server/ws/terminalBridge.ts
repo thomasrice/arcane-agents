@@ -2,6 +2,10 @@ import * as pty from "node-pty";
 import type { RawData, WebSocket } from "ws";
 import { WorkerRepository } from "../persistence/workerRepository";
 
+interface TerminalBridgeOptions {
+  onSubmittedInput?: (workerId: string) => void;
+}
+
 interface ResizeMessage {
   type: "resize";
   cols: number;
@@ -9,7 +13,10 @@ interface ResizeMessage {
 }
 
 export class TerminalBridge {
-  constructor(private readonly workers: WorkerRepository) {}
+  constructor(
+    private readonly workers: WorkerRepository,
+    private readonly options: TerminalBridgeOptions = {}
+  ) {}
 
   connect(workerId: string, socket: WebSocket): void {
     const worker = this.workers.getWorker(workerId);
@@ -52,6 +59,10 @@ export class TerminalBridge {
       if (control) {
         terminal.resize(Math.max(20, control.cols), Math.max(5, control.rows));
         return;
+      }
+
+      if (isLikelySubmittedInput(incoming)) {
+        this.options.onSubmittedInput?.(worker.id);
       }
 
       terminal.write(incoming);
@@ -109,4 +120,8 @@ function rawDataToString(raw: RawData): string {
   }
 
   return Buffer.from(raw).toString("utf8");
+}
+
+function isLikelySubmittedInput(text: string): boolean {
+  return text.includes("\r") || text.includes("\n");
 }

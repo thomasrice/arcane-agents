@@ -52,7 +52,9 @@ const maxTransitionHistoryEntries = 40;
 
 export class StatusMonitor {
   private intervalId: NodeJS.Timeout | undefined;
+  private requestedPollTimer: NodeJS.Timeout | undefined;
   private pollInFlight = false;
+  private pollRequestedWhileInFlight = false;
   private readonly claudeTranscript = new ClaudeTranscriptTracker();
   private readonly paneObservation = new Map<string, PaneObservation>();
   private readonly statusDebugByWorker = new Map<string, WorkerStatusDebugSnapshot>();
@@ -80,12 +82,26 @@ export class StatusMonitor {
   }
 
   stop(): void {
-    if (!this.intervalId) {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = undefined;
+    }
+
+    if (this.requestedPollTimer) {
+      clearTimeout(this.requestedPollTimer);
+      this.requestedPollTimer = undefined;
+    }
+  }
+
+  requestPollSoon(delayMs = 35): void {
+    if (this.requestedPollTimer) {
       return;
     }
 
-    clearInterval(this.intervalId);
-    this.intervalId = undefined;
+    this.requestedPollTimer = setTimeout(() => {
+      this.requestedPollTimer = undefined;
+      void this.pollOnce();
+    }, Math.max(0, delayMs));
   }
 
   listWorkerStatusDebug(): WorkerStatusDebugSnapshot[] {
@@ -102,6 +118,7 @@ export class StatusMonitor {
 
   async pollOnce(): Promise<void> {
     if (this.pollInFlight) {
+      this.pollRequestedWhileInFlight = true;
       return;
     }
 
@@ -114,6 +131,10 @@ export class StatusMonitor {
       }
     } finally {
       this.pollInFlight = false;
+      if (this.pollRequestedWhileInFlight) {
+        this.pollRequestedWhileInFlight = false;
+        this.requestPollSoon(0);
+      }
     }
   }
 

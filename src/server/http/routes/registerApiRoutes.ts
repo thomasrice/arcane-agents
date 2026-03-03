@@ -139,6 +139,11 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
       const result = await orchestrator.broadcastInput(input.workerIds, input.text, {
         submit: input.submit
       });
+
+      if (result.deliveredWorkerIds.length > 0) {
+        statusMonitor.requestPollSoon();
+      }
+
       res.json(result);
     } catch (error) {
       handleRequestError(res, error);

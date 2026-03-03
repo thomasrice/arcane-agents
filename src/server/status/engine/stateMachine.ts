@@ -10,9 +10,9 @@ const commandWarmupWindowMs = 2_250;
 const stickyWorkingWindowMs = 3_500;
 const cachedActivityWindowMs = 12_000;
 const claudeSpawnGraceMs = 5_000;
-const genericWorkingFreshWindowMs = 7_000;
+const genericWorkingFreshWindowMs = 12_000;
 const claudeWorkingFreshWindowMs = 10_000;
-const openCodeWorkingFreshWindowMs = 9_000;
+const openCodeWorkingFreshWindowMs = 12_000;
 
 const fatalRuntimeErrorMatchers: RegExp[] = [
   /^traceback\b/i,
@@ -187,6 +187,36 @@ export function deriveWorkerStatusDecision(context: WorkerStatusSignalContext): 
         activityTool: workingActivity.activityTool,
         activityPath: workingActivity.activityPath,
         confidence: 0.66,
+        reasons,
+        parsedStrongSignal: evidence.parsedStrongSignal
+      }
+    );
+  }
+
+  if (
+    context.worker.status === "working" &&
+    evidence.weakReasons.length > 0 &&
+    context.outputQuietForMs <= statusFreshnessWindowMs(context)
+  ) {
+    for (const reason of evidence.weakReasons) {
+      pushReason(reason);
+    }
+
+    pushReason({
+      code: "working-evidence-window",
+      message: "Keeps working status while weak evidence remains within freshness window.",
+      detail: `${Math.round(context.outputQuietForMs)}ms quiet`
+    });
+
+    const workingActivity = resolveWorkingActivity(context, evidence);
+    return finalizeDecision(
+      context,
+      {
+        status: "working",
+        activityText: workingActivity.activityText,
+        activityTool: workingActivity.activityTool,
+        activityPath: workingActivity.activityPath,
+        confidence: 0.62,
         reasons,
         parsedStrongSignal: evidence.parsedStrongSignal
       }

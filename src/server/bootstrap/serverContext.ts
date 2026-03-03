@@ -40,7 +40,6 @@ export async function createServerContext(): Promise<ServerContext> {
   orchestrator.setDiscoveredProjects(initialDiscovery.projects);
 
   const hub = new RealtimeHub();
-  const terminalBridge = new TerminalBridge(workers);
 
   await orchestrator.reconcileWithTmux();
 
@@ -61,6 +60,12 @@ export async function createServerContext(): Promise<ServerContext> {
       });
     }
   );
+
+  const terminalBridge = new TerminalBridge(workers, {
+    onSubmittedInput: () => {
+      statusMonitor.requestPollSoon();
+    }
+  });
 
   return {
     paths,

@@ -147,13 +147,18 @@ export function useMapKeyboardMotion({
         return;
       }
 
-      const wasdKey = isWasdKey(event.key);
-      if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && wasdKey) {
-        if (isTerminalPanelTarget(event.target) || multiSelectedWorkerIdsRef.current.size === 0) {
+      const movementDirectionKey = isMovementDirectionKey(event.key);
+      if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && movementDirectionKey) {
+        if (isTerminalPanelTarget(event.target)) {
           return;
         }
 
         event.preventDefault();
+
+        if (multiSelectedWorkerIdsRef.current.size === 0) {
+          return;
+        }
+
         const facingDirection = panDirectionToFacing(direction);
         for (const workerId of multiSelectedWorkerIdsRef.current) {
           workerFacingRef.current[workerId] = facingDirection;
@@ -175,7 +180,7 @@ export function useMapKeyboardMotion({
         return;
       }
 
-      if (wasdKey && (!event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) {
+      if (movementDirectionKey && (!event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) {
         return;
       }
 
@@ -190,7 +195,7 @@ export function useMapKeyboardMotion({
         return;
       }
 
-      if (isWasdKey(event.key)) {
+      if (isMovementDirectionKey(event.key)) {
         pressedMoveKeysRef.current.delete(direction);
         if (pressedMoveKeysRef.current.size === 0) {
           stopMoveLoop();
@@ -260,4 +265,8 @@ function panDirectionToFacing(direction: PanDirection): SpriteDirection {
     default:
       return "south";
   }
+}
+
+function isMovementDirectionKey(key: string): boolean {
+  return isWasdKey(key) || key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight";
 }
