@@ -36,6 +36,7 @@ export async function createServerContext(): Promise<ServerContext> {
 
   const workers = new WorkerRepository(paths.dbPath);
   const tmux = new TmuxAdapter(baseConfig.backend.tmux.sessionName);
+  await tmux.ensureSessionClipboardDefaults();
   const orchestrator = new OrchestratorService(baseConfig, workers, tmux);
   orchestrator.setDiscoveredProjects(initialDiscovery.projects);
 

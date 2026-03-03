@@ -28,6 +28,11 @@ interface SendInputOptions {
   submit?: boolean;
 }
 
+interface ClipboardCommandCandidate {
+  binary: string;
+  command: string;
+}
+
 export interface ManagedWindow {
   window: string;
   pane: string;
@@ -39,6 +44,8 @@ export interface ManagedWindow {
 }
 
 export class TmuxAdapter {
+  private sessionClipboardConfigured = false;
+
   constructor(private readonly sessionName: string) {}
 
   async spawnWorker(input: SpawnTmuxInput): Promise<TmuxRef> {
@@ -76,6 +83,8 @@ export class TmuxAdapter {
       ]);
     }
 
+    await this.ensureSessionClipboardDefaults();
+
     await this.setWindowMetadata(target, {
       "@overworld_managed": "1",
       "@overworld_worker_id": input.workerId,
@@ -109,6 +118,29 @@ export class TmuxAdapter {
     }
 
     await this.stopGracefully(ref);
+  }
+
+  async ensureSessionClipboardDefaults(): Promise<void> {
+    if (this.sessionClipboardConfigured) {
+      return;
+    }
+
+    if (!(await this.hasSession())) {
+      return;
+    }
+
+    const copyCommand = await detectClipboardCopyCommand();
+    if (!copyCommand) {
+      this.sessionClipboardConfigured = true;
+      return;
+    }
+
+    await Promise.all([
+      this.runTmux(["set-option", "-t", this.sessionName, "set-clipboard", "external"]),
+      this.runTmux(["set-option", "-t", this.sessionName, "copy-command", copyCommand])
+    ]).catch(() => undefined);
+
+    this.sessionClipboardConfigured = true;
   }
 
   async windowExists(ref: TmuxRef): Promise<boolean> {
@@ -345,6 +377,46 @@ function normalizeOption(value: string | undefined): string | undefined {
     return undefined;
   }
   return value;
+}
+
+async function detectClipboardCopyCommand(): Promise<string | undefined> {
+  const candidates = clipboardCandidatesForPlatform(process.platform);
+  for (const candidate of candidates) {
+    if (await commandExists(candidate.binary)) {
+      return candidate.command;
+    }
+  }
+
+  return undefined;
+}
+
+function clipboardCandidatesForPlatform(platform: NodeJS.Platform): ClipboardCommandCandidate[] {
+  if (platform === "darwin") {
+    return [{ binary: "pbcopy", command: "pbcopy" }];
+  }
+
+  if (platform === "win32") {
+    return [{ binary: "clip.exe", command: "clip.exe" }];
+  }
+
+  return [
+    { binary: "wl-copy", command: "wl-copy" },
+    { binary: "xclip", command: "xclip -selection clipboard -in" },
+    { binary: "xsel", command: "xsel --clipboard --input" }
+  ];
+}
+
+async function commandExists(binary: string): Promise<boolean> {
+  const locator = process.platform === "win32" ? "where" : "which";
+
+  try {
+    await execFileAsync(locator, [binary], {
+      maxBuffer: 1024 * 64
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function terminateProcessGroup(panePid: number): Promise<void> {
