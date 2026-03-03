@@ -43,6 +43,7 @@ interface MapCanvasProps {
   terminalFocusedSelected?: boolean;
   terminalFocusedWorkerId?: string;
   controlGroups?: Partial<Record<number, string[]>>;
+  completionPendingWorkerIds?: string[];
   onSelect: (workerId: string | undefined) => void;
   onSelectionChange?: (workerIds: string[]) => void;
   onActivateWorker?: (workerId: string) => void;
@@ -108,6 +109,7 @@ export function MapCanvas({
   terminalFocusedSelected,
   terminalFocusedWorkerId,
   controlGroups,
+  completionPendingWorkerIds,
   onSelect,
   onSelectionChange,
   onActivateWorker,
@@ -214,6 +216,10 @@ export function MapCanvas({
   const spriteTypes = useMemo(() => Array.from(new Set(workers.map((worker) => worker.avatarType))), [workers]);
   const spriteLibrary = useCharacterSpriteLibrary(spriteTypes);
   const blockedTileKeys = useMemo(() => buildBlockedTileSet(mapData), [mapData]);
+  const completionPendingWorkerIdSet = useMemo(
+    () => (completionPendingWorkerIds?.length ? new Set(completionPendingWorkerIds) : undefined),
+    [completionPendingWorkerIds]
+  );
 
   useEffect(() => {
     animatedPositionsRef.current = animatedPositions;
@@ -660,6 +666,7 @@ export function MapCanvas({
       terminalFocusedSelected,
       terminalFocusedWorkerId,
       controlGroups,
+      completionPendingWorkerIds: completionPendingWorkerIdSet,
       viewport,
       mapData,
       spriteLibrary,
@@ -679,6 +686,7 @@ export function MapCanvas({
     walkAnimationTick,
     canvasSize,
     controlGroups,
+    completionPendingWorkerIdSet,
     fadingWorkers,
     mapData,
     selectedWorkerId,

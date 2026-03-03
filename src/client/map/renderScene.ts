@@ -56,6 +56,7 @@ export interface DrawSceneInput {
   terminalFocusedSelected: boolean | undefined;
   terminalFocusedWorkerId: string | undefined;
   controlGroups?: Partial<Record<number, string[]>>;
+  completionPendingWorkerIds?: Set<string>;
   viewport: ViewportState;
   mapData: LoadedOutpostMap | undefined;
   spriteLibrary: Partial<Record<string, CharacterSpriteSet>>;
@@ -84,6 +85,7 @@ export function drawScene({
   terminalFocusedSelected,
   terminalFocusedWorkerId,
   controlGroups,
+  completionPendingWorkerIds,
   viewport,
   mapData,
   spriteLibrary,
@@ -230,11 +232,13 @@ export function drawScene({
     }
 
     if (queueNameplate) {
+      const completionPending = completionPendingWorkerIds?.has(worker.id) && worker.status === "idle";
       pendingNameplates.push({
         anchorX: spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x,
         topY: (spriteBounds ? spriteBounds.y + spriteBounds.height : screen.y + radius) + 4 * viewport.scale,
         label: displayLabel,
-        visible: !occludedWorkerIds.has(worker.id)
+        visible: !occludedWorkerIds.has(worker.id),
+        completionKey: completionPending ? worker.id : undefined
       });
     }
   };
@@ -319,7 +323,7 @@ export function drawScene({
     }
   }
 
-  drawWorkerNameplates(context, pendingNameplates);
+  drawWorkerNameplates(context, pendingNameplates, nowMs);
 
   const isGroupSelection = selectedWorkerIds.length > 1;
   for (const selectedOutline of selectedOutlines) {

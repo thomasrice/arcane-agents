@@ -1,4 +1,4 @@
-import type { MutableRefObject } from "react";
+import { useMemo, type MutableRefObject } from "react";
 import type { Worker } from "../../shared/types";
 import type { RosterEntry } from "../app/types";
 import { formatShortcutSummonActivityText } from "../app/utils";
@@ -20,6 +20,7 @@ interface TerminalColumnProps {
   onRallyCommandDraftChange: (value: string) => void;
   onSendRallyCommand: () => void | Promise<void>;
   rosterEntries: RosterEntry[];
+  completionPendingWorkerIds: string[];
   rosterActiveIndex: number;
   setRosterActiveIndex: (index: number) => void;
   onActivateRosterIndex: (index: number) => void;
@@ -42,12 +43,20 @@ export function TerminalColumn({
   onRallyCommandDraftChange,
   onSendRallyCommand,
   rosterEntries,
+  completionPendingWorkerIds,
   rosterActiveIndex,
   setRosterActiveIndex,
   onActivateRosterIndex,
   onOpenSelectedInTerminal,
   terminalFocusToken
 }: TerminalColumnProps): JSX.Element {
+  const completionPendingWorkerIdSet = useMemo(
+    () => new Set(completionPendingWorkerIds),
+    [completionPendingWorkerIds]
+  );
+
+  const completionPendingCount = completionPendingWorkerIds.length;
+
   return (
     <div
       className={`terminal-column${terminalWorker ? " terminal-column-selected" : ""}${
@@ -62,6 +71,12 @@ export function TerminalColumn({
             ? `${terminalWorker.displayName ?? terminalWorker.name} (${terminalWorker.status})`
             : `Agents (${activeWorkers.length})`}
         </div>
+
+        {!terminalWorker && completionPendingCount > 0 ? (
+          <div className="terminal-ready-chip" title="Agents finished but not yet reviewed in terminal">
+            ✦ {completionPendingCount} ready
+          </div>
+        ) : null}
 
         {terminalWorker ? (
           <button
@@ -101,7 +116,14 @@ export function TerminalColumn({
                   aria-hidden="true"
                 />
                 <div className="worker-roster-text">
-                  <div className="worker-roster-name">{worker.displayName ?? worker.name}</div>
+                  <div className="worker-roster-name-row">
+                    <div className="worker-roster-name">{worker.displayName ?? worker.name}</div>
+                    {completionPendingWorkerIdSet.has(worker.id) ? (
+                      <span className="worker-complete-badge" title="Finished and waiting for review">
+                        READY
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="worker-roster-meta">
                     {worker.projectId} · {worker.runtimeId} · {worker.status}
                   </div>
@@ -191,7 +213,14 @@ export function TerminalColumn({
                         aria-hidden="true"
                       />
                       <div className="worker-roster-text">
-                        <div className="worker-roster-name">{entry.worker.displayName ?? entry.worker.name}</div>
+                        <div className="worker-roster-name-row">
+                          <div className="worker-roster-name">{entry.worker.displayName ?? entry.worker.name}</div>
+                          {completionPendingWorkerIdSet.has(entry.worker.id) ? (
+                            <span className="worker-complete-badge" title="Finished and waiting for review">
+                              READY
+                            </span>
+                          ) : null}
+                        </div>
                         <div className="worker-roster-meta">
                           {entry.worker.projectId} · {entry.worker.runtimeId} · {entry.worker.status}
                         </div>

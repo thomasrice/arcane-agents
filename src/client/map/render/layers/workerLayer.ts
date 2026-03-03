@@ -18,7 +18,64 @@ export interface WorkerNameplate {
   topY: number;
   label: string;
   visible: boolean;
+  completionKey?: string;
 }
+
+const completionShimmerBandWidth = 16;
+
+interface CompletionPlaquePalette {
+  shimmerCycleMs: number;
+  baseTop: string;
+  baseHighlight: string;
+  baseMid: string;
+  baseBottom: string;
+  specular: string;
+  innerTopShade: string;
+  innerBottomShade: string;
+  bevelLight: string;
+  bevelDark: string;
+  shimmerOuter: string;
+  shimmerInner: string;
+  textShadow: string;
+  textFill: string;
+}
+
+const completionPlaquePalettes = {
+  vivid: {
+    shimmerCycleMs: 1850,
+    baseTop: "rgba(139, 105, 20, 0.98)",
+    baseHighlight: "rgba(245, 212, 66, 0.98)",
+    baseMid: "rgba(212, 160, 23, 0.98)",
+    baseBottom: "rgba(156, 122, 16, 0.98)",
+    specular: "rgba(255, 242, 178, 0.72)",
+    innerTopShade: "rgba(122, 91, 17, 0.28)",
+    innerBottomShade: "rgba(122, 91, 17, 0.28)",
+    bevelLight: "rgba(232, 200, 64, 0.92)",
+    bevelDark: "rgba(107, 79, 10, 0.92)",
+    shimmerOuter: "rgba(255, 248, 219, 0)",
+    shimmerInner: "rgba(255, 249, 232, 0.72)",
+    textShadow: "rgba(255, 236, 168, 0.62)",
+    textFill: "#1a1000"
+  },
+  muted: {
+    shimmerCycleMs: 2600,
+    baseTop: "rgba(111, 84, 22, 0.95)",
+    baseHighlight: "rgba(208, 172, 74, 0.93)",
+    baseMid: "rgba(171, 130, 42, 0.93)",
+    baseBottom: "rgba(124, 94, 27, 0.95)",
+    specular: "rgba(245, 227, 173, 0.36)",
+    innerTopShade: "rgba(102, 76, 20, 0.2)",
+    innerBottomShade: "rgba(84, 61, 16, 0.34)",
+    bevelLight: "rgba(216, 184, 93, 0.7)",
+    bevelDark: "rgba(94, 68, 16, 0.76)",
+    shimmerOuter: "rgba(255, 247, 217, 0)",
+    shimmerInner: "rgba(255, 246, 215, 0.34)",
+    textShadow: "rgba(230, 208, 145, 0.38)",
+    textFill: "#251806"
+  }
+} satisfies Record<string, CompletionPlaquePalette>;
+
+const completionPlaquePalette = completionPlaquePalettes.muted;
 
 export type SelectedOutlineState = "selected" | "terminal-focused" | "group-focused" | "group-focused-terminal";
 
@@ -169,7 +226,11 @@ export function drawActivityOverlayLabel(
   }
 }
 
-export function drawWorkerNameplates(context: CanvasRenderingContext2D, nameplates: WorkerNameplate[]): void {
+export function drawWorkerNameplates(
+  context: CanvasRenderingContext2D,
+  nameplates: WorkerNameplate[],
+  nowMs: number
+): void {
   if (!nameplates.length) {
     return;
   }
@@ -185,15 +246,90 @@ export function drawWorkerNameplates(context: CanvasRenderingContext2D, nameplat
 
     const labelWidth = Math.max(90, context.measureText(nameplate.label).width + 18);
     const labelHeight = 18;
+    const left = nameplate.anchorX - labelWidth / 2;
 
-    context.fillStyle = "rgba(0, 0, 0, 0.56)";
-    context.fillRect(nameplate.anchorX - labelWidth / 2, nameplate.topY, labelWidth, labelHeight);
+    if (nameplate.completionKey !== undefined) {
+      const seed = hashString(nameplate.completionKey);
+      drawCompletionNameplate(context, left, nameplate.topY, labelWidth, labelHeight, nowMs, seed);
+      context.fillStyle = completionPlaquePalette.textShadow;
+      context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 14);
+      context.fillStyle = completionPlaquePalette.textFill;
+    } else {
+      context.fillStyle = "rgba(0, 0, 0, 0.56)";
+      context.fillRect(left, nameplate.topY, labelWidth, labelHeight);
+      context.fillStyle = "#f8f7e5";
+    }
 
-    context.fillStyle = "#f8f7e5";
     context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 13);
   }
 
   context.restore();
+}
+
+function drawCompletionNameplate(
+  context: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  nowMs: number,
+  seed: number
+): void {
+  const palette = completionPlaquePalette;
+  const x = Math.round(left);
+  const y = Math.round(top);
+  const w = Math.max(1, Math.round(width));
+  const h = Math.max(1, Math.round(height));
+
+  const baseGradient = context.createLinearGradient(0, y, 0, y + h);
+  baseGradient.addColorStop(0, palette.baseTop);
+  baseGradient.addColorStop(0.26, palette.baseHighlight);
+  baseGradient.addColorStop(0.58, palette.baseMid);
+  baseGradient.addColorStop(1, palette.baseBottom);
+  context.fillStyle = baseGradient;
+  context.fillRect(x, y, w, h);
+
+  const specularTop = y + Math.max(2, Math.floor(h * 0.24));
+  const specularHeight = Math.max(1, Math.floor(h * 0.16));
+  context.fillStyle = palette.specular;
+  context.fillRect(x + 2, specularTop, Math.max(0, w - 4), specularHeight);
+
+  context.fillStyle = palette.innerTopShade;
+  context.fillRect(x + 1, y + 1, Math.max(0, w - 2), 1);
+  context.fillStyle = palette.innerBottomShade;
+  context.fillRect(x + 1, y + h - 2, Math.max(0, w - 2), 1);
+
+  context.fillStyle = palette.bevelLight;
+  context.fillRect(x, y, w, 1);
+  context.fillRect(x, y, 1, h);
+
+  context.fillStyle = palette.bevelDark;
+  context.fillRect(x, y + h - 1, w, 1);
+  context.fillRect(x + w - 1, y, 1, h);
+
+  const phase = ((nowMs + seed * 37) % palette.shimmerCycleMs) / palette.shimmerCycleMs;
+  const shimmerCenter = x - completionShimmerBandWidth + phase * (w + completionShimmerBandWidth * 2);
+  const shimmerGradient = context.createLinearGradient(
+    shimmerCenter - completionShimmerBandWidth,
+    0,
+    shimmerCenter + completionShimmerBandWidth,
+    0
+  );
+  shimmerGradient.addColorStop(0, palette.shimmerOuter);
+  shimmerGradient.addColorStop(0.45, palette.shimmerInner);
+  shimmerGradient.addColorStop(0.55, palette.shimmerInner);
+  shimmerGradient.addColorStop(1, palette.shimmerOuter);
+  context.fillStyle = shimmerGradient;
+  context.fillRect(x, y, w, h);
+}
+
+function hashString(text: string): number {
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+  }
+
+  return hash;
 }
 
 export function groupControlKeysByWorker(controlGroups: Partial<Record<number, string[]>> | undefined): Map<string, string[]> {
@@ -245,12 +381,7 @@ function fallbackAvatarColor(avatarType: string): string {
     return "#7a8c9a";
   }
 
-  let hash = 0;
-  for (let index = 0; index < normalized.length; index += 1) {
-    hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0;
-  }
-
-  const hue = hash % 360;
+  const hue = hashString(normalized) % 360;
   return `hsl(${hue} 35% 56%)`;
 }
 

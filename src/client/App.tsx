@@ -24,6 +24,7 @@ import { useLayoutAndControlGroups } from "./hooks/useLayoutAndControlGroups";
 import { useOverworldData } from "./hooks/useOverworldData";
 import { useSelectionModel } from "./hooks/useSelectionModel";
 import { useTerminalFocus } from "./hooks/useTerminalFocus";
+import { useWorkerCompletionNotifications } from "./hooks/useWorkerCompletionNotifications";
 import { useWorkerFade } from "./hooks/useWorkerFade";
 import { useWorkerActions } from "./hooks/useWorkerActions";
 import { buildShortcutHotkeyBindings, findMatchingShortcutIndexes } from "./hotkeys/shortcutHotkeys";
@@ -118,6 +119,11 @@ export default function App(): JSX.Element {
   const terminalWorkerId = terminalWorker?.id;
   const inSelectedGroupView = selectedWorkers.length > 1 && !terminalWorker;
   const terminalFocused = useTerminalFocus(terminalWorkerId);
+
+  const { pendingCompletionWorkerIds } = useWorkerCompletionNotifications({
+    workers: activeWorkers,
+    reviewedWorkerId: terminalWorkerId
+  });
 
   const escapeTerminalFocus = useCallback((): boolean => {
     const activeElement = document.activeElement;
@@ -267,6 +273,7 @@ export default function App(): JSX.Element {
           terminalFocusedSelected={Boolean(selectedWorkerId && terminalFocused)}
           terminalFocusedWorkerId={terminalFocused ? terminalWorkerId : undefined}
           controlGroups={controlGroups}
+          completionPendingWorkerIds={pendingCompletionWorkerIds}
           onSelect={onSelectWorker}
           onSelectionChange={onSelectionChange}
           onActivateWorker={onActivateWorker}
@@ -317,6 +324,7 @@ export default function App(): JSX.Element {
         onRallyCommandDraftChange={onRallyCommandDraftChange}
         onSendRallyCommand={onSendRallyCommand}
         rosterEntries={rosterEntries}
+        completionPendingWorkerIds={pendingCompletionWorkerIds}
         rosterActiveIndex={rosterActiveIndex}
         setRosterActiveIndex={setRosterActiveIndex}
         onActivateRosterIndex={onActivateRosterIndex}
