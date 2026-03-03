@@ -29,6 +29,13 @@ const recoverableToolErrorMatchers: RegExp[] = [
   /\bhttp(?:\s+status)?\s*(?:code)?\s*:?\s*(?:401|403|404|408|409|410|422|429|500|502|503|504)\b/i
 ];
 
+const shellPromptTailMatchers: RegExp[] = [
+  /[$#%]\s*$/,
+  /(?:❯|›|»|λ|➜|❱)\s*$/,
+  /^ps\s+[^>]*>\s*$/i,
+  /^[A-Za-z]:\\[^>]*>\s*$/
+];
+
 type ParserErrorClassification = "none" | "recoverable" | "fatal";
 
 interface WorkingEvidence {
@@ -265,9 +272,12 @@ function collectWorkingEvidence(context: WorkerStatusSignalContext, hasRecoverab
   const activityToolCandidates: Array<Worker["activityTool"] | undefined> = [];
   const activityPathCandidates: string[] = [];
 
+  const suppressShellHistorySignals = shouldSuppressShellHistorySignals(context);
+
   const parsedStrongSignal =
-    Boolean(context.parsed.activity.filePath) ||
-    (Boolean(context.parsed.activity.tool) && context.parsed.activity.tool !== "terminal");
+    !suppressShellHistorySignals &&
+    (Boolean(context.parsed.activity.filePath) ||
+      (Boolean(context.parsed.activity.tool) && context.parsed.activity.tool !== "terminal"));
 
   if (context.transcriptSnapshot?.status === "working") {
     strongReasons.push({ code: "transcript-working", message: "Transcript reports active work." });
@@ -495,6 +505,10 @@ function finalizeDecision(
 }
 
 function classifyParserError(context: WorkerStatusSignalContext): ParserErrorClassification {
+  if (shouldSuppressShellHistorySignals(context)) {
+    return "none";
+  }
+
   const hasRecentParserErrorSignal = context.parsed.activity.hasError && context.outputQuietForMs <= recentErrorSignalWindowMs;
   if (!hasRecentParserErrorSignal) {
     return "none";
@@ -554,6 +568,41 @@ function recentNormalizedLines(output: string, limit: number): string[] {
 
 function isAgentRuntime(context: WorkerStatusSignalContext): boolean {
   return context.isOpenCodeSession || context.isClaudeSession;
+}
+
+function shouldSuppressShellHistorySignals(context: WorkerStatusSignalContext): boolean {
+  if (!isShellCommand(context.commandLower)) {
+    return false;
+  }
+
+  if (isAgentRuntime(context)) {
+    return false;
+  }
+
+  return hasLikelyInteractiveShellPrompt(context.output);
+}
+
+function hasLikelyInteractiveShellPrompt(output: string): boolean {
+  const lines = output
+    .split("\n")
+    .map((line) => normalizePromptLine(line))
+    .filter((line) => line.length > 0)
+    .slice(-6)
+    .reverse();
+
+  for (const line of lines) {
+    if (shellPromptTailMatchers.some((matcher) => matcher.test(line))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  return false;
+}
+
+function normalizePromptLine(line: string): string {
+  return line.replace(/^[\s│┃╹▀▣⬝■]+/, "").trim();
 }
 
 function looksLikeActiveRuntimeText(activityText: string | undefined): boolean {
