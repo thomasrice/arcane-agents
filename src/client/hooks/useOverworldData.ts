@@ -10,6 +10,8 @@ interface UseOverworldDataResult {
   workersHydrated: boolean;
 }
 
+const workerReconcileIntervalMs = 30_000;
+
 export function useOverworldData(
   setErrorText: Dispatch<SetStateAction<string | undefined>>
 ): UseOverworldDataResult {
@@ -33,7 +35,41 @@ export function useOverworldData(
   useEffect(() => {
     let socket: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconcileTimer: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
+    let reconcileInFlight = false;
+
+    const reconcileWorkers = async (): Promise<void> => {
+      if (cancelled || reconcileInFlight) {
+        return;
+      }
+
+      reconcileInFlight = true;
+      try {
+        const nextWorkers = await fetchWorkers();
+        if (cancelled) {
+          return;
+        }
+
+        setWorkers(nextWorkers);
+        setWorkersHydrated(true);
+      } catch {
+      } finally {
+        reconcileInFlight = false;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      void reconcileWorkers();
+    };
+
+    const handleWindowFocus = () => {
+      void reconcileWorkers();
+    };
 
     function connect() {
       if (cancelled) {
@@ -45,6 +81,7 @@ export function useOverworldData(
 
       socket.addEventListener("open", () => {
         setErrorText(undefined);
+        void reconcileWorkers();
       });
 
       socket.addEventListener("message", (event) => {
@@ -78,6 +115,12 @@ export function useOverworldData(
       });
     }
 
+    reconcileTimer = setInterval(() => {
+      void reconcileWorkers();
+    }, workerReconcileIntervalMs);
+
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     connect();
 
     return () => {
@@ -85,6 +128,11 @@ export function useOverworldData(
       if (retryTimer) {
         clearTimeout(retryTimer);
       }
+      if (reconcileTimer) {
+        clearInterval(reconcileTimer);
+      }
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       socket?.close();
     };
   }, [setErrorText]);
