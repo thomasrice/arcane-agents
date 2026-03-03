@@ -1,4 +1,5 @@
 import type { ActivityTool, WorkerStatus } from "../../shared/types";
+import { shellCommands } from "./engine/types";
 
 export interface ParsedActivity {
   text?: string;
@@ -51,7 +52,6 @@ const errorLineMatchers: RegExp[] = [
 
 const filePathRegex =
   /(?:^|\s|"|')((?:~|\.|\.\.|\/)?(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.[A-Za-z][A-Za-z0-9_-]{0,7})(?=$|\s|"|'|:|,|\))/;
-const shellCommands = new Set(["bash", "zsh", "fish", "sh", "nu", "pwsh"]);
 
 export function parseActivity(currentCommand: string, output: string): {
   status: WorkerStatus;

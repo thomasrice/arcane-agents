@@ -1,10 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { Worker } from "../../shared/types";
+import type { ControlGroupMap, RosterEntry } from "../app/types";
 import type { ShortcutHotkeyBinding } from "./shortcutHotkeys";
-
-export type ControlGroupMap = Partial<Record<number, string[]>>;
-
-export type RosterEntry = { kind: "worker"; worker: Worker } | { kind: "shortcut"; shortcutIndex: number };
 
 export interface AppHotkeyContext {
   activeWorkers: Worker[];

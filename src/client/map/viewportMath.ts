@@ -67,11 +67,3 @@ export function isWasdKey(key: string): boolean {
   return normalized === "w" || normalized === "a" || normalized === "s" || normalized === "d";
 }
 
-export function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  const tagName = target.tagName.toLowerCase();
-  return tagName === "input" || tagName === "textarea" || target.isContentEditable;
-}

@@ -50,6 +50,8 @@ export interface WorkerStatusSignalContext {
   workerAgeMs: number;
 }
 
+export const shellCommands = new Set(["bash", "zsh", "fish", "sh", "nu", "pwsh"]);
+
 export interface WorkerStatusDecision {
   status: Worker["status"];
   activityText: Worker["activityText"];

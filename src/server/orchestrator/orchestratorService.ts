@@ -84,6 +84,7 @@ export class OrchestratorService {
       runtimeLabel: plan.runtime.label
     });
 
+    const currentWorkers = this.workers.listWorkers();
     const now = new Date().toISOString();
     const worker: Worker = {
       id: workerId,
@@ -95,9 +96,9 @@ export class OrchestratorService {
       runtimeLabel: plan.runtime.label,
       command: launchCommand,
       status: "idle",
-      avatarType: this.nextAvatar(plan.avatar),
+      avatarType: this.nextAvatar(plan.avatar, currentWorkers),
       movementMode: "hold",
-      position: this.nextSpawnPosition(),
+      position: this.nextSpawnPosition(currentWorkers),
       tmuxRef,
       createdAt: now,
       updatedAt: now
@@ -376,18 +377,18 @@ export class OrchestratorService {
     return firstRuntimeId ?? "shell";
   }
 
-  private nextAvatar(preferred?: AvatarType): AvatarType {
+  private nextAvatar(preferred?: AvatarType, workers?: Worker[]): AvatarType {
     return selectNextAvatar({
       preferred,
       config: this.config,
-      workers: this.workers.listWorkers(),
+      workers: workers ?? this.workers.listWorkers(),
       availableAvatars: listAvailableAvatarTypes()
     });
   }
 
-  private nextSpawnPosition(): WorkerPosition {
+  private nextSpawnPosition(workers?: Worker[]): WorkerPosition {
     return computeNextSpawnPosition({
-      activeWorkers: this.workers.listWorkers().filter((worker) => worker.status !== "stopped"),
+      activeWorkers: (workers ?? this.workers.listWorkers()).filter((worker) => worker.status !== "stopped"),
       spec: outpostSpawnSpec,
       spawnSeparationDistancePx
     });

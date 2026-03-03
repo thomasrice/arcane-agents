@@ -85,10 +85,11 @@ export class TmuxAdapter {
       "@overworld_project_path": input.projectPath
     });
 
-    await this.runTmux(["set-option", "-w", "-t", target, "automatic-rename", "off"]);
-    await this.runTmux(["set-option", "-w", "-t", target, "allow-rename", "off"]);
-
-    const paneOutput = await this.runTmux(["list-panes", "-t", target, "-F", "#{pane_id}"]);
+    const [,, paneOutput] = await Promise.all([
+      this.runTmux(["set-option", "-w", "-t", target, "automatic-rename", "off"]),
+      this.runTmux(["set-option", "-w", "-t", target, "allow-rename", "off"]),
+      this.runTmux(["list-panes", "-t", target, "-F", "#{pane_id}"])
+    ]);
     const pane = firstLine(paneOutput);
     if (!pane) {
       throw new Error(`Unable to resolve tmux pane for ${target}.`);
@@ -279,9 +280,9 @@ export class TmuxAdapter {
   }
 
   private async setWindowMetadata(target: string, metadata: Record<string, string>): Promise<void> {
-    for (const [key, value] of Object.entries(metadata)) {
-      await this.runTmux(["set-option", "-w", "-t", target, key, value]);
-    }
+    await Promise.all(
+      Object.entries(metadata).map(([key, value]) => this.runTmux(["set-option", "-w", "-t", target, key, value]))
+    );
   }
 
   private async stopGracefully(ref: TmuxRef): Promise<void> {

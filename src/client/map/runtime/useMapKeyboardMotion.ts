@@ -1,6 +1,7 @@
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { SpriteDirection } from "../../sprites/spriteLoader";
-import { isEditableTarget, isWasdKey, toPanDirection, type PanDirection, type ViewportState } from "../viewportMath";
+import { isEditableTarget, isElementInTerminalPanel } from "../../app/utils";
+import { isWasdKey, toPanDirection, type PanDirection, type ViewportState } from "../viewportMath";
 
 interface UseMapKeyboardMotionInput {
   pressedPanKeysRef: MutableRefObject<Set<PanDirection>>;
@@ -149,7 +150,7 @@ export function useMapKeyboardMotion({
 
       const movementDirectionKey = isMovementDirectionKey(event.key);
       if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && movementDirectionKey) {
-        if (isTerminalPanelTarget(event.target)) {
+        if (isElementInTerminalPanel(event.target)) {
           return;
         }
 
@@ -246,10 +247,6 @@ export function useMapKeyboardMotion({
     setViewport,
     workerFacingRef
   ]);
-}
-
-function isTerminalPanelTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && Boolean(target.closest(".terminal-panel"));
 }
 
 function panDirectionToFacing(direction: PanDirection): SpriteDirection {

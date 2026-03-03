@@ -1,8 +1,6 @@
 import type { Worker } from "../../../shared/types";
 import { hasActiveWorkActivityText, hasWaitingActivityText, preferOpenCodeSpecificActivityText } from "../runtimeSignals";
-import type { StatusReason, WorkerStatusDecision, WorkerStatusSignalContext } from "./types";
-
-const shellCommands = new Set(["bash", "zsh", "fish", "sh", "nu", "pwsh"]);
+import { shellCommands, type StatusReason, type WorkerStatusDecision, type WorkerStatusSignalContext } from "./types";
 
 const parsedStrongEvidenceWindowMs = 8_000;
 const recentErrorSignalWindowMs = 15_000;
@@ -365,8 +363,7 @@ function detectIdleBlocker(context: WorkerStatusSignalContext, evidence: Working
   }
 
   if (isShellCommand(context.commandLower) && context.transcriptSnapshot?.status !== "working") {
-    const hasWorkingEvidence = evidence.strongReasons.length > 0 || evidence.weakReasons.length > 0;
-    if (hasWorkingEvidence) {
+    if (hasAnyWorkingEvidence(evidence)) {
       return undefined;
     }
 
@@ -418,6 +415,10 @@ function shouldKeepStickyWorking(context: WorkerStatusSignalContext, evidence: W
     return false;
   }
 
+  return hasAnyWorkingEvidence(evidence);
+}
+
+function hasAnyWorkingEvidence(evidence: WorkingEvidence): boolean {
   return evidence.strongReasons.length > 0 || evidence.weakReasons.length > 0;
 }
 
@@ -573,14 +574,7 @@ function looksLikeActiveRuntimeText(activityText: string | undefined): boolean {
     return true;
   }
 
-  return (
-    normalized.startsWith("thinking") ||
-    normalized.startsWith("responding") ||
-    normalized.startsWith("running") ||
-    normalized.startsWith("editing") ||
-    normalized.startsWith("reading") ||
-    normalized.startsWith("writing")
-  );
+  return normalized.startsWith("thinking");
 }
 
 function statusFreshnessWindowMs(context: WorkerStatusSignalContext): number {

@@ -1,18 +1,17 @@
-import type { Worker } from "../../../shared/types";
-import { hasOpenCodeActiveSignal, hasOpenCodePromptSignal } from "./openCodeSignals";
-import { isLikelyClaudeSession, isLikelyOpenCodeSession } from "./sessionDetection";
+interface SessionContext {
+  isClaude: boolean;
+  isOpenCode: boolean;
+}
 
 const openCodeCapturePaneLines = 420;
 const openCodeThinkingContinuationMaxLines = 3;
 
-export function extractRuntimeActivityText(worker: Worker, currentCommand: string, output: string): string | undefined {
-  const commandLower = currentCommand.toLowerCase();
-  if (isLikelyClaudeSession(worker, commandLower)) {
+export function extractRuntimeActivityText(output: string, session: SessionContext): string | undefined {
+  if (session.isClaude) {
     return extractClaudeRuntimeActivityText(output);
   }
 
-  const hasOpenCodeOutputSignal = hasOpenCodePromptSignal(output) || hasOpenCodeActiveSignal(output);
-  if (isLikelyOpenCodeSession(worker, commandLower) || hasOpenCodeOutputSignal) {
+  if (session.isOpenCode) {
     return extractOpenCodeRuntimeActivityText(output);
   }
 

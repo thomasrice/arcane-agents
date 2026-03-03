@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ActivityTool, Worker, WorkerStatus } from "../../shared/types";
+import { isLikelyClaudeSession } from "./runtime/sessionDetection";
 
 const claudeProjectRoot = path.join(os.homedir(), ".claude", "projects");
 const bootstrapTailBytes = 196_608;
@@ -50,7 +51,7 @@ export class ClaudeTranscriptTracker {
   private readonly states = new Map<string, ClaudeTranscriptState>();
 
   poll(worker: Worker, paneCurrentCommand: string, paneCurrentPath?: string): ClaudeStatusSnapshot | undefined {
-    if (!isLikelyClaudeWorker(worker, paneCurrentCommand)) {
+    if (!isLikelyClaudeSession(worker, paneCurrentCommand.toLowerCase())) {
       this.states.delete(worker.id);
       return undefined;
     }
@@ -779,26 +780,6 @@ function extractSessionId(command: string[]): string | undefined {
   return undefined;
 }
 
-function isLikelyClaudeWorker(worker: Worker, paneCurrentCommand: string): boolean {
-  if (worker.runtimeId.toLowerCase().includes("claude")) {
-    return true;
-  }
-
-  const runtimeBinary = commandBinary(worker.command);
-  if (runtimeBinary.includes("claude")) {
-    return true;
-  }
-
-  return paneCurrentCommand.toLowerCase().includes("claude");
-}
-
-function commandBinary(command: string[]): string {
-  if (command.length === 0) {
-    return "";
-  }
-
-  return path.basename(command[0] ?? "").toLowerCase();
-}
 
 function normalizeToolName(toolName: string): string {
   return toolName.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();

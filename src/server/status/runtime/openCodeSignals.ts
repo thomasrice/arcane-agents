@@ -1,4 +1,9 @@
-export function hasOpenCodePromptSignal(output: string): boolean {
+export interface OpenCodeSignals {
+  prompt: boolean;
+  active: boolean;
+}
+
+export function detectOpenCodeSignals(output: string): OpenCodeSignals {
   const lines = output
     .split("\n")
     .map((line) => line.trim().toLowerCase())
@@ -7,17 +12,19 @@ export function hasOpenCodePromptSignal(output: string): boolean {
 
   const hasVariantHint = lines.some((line) => line.includes("ctrl+t variants"));
   const hasCommandHint = lines.some((line) => line.includes("ctrl+p commands"));
-  return hasVariantHint && hasCommandHint;
+
+  return {
+    prompt: hasVariantHint && hasCommandHint,
+    active: lines.some((line) => line.includes("esc interrupt"))
+  };
+}
+
+export function hasOpenCodePromptSignal(output: string): boolean {
+  return detectOpenCodeSignals(output).prompt;
 }
 
 export function hasOpenCodeActiveSignal(output: string): boolean {
-  const lines = output
-    .split("\n")
-    .map((line) => line.trim().toLowerCase())
-    .filter((line) => line.length > 0)
-    .slice(-24);
-
-  return lines.some((line) => line.includes("esc interrupt"));
+  return detectOpenCodeSignals(output).active;
 }
 
 export function preferOpenCodeSpecificActivityText(

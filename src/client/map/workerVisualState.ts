@@ -35,10 +35,11 @@ export function deriveWorkerMotion(
   previousPositions: Record<string, { x: number; y: number }>,
   movingUntil: Record<string, number>,
   facingByWorker: Record<string, SpriteDirection>,
-  nowMs: number
+  nowMs: number,
+  activeWorkerIds?: Set<string>
 ): Record<string, WorkerMotion> {
   const motion: Record<string, WorkerMotion> = {};
-  const activeIds = new Set(workers.map((worker) => worker.id));
+  const activeIds = activeWorkerIds ?? new Set(workers.map((worker) => worker.id));
 
   for (const workerId of Object.keys(previousPositions)) {
     if (!activeIds.has(workerId)) {
@@ -77,10 +78,11 @@ export function deriveWorkerMotion(
 export function deriveActivityOverlayStateByWorker(
   workers: Worker[],
   animationStateByWorker: Record<string, ActivityOverlayAnimationState>,
-  nowMs: number
+  nowMs: number,
+  precomputedActiveIds?: Set<string>
 ): Record<string, ActivityOverlayRenderState | undefined> {
   const overlayStateByWorker: Record<string, ActivityOverlayRenderState | undefined> = {};
-  const activeWorkerIds = new Set(workers.map((worker) => worker.id));
+  const activeWorkerIds = precomputedActiveIds ?? new Set(workers.map((worker) => worker.id));
 
   for (const workerId of Object.keys(animationStateByWorker)) {
     if (!activeWorkerIds.has(workerId)) {

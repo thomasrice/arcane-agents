@@ -2,16 +2,11 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 export function withClaudeSessionId(runtimeId: string, command: string[]): string[] {
-  const commandCopy = [...command];
-  if (!looksLikeClaudeRuntime(runtimeId, commandCopy)) {
-    return commandCopy;
+  if (!looksLikeClaudeRuntime(runtimeId, command) || hasSessionIdArg(command)) {
+    return [...command];
   }
 
-  if (hasSessionIdArg(commandCopy)) {
-    return commandCopy;
-  }
-
-  return [...commandCopy, "--session-id", randomUUID()];
+  return [...command, "--session-id", randomUUID()];
 }
 
 export function looksLikeClaudeRuntime(runtimeId: string, command: string[]): boolean {

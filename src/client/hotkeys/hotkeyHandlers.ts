@@ -1,4 +1,5 @@
-import type { AppHotkeyContext, ControlGroupMap } from "./hotkeyContext";
+import type { ControlGroupMap } from "../app/types";
+import type { AppHotkeyContext } from "./hotkeyContext";
 
 export function handleSystemHotkeys(event: KeyboardEvent, context: AppHotkeyContext): boolean {
   if (context.killConfirmWorkerIds.length > 0) {

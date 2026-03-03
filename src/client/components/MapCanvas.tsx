@@ -11,6 +11,7 @@ import {
   isTileWalkable,
   isWorldPositionWalkable,
   randomWanderTarget,
+  randomRange,
   tilePathToWaypoints,
   worldPositionToTile
 } from "../map/pathfinding";
@@ -124,6 +125,8 @@ export function MapCanvas({
   const wanderStateRef = useRef<Record<string, WanderState>>({});
   const animatedPositionsRef = useRef<Record<string, WorkerPosition>>({});
   const workersRef = useRef<Worker[]>(workers);
+  const selectedWorkerIdRef = useRef<string | undefined>(selectedWorkerId);
+  const onPositionCommitRef = useRef(onPositionCommit);
   const mapDataRef = useRef<LoadedOutpostMap | undefined>(undefined);
   const panDragRef = useRef<PanDragState | null>(null);
   const pressedPanKeysRef = useRef<Set<PanDirection>>(new Set());
@@ -221,6 +224,14 @@ export function MapCanvas({
   }, [workers]);
 
   useEffect(() => {
+    selectedWorkerIdRef.current = selectedWorkerId;
+  }, [selectedWorkerId]);
+
+  useEffect(() => {
+    onPositionCommitRef.current = onPositionCommit;
+  }, [onPositionCommit]);
+
+  useEffect(() => {
     mapDataRef.current = mapData;
   }, [mapData]);
 
@@ -307,22 +318,25 @@ export function MapCanvas({
     const animationInterval = window.setInterval(() => {
       setAnimationTick((current) => (current + 1) % 1000000);
 
+      const currentWorkers = workersRef.current;
+      const currentSelectedWorkerId = selectedWorkerIdRef.current;
+      const currentMapData = mapDataRef.current;
       const orders = moveOrdersRef.current;
-      const workersById = new Map(workers.map((worker) => [worker.id, worker]));
+      const workersById = new Map(currentWorkers.map((worker) => [worker.id, worker]));
       const nextPositions = { ...animatedPositionsRef.current };
       const commitQueue: Array<{ workerId: string; position: WorkerPosition }> = [];
       let changed = false;
       const now = performance.now();
-      const tileSize = mapData?.tileSize ?? 32;
+      const tileSize = currentMapData?.tileSize ?? 32;
 
-      if (selectedWorkerId) {
-        const selectedOrder = orders[selectedWorkerId];
+      if (currentSelectedWorkerId) {
+        const selectedOrder = orders[currentSelectedWorkerId];
         if (selectedOrder?.source === "wander") {
-          delete orders[selectedWorkerId];
+          delete orders[currentSelectedWorkerId];
         }
       }
 
-      for (const worker of workers) {
+      for (const worker of currentWorkers) {
         if (worker.status !== "working" && worker.movementMode === "wander") {
           continue;
         }
@@ -337,8 +351,8 @@ export function MapCanvas({
         }
       }
 
-      for (const worker of workers) {
-        if (worker.id === selectedWorkerId) {
+      for (const worker of currentWorkers) {
+        if (worker.id === currentSelectedWorkerId) {
           continue;
         }
 
@@ -359,7 +373,7 @@ export function MapCanvas({
           continue;
         }
 
-        const nextTarget = randomWanderTarget(wanderState.anchor, tileSize, mapData);
+        const nextTarget = randomWanderTarget(wanderState.anchor, tileSize, currentMapData);
         const currentPosition = nextPositions[worker.id] ?? worker.position;
         const distance = Math.hypot(nextTarget.x - currentPosition.x, nextTarget.y - currentPosition.y);
         if (distance < 6) {
@@ -433,7 +447,7 @@ export function MapCanvas({
             continue;
           }
 
-          if (!isWorldPositionWalkable(finalPosition, mapData)) {
+          if (!isWorldPositionWalkable(finalPosition, currentMapData)) {
             delete orders[workerId];
             const wanderState = wanderStateRef.current[workerId];
             if (wanderState) {
@@ -482,7 +496,7 @@ export function MapCanvas({
           continue;
         }
 
-        if (!isWorldPositionWalkable(proposedPosition, mapData)) {
+        if (!isWorldPositionWalkable(proposedPosition, currentMapData)) {
           delete orders[workerId];
           const wanderState = wanderStateRef.current[workerId];
           if (wanderState) {
@@ -496,14 +510,14 @@ export function MapCanvas({
         }
       }
 
-      for (const worker of workers) {
+      for (const worker of currentWorkers) {
         if (orders[worker.id]) {
           continue;
         }
 
         const currentPosition = nextPositions[worker.id] ?? worker.position;
-        if (!isWorldPositionWalkable(currentPosition, mapData)) {
-          const safePosition = findNearestWalkablePosition(currentPosition, mapData);
+        if (!isWorldPositionWalkable(currentPosition, currentMapData)) {
+          const safePosition = findNearestWalkablePosition(currentPosition, currentMapData);
           if (safePosition) {
             nextPositions[worker.id] = safePosition;
             commitQueue.push({
@@ -531,7 +545,7 @@ export function MapCanvas({
       }
 
       for (const commit of commitQueue) {
-        onPositionCommit(commit.workerId, {
+        onPositionCommitRef.current(commit.workerId, {
           x: Math.round(commit.position.x * 10) / 10,
           y: Math.round(commit.position.y * 10) / 10
         });
@@ -541,7 +555,8 @@ export function MapCanvas({
     return () => {
       clearInterval(animationInterval);
     };
-  }, [mapData, onPositionCommit, selectedWorkerId, workers]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!mapData || hasCenteredOnMap) {
@@ -614,18 +629,21 @@ export function MapCanvas({
 
     context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 
+    const activeWorkerIds = new Set(workers.map((worker) => worker.id));
     const workerMotion = deriveWorkerMotion(
       workers,
       workerPositionLookup,
       previousWorkerPositionsRef.current,
       workerMovingUntilRef.current,
       workerFacingRef.current,
-      performance.now()
+      performance.now(),
+      activeWorkerIds
     );
     const activityOverlayStateByWorker = deriveActivityOverlayStateByWorker(
       workers,
       activityOverlayAnimationRef.current,
-      Date.now()
+      Date.now(),
+      activeWorkerIds
     );
 
     drawScene({
@@ -652,7 +670,8 @@ export function MapCanvas({
       activityOverlayStateByWorker,
       marqueeSelection,
       workerRadius,
-      spriteBaseSize
+      spriteBaseSize,
+      activeWorkerIds
     });
   }, [
     animatedPositions,
@@ -1225,10 +1244,6 @@ export function MapCanvas({
       ) : null}
     </div>
   );
-}
-
-function randomRange(min: number, max: number): number {
-  return min + Math.random() * (max - min);
 }
 
 function readPointerOnCanvas(event: PointerEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement> | MouseEvent<HTMLCanvasElement>): {

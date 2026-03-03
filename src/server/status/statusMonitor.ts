@@ -141,14 +141,7 @@ export class StatusMonitor {
   private async updateWorkerStatus(worker: Worker): Promise<void> {
     const live = await this.tmux.windowExists(worker.tmuxRef);
     if (!live) {
-      const removed = this.workers.deleteWorker(worker.id);
-      if (removed) {
-        this.claudeTranscript.forget(worker.id);
-        this.paneObservation.delete(worker.id);
-        this.statusDebugByWorker.delete(worker.id);
-        this.statusTransitionHistoryByWorker.delete(worker.id);
-        this.onWorkerRemoved(worker.id);
-      }
+      this.removeWorker(worker.id);
       return;
     }
 
@@ -173,14 +166,7 @@ export class StatusMonitor {
       });
 
       if (!signals) {
-        const removed = this.workers.deleteWorker(worker.id);
-        if (removed) {
-          this.claudeTranscript.forget(worker.id);
-          this.paneObservation.delete(worker.id);
-          this.statusDebugByWorker.delete(worker.id);
-          this.statusTransitionHistoryByWorker.delete(worker.id);
-          this.onWorkerRemoved(worker.id);
-        }
+        this.removeWorker(worker.id);
         return;
       }
 
@@ -213,14 +199,7 @@ export class StatusMonitor {
     }
 
     if (evaluation.status === "stopped") {
-      const removed = this.workers.deleteWorker(worker.id);
-      if (removed) {
-        this.claudeTranscript.forget(worker.id);
-        this.paneObservation.delete(worker.id);
-        this.statusDebugByWorker.delete(worker.id);
-        this.statusTransitionHistoryByWorker.delete(worker.id);
-        this.onWorkerRemoved(worker.id);
-      }
+      this.removeWorker(worker.id);
       return;
     }
 
@@ -232,6 +211,17 @@ export class StatusMonitor {
     });
     if (updated) {
       this.onWorkerUpdated(updated);
+    }
+  }
+
+  private removeWorker(workerId: string): void {
+    const removed = this.workers.deleteWorker(workerId);
+    if (removed) {
+      this.claudeTranscript.forget(workerId);
+      this.paneObservation.delete(workerId);
+      this.statusDebugByWorker.delete(workerId);
+      this.statusTransitionHistoryByWorker.delete(workerId);
+      this.onWorkerRemoved(workerId);
     }
   }
 

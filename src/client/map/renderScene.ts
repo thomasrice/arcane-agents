@@ -67,6 +67,7 @@ export interface DrawSceneInput {
   marqueeSelection: SelectionBox | null;
   workerRadius: number;
   spriteBaseSize: number;
+  activeWorkerIds?: Set<string>;
 }
 
 export function drawScene({
@@ -93,7 +94,8 @@ export function drawScene({
   activityOverlayStateByWorker,
   marqueeSelection,
   workerRadius,
-  spriteBaseSize
+  spriteBaseSize,
+  activeWorkerIds: precomputedActiveIds
 }: DrawSceneInput): void {
   context.clearRect(0, 0, width, height);
   const nowMs = Date.now();
@@ -110,7 +112,7 @@ export function drawScene({
 
   context.textAlign = "center";
   context.imageSmoothingEnabled = false;
-  const activeWorkerIds = new Set(workers.map((worker) => worker.id));
+  const activeWorkerIds = precomputedActiveIds ?? new Set(workers.map((worker) => worker.id));
   const selectedWorkerIdSet = new Set(selectedWorkerIds);
   const selectedOutlines: SelectedWorkerOutline[] = [];
   const pendingNameplates: WorkerNameplate[] = [];

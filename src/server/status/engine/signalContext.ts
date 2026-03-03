@@ -3,11 +3,10 @@ import { parseActivity } from "../activityParser";
 import type { ClaudeStatusSnapshot } from "../claudeTranscriptTracker";
 import type { PaneObservation } from "../paneObservation";
 import {
+  detectOpenCodeSignals,
   extractClaudeActiveTask,
   extractRuntimeActivityText,
   hasClaudeLiveProgressSignal,
-  hasOpenCodeActiveSignal,
-  hasOpenCodePromptSignal,
   isLikelyClaudeSession,
   isLikelyOpenCodeSession
 } from "../runtimeSignals";
@@ -33,14 +32,13 @@ export function buildWorkerStatusSignalContext({
   const parsed = parseActivity(currentCommand, output);
   const commandLower = currentCommand.toLowerCase();
   const isClaude = isLikelyClaudeSession(worker, commandLower);
-  const rawOpenCodePromptSignal = hasOpenCodePromptSignal(output);
-  const rawOpenCodeActiveSignal = hasOpenCodeActiveSignal(output);
-  const isOpenCode = isLikelyOpenCodeSession(worker, commandLower) || rawOpenCodePromptSignal || rawOpenCodeActiveSignal;
-  const runtimeActivityText = extractRuntimeActivityText(worker, currentCommand, output);
+  const openCodeSignals = detectOpenCodeSignals(output);
+  const isOpenCode = isLikelyOpenCodeSession(worker, commandLower) || openCodeSignals.prompt || openCodeSignals.active;
+  const runtimeActivityText = extractRuntimeActivityText(output, { isClaude, isOpenCode });
   const activeClaudeTask = extractClaudeActiveTask(output);
   const hasClaudeProgressSignal = isClaude && hasClaudeLiveProgressSignal(output);
-  const openCodePromptSignal = isOpenCode && rawOpenCodePromptSignal;
-  const openCodeActiveSignal = isOpenCode && rawOpenCodeActiveSignal;
+  const openCodePromptSignal = isOpenCode && openCodeSignals.prompt;
+  const openCodeActiveSignal = isOpenCode && openCodeSignals.active;
   const outputQuietForMs = Math.max(0, nowMs - observation.lastOutputChangeAtMs);
   const commandQuietForMs = Math.max(0, nowMs - observation.lastCommandChangeAtMs);
   const createdAtMs = Date.parse(worker.createdAt);

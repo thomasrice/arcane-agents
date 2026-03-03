@@ -8,11 +8,7 @@ interface TileCoord {
 }
 
 export function buildBlockedTileSet(mapData: LoadedOutpostMap | undefined): Set<string> {
-  if (!mapData) {
-    return new Set<string>();
-  }
-
-  return new Set<string>(mapData.collisionTileKeys);
+  return mapData?.collisionTileKeys ?? new Set<string>();
 }
 
 export function clampWorldPosition(position: WorkerPosition, mapData: LoadedOutpostMap | undefined): WorkerPosition {
@@ -337,6 +333,6 @@ function manhattanDistance(a: TileCoord, b: TileCoord): number {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-function randomRange(min: number, max: number): number {
+export function randomRange(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }

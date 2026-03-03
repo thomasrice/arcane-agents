@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { clamp } from "./viewportMath";
 
 export interface LoadedOutpostMap {
   name: string;
@@ -498,10 +499,6 @@ function parseLogicAmbientFlameRects(
   }
 
   return rects;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
 }
 
 function clampLogicInt(value: unknown, min: number, max: number, fallback: number): number {

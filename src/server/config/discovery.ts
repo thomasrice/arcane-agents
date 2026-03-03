@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import fg from "fast-glob";
 import type { DiscoveryRule, ProjectConfig, ResolvedConfig } from "../../shared/types";
+import { slugify } from "../orchestrator/spawn/windowName";
 
 const execFileAsync = promisify(execFile);
 
@@ -185,7 +186,3 @@ function toShortName(sourceName: string, fallback: string): string {
   return slug.slice(0, 8) || "proj";
 }
 
-function slugify(value: string): string {
-  const slug = value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/(^-|-$)/g, "");
-  return slug || "project";
-}
