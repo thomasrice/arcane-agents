@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
-import { Terminal } from "xterm";
-import { FitAddon } from "xterm-addon-fit";
+import { FitAddon } from "@xterm/addon-fit";
+import { Terminal } from "@xterm/xterm";
 
 const shiftEnterSequence = "\n";
 const tokyoNightTheme = {
