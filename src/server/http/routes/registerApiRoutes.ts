@@ -32,7 +32,8 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
 
   app.get("/api/status-debug", (_req, res) => {
     res.json({
-      workers: statusMonitor.listWorkerStatusDebug()
+      workers: statusMonitor.listWorkerStatusDebug(),
+      performance: statusMonitor.getStatusPerformanceDebug()
     });
   });
 

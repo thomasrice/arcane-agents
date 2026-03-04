@@ -3,14 +3,14 @@ import { TmuxAdapter } from "../tmux/tmuxAdapter";
 import { capturePaneLineCount } from "./runtimeSignals";
 import { evaluateWorkerStatus } from "./statusEvaluator";
 import { observePane, type PaneObservation } from "./paneObservation";
-import { ClaudeTranscriptTracker } from "./claudeTranscriptTracker";
+import { ClaudeTranscriptTracker, type ClaudeStatusSnapshot } from "./claudeTranscriptTracker";
 import type { StatusDecisionFacts, StatusReason } from "./engine/types";
 
 export interface WorkerStatusSignals {
   currentCommand: string;
   output: string;
   observation: PaneObservation;
-  transcriptSnapshot: ReturnType<ClaudeTranscriptTracker["poll"]>;
+  transcriptSnapshot: ClaudeStatusSnapshot | undefined;
 }
 
 export interface WorkerStatusEvaluation {
@@ -41,8 +41,10 @@ export async function collectWorkerStatusSignals({
     return undefined;
   }
 
-  const output = await tmux.capturePane(worker.tmuxRef, capturePaneLineCount(worker, paneState.currentCommand.toLowerCase()));
-  const transcriptSnapshot = claudeTranscript.poll(worker, paneState.currentCommand, paneState.currentPath);
+  const [output, transcriptSnapshot] = await Promise.all([
+    tmux.capturePane(worker.tmuxRef, capturePaneLineCount(worker, paneState.currentCommand.toLowerCase())),
+    claudeTranscript.poll(worker, paneState.currentCommand, paneState.currentPath)
+  ]);
   const observation = observePane(paneObservation, worker.id, paneState.currentCommand, output);
 
   return {

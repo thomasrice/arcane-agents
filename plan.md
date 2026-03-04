@@ -686,15 +686,15 @@ Quality review run date: 2026-03-04.
 
 #### 6.2 — Status pipeline performance + resilience
 
-- [ ] Refactor transcript tracking so status polling does less synchronous heavy work.
-- [ ] Split transcript tracker responsibilities into smaller modules:
-  - [ ] transcript read/input collection
-  - [ ] parse extraction
-  - [ ] state accumulation
-  - [ ] output adaptation for status pipeline
-- [ ] Add bounded concurrency to status polling for larger worker counts.
-- [ ] Add cheap instrumentation for per-poll and per-worker evaluation time.
-- [ ] Confirm no regression in state transitions (`idle`, `working`, `attention`, `error`, `stopped`).
+- [x] Refactor transcript tracking so status polling does less synchronous heavy work.
+- [x] Split transcript tracker responsibilities into smaller modules:
+  - [x] transcript read/input collection
+  - [x] parse extraction
+  - [x] state accumulation
+  - [x] output adaptation for status pipeline
+- [x] Add bounded concurrency to status polling for larger worker counts.
+- [x] Add cheap instrumentation for per-poll and per-worker evaluation time.
+- [x] Confirm no regression in state transitions (`idle`, `working`, `attention`, `error`, `stopped`).
 
 #### 6.3 — Client refactor for maintainability
 
@@ -728,7 +728,7 @@ Quality review run date: 2026-03-04.
 - [x] PR1: Tooling baseline (lint + vitest + scripts + CI).
 - [x] PR2: Tests for parser/spawn/state-machine core logic.
 - [x] PR3: Server reliability fixes (error model + ws hardening + stop/shutdown).
-- [ ] PR4: Status tracker/polling performance hardening.
+- [x] PR4: Status tracker/polling performance hardening.
 - [ ] PR5: `MapCanvas` decomposition (behavior-preserving).
 - [ ] PR6+: Major dependency upgrades one by one.
 
