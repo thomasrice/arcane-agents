@@ -12,9 +12,13 @@ export function parseSpawnInput(body: unknown): WorkerSpawnInput {
   }
 
   const record = body as Record<string, unknown>;
+  const spawnNearWorkerIds = parseSpawnNearWorkerIds(record);
 
   if (typeof record.shortcutIndex === "number" && Number.isInteger(record.shortcutIndex)) {
-    return { shortcutIndex: record.shortcutIndex };
+    return {
+      shortcutIndex: record.shortcutIndex,
+      spawnNearWorkerIds
+    };
   }
 
   if (typeof record.projectId === "string" && typeof record.runtimeId === "string") {
@@ -24,11 +28,30 @@ export function parseSpawnInput(body: unknown): WorkerSpawnInput {
     return {
       projectId: record.projectId,
       runtimeId: record.runtimeId,
-      command
+      command,
+      spawnNearWorkerIds
     };
   }
 
   throw new Error("Invalid spawn request: expected shortcutIndex or projectId+runtimeId.");
+}
+
+function parseSpawnNearWorkerIds(record: Record<string, unknown>): string[] | undefined {
+  if (typeof record.spawnNearWorkerIds === "undefined") {
+    return undefined;
+  }
+
+  if (!Array.isArray(record.spawnNearWorkerIds)) {
+    throw new Error("spawnNearWorkerIds must be an array when provided.");
+  }
+
+  const ids = record.spawnNearWorkerIds
+    .filter((value): value is string => typeof value === "string")
+    .map((workerId) => workerId.trim())
+    .filter((workerId, index, array) => workerId.length > 0 && array.indexOf(workerId) === index)
+    .slice(0, 32);
+
+  return ids.length > 0 ? ids : undefined;
 }
 
 export function parseBroadcastInput(body: unknown): BroadcastInputBody {

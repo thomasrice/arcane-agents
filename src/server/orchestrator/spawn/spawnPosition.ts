@@ -9,6 +9,7 @@ interface NextSpawnPositionInput {
   activeWorkers: Worker[];
   spec: OutpostMapSpec | undefined;
   spawnSeparationDistancePx?: number;
+  anchorPositions?: WorkerPosition[];
 }
 
 export function loadOutpostSpawnSpec(cwd = process.cwd()): OutpostMapSpec | undefined {
@@ -25,6 +26,8 @@ export function loadOutpostSpawnSpec(cwd = process.cwd()): OutpostMapSpec | unde
     }
 
     return {
+      width: typeof parsed.width === "number" ? parsed.width : undefined,
+      height: typeof parsed.height === "number" ? parsed.height : undefined,
       tileSize: parsed.tileSize,
       spawnArea: parsed.spawnArea
     };
@@ -33,8 +36,14 @@ export function loadOutpostSpawnSpec(cwd = process.cwd()): OutpostMapSpec | unde
   }
 }
 
-export function nextSpawnPosition({ activeWorkers, spec, spawnSeparationDistancePx }: NextSpawnPositionInput): WorkerPosition {
+export function nextSpawnPosition({ activeWorkers, spec, spawnSeparationDistancePx, anchorPositions }: NextSpawnPositionInput): WorkerPosition {
   const separation = spawnSeparationDistancePx ?? defaultSpawnSeparationDistancePx;
+
+  const anchoredCandidate = nextSpawnPositionNearAnchors(anchorPositions, activeWorkers, spec, separation);
+  if (anchoredCandidate) {
+    return anchoredCandidate;
+  }
+
   const index = activeWorkers.length;
 
   if (spec?.spawnArea) {
@@ -89,6 +98,78 @@ export function nextSpawnPosition({ activeWorkers, spec, spawnSeparationDistance
   return {
     x: 520 + Math.cos(angle) * radius,
     y: 310 + Math.sin(angle) * radius
+  };
+}
+
+function nextSpawnPositionNearAnchors(
+  anchorPositions: WorkerPosition[] | undefined,
+  activeWorkers: Worker[],
+  spec: OutpostMapSpec | undefined,
+  separation: number
+): WorkerPosition | undefined {
+  if (!anchorPositions || anchorPositions.length === 0) {
+    return undefined;
+  }
+
+  const center = averagePosition(anchorPositions);
+  const phaseSeed = activeWorkers.length * 0.37;
+  const radialDistances = [
+    Math.max(24, separation * 0.8),
+    Math.max(36, separation * 1.15),
+    Math.max(48, separation * 1.5)
+  ];
+
+  const candidates: WorkerPosition[] = [center];
+  for (const distance of radialDistances) {
+    for (let index = 0; index < 12; index += 1) {
+      const angle = phaseSeed + (index / 12) * Math.PI * 2;
+      candidates.push({
+        x: center.x + Math.cos(angle) * distance,
+        y: center.y + Math.sin(angle) * distance
+      });
+    }
+  }
+
+  for (const candidate of candidates) {
+    const normalized = clampToMapBounds(candidate, spec);
+    if (isSpawnPositionFree(normalized, activeWorkers, separation)) {
+      return normalized;
+    }
+  }
+
+  return clampToMapBounds(center, spec);
+}
+
+function averagePosition(positions: WorkerPosition[]): WorkerPosition {
+  if (positions.length === 0) {
+    return { x: 520, y: 310 };
+  }
+
+  let xSum = 0;
+  let ySum = 0;
+  for (const position of positions) {
+    xSum += position.x;
+    ySum += position.y;
+  }
+
+  return {
+    x: xSum / positions.length,
+    y: ySum / positions.length
+  };
+}
+
+function clampToMapBounds(candidate: WorkerPosition, spec: OutpostMapSpec | undefined): WorkerPosition {
+  if (!spec || typeof spec.width !== "number" || typeof spec.height !== "number") {
+    return candidate;
+  }
+
+  const mapWidth = spec.width * spec.tileSize;
+  const mapHeight = spec.height * spec.tileSize;
+  const margin = Math.max(14, spec.tileSize * 0.45);
+
+  return {
+    x: Math.min(Math.max(candidate.x, margin), mapWidth - margin),
+    y: Math.min(Math.max(candidate.y, margin), mapHeight - margin)
   };
 }
 

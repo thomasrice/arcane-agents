@@ -18,6 +18,8 @@ export interface SpawnAreaSpec {
 }
 
 export interface OutpostMapSpec {
+  width?: number;
+  height?: number;
   tileSize: number;
   spawnArea?: SpawnAreaSpec;
 }

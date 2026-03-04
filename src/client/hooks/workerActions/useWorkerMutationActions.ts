@@ -43,7 +43,16 @@ export function useWorkerMutationActions({
   const runSpawn = useCallback(
     async (input: WorkerSpawnInput) => {
       try {
-        const worker = await spawnWorker(input);
+        const selectedWorkerIds = selectedWorkers.map((worker) => worker.id);
+        const spawnInput: WorkerSpawnInput =
+          "shortcutIndex" in input && selectedWorkerIds.length > 0
+            ? {
+                ...input,
+                spawnNearWorkerIds: selectedWorkerIds
+              }
+            : input;
+
+        const worker = await spawnWorker(spawnInput);
         setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
         applySelection([worker.id], { center: true });
         setSpawnDialogOpen(false);
@@ -52,7 +61,7 @@ export function useWorkerMutationActions({
         showError(error);
       }
     },
-    [applySelection, setPaletteOpen, setSpawnDialogOpen, setWorkers, showError]
+    [applySelection, selectedWorkers, setPaletteOpen, setSpawnDialogOpen, setWorkers, showError]
   );
 
   const submitRename = useCallback(async (draft: string) => {

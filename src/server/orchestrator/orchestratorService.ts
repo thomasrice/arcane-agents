@@ -85,6 +85,7 @@ export class OrchestratorService {
     });
 
     const currentWorkers = this.workers.listWorkers();
+    const spawnAnchorWorkers = this.resolveSpawnAnchorWorkers(input.spawnNearWorkerIds, currentWorkers);
     const now = new Date().toISOString();
     const worker: Worker = {
       id: workerId,
@@ -98,7 +99,7 @@ export class OrchestratorService {
       status: "idle",
       avatarType: this.nextAvatar(plan.avatar, currentWorkers),
       movementMode: "hold",
-      position: this.nextSpawnPosition(currentWorkers),
+      position: this.nextSpawnPosition(currentWorkers, spawnAnchorWorkers),
       tmuxRef,
       createdAt: now,
       updatedAt: now
@@ -386,12 +387,34 @@ export class OrchestratorService {
     });
   }
 
-  private nextSpawnPosition(workers?: Worker[]): WorkerPosition {
+  private nextSpawnPosition(workers?: Worker[], anchorWorkers?: Worker[]): WorkerPosition {
+    const activeWorkers = (workers ?? this.workers.listWorkers()).filter((worker) => worker.status !== "stopped");
     return computeNextSpawnPosition({
-      activeWorkers: (workers ?? this.workers.listWorkers()).filter((worker) => worker.status !== "stopped"),
+      activeWorkers,
       spec: outpostSpawnSpec,
-      spawnSeparationDistancePx
+      spawnSeparationDistancePx,
+      anchorPositions: anchorWorkers?.map((worker) => worker.position)
     });
+  }
+
+  private resolveSpawnAnchorWorkers(workerIds: string[] | undefined, workers: Worker[]): Worker[] {
+    if (!workerIds || workerIds.length === 0) {
+      return [];
+    }
+
+    const workersById = new Map(workers.map((worker) => [worker.id, worker]));
+    const anchors: Worker[] = [];
+
+    for (const workerId of workerIds) {
+      const worker = workersById.get(workerId);
+      if (!worker || worker.status === "stopped") {
+        continue;
+      }
+
+      anchors.push(worker);
+    }
+
+    return anchors;
   }
 
   private refreshConfigProjects(): void {

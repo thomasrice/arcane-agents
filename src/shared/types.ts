@@ -96,9 +96,13 @@ export interface Worker {
   updatedAt: string;
 }
 
+interface WorkerSpawnPlacementInput {
+  spawnNearWorkerIds?: string[];
+}
+
 export type WorkerSpawnInput =
-  | { shortcutIndex: number }
-  | { projectId: string; runtimeId: string; command?: string[] };
+  | ({ shortcutIndex: number } & WorkerSpawnPlacementInput)
+  | ({ projectId: string; runtimeId: string; command?: string[] } & WorkerSpawnPlacementInput);
 
 export type WsServerEvent =
   | { type: "init"; workers: Worker[]; config: ResolvedConfig }
