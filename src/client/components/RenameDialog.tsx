@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Worker } from "../../shared/types";
 
 interface RenameDialogProps {
@@ -19,6 +19,7 @@ export function RenameDialog({
   onSubmit
 }: RenameDialogProps): JSX.Element | null {
   const [draft, setDraft] = useState(initialDraft);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -27,6 +28,26 @@ export function RenameDialog({
 
     setDraft(initialDraft);
   }, [initialDraft, open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (!input) {
+        return;
+      }
+
+      input.focus();
+      input.select();
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [open, initialDraft]);
 
   if (!open) {
     return null;
@@ -49,6 +70,7 @@ export function RenameDialog({
           }}
         >
           <input
+            ref={inputRef}
             className="input"
             autoFocus
             value={draft}
