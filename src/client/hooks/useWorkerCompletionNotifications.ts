@@ -114,11 +114,13 @@ export function useWorkerCompletionNotifications({
   }, [reviewedWorkerId]);
 
   useEffect(() => {
+    const timers = pendingTimerByWorkerRef.current;
+
     return () => {
-      for (const timer of pendingTimerByWorkerRef.current.values()) {
+      for (const timer of timers.values()) {
         clearTimeout(timer);
       }
-      pendingTimerByWorkerRef.current.clear();
+      timers.clear();
     };
   }, []);
 

@@ -7,9 +7,29 @@ Each agent appears as a character on a 2D map, and selecting one opens its live 
 
 - Manages agents as tmux windows.
 - Streams live terminal output into the browser via `node-pty` + WebSockets.
-- Tracks worker status (idle/working/attention/error) from pane output.
+- Tracks agent status (idle/working/attention/error) from pane output.
 - Lets you spawn agents from shortcuts or direct project+runtime combinations.
 - Stores state locally in SQLite.
+
+## Screenshots
+
+- Placeholder: add `docs/media/overworld-main.png`.
+
+## Screenshot + Video Capture Plan
+
+Capture these before public launch:
+
+1. Main layout overview (map + terminal + bottom bar, 3-5 agents visible).
+2. Quick-spawn flow (click shortcut -> agent appears -> terminal auto-switch).
+3. Attention flow (agent shows attention state -> user clicks and responds in terminal).
+4. Agent control flow (select agent -> stop/restart from contextual controls).
+5. Group interaction flow (multi-select + move/rally if available in your current build).
+
+Suggested lightweight release media:
+
+- 3-5 annotated screenshots for README.
+- One short GIF/video (20-45s) covering spawn, switch, attention, and stop.
+- Optional: one performance clip with many active agents (for example, 50-100).
 
 ## Stack
 
@@ -24,7 +44,7 @@ Each agent appears as a character on a 2D map, and selecting one opens its live 
 ## Platform Support
 
 - Linux: fully supported and recommended.
-- macOS: core app works, but opening a worker in an external terminal (`↗`) is currently Linux-oriented (`xdg-terminal-exec`).
+- macOS: core app works, but opening an agent in an external terminal (`↗`) is currently Linux-oriented (`xdg-terminal-exec`).
 - Windows: use WSL2 (Ubuntu or similar) and run Overworld inside WSL.
 
 ## Requirements
@@ -175,3 +195,9 @@ Status debugging APIs:
 - `GET /api/status-debug`
 - `GET /api/workers/:workerId/status-debug`
 - `GET /api/workers/:workerId/status-history`
+
+## License
+
+- Code is licensed under MIT (`LICENSE`).
+- Character image assets are Copyright (c) 2026 Thomas Rice
+  and are included under the MIT license in this repo.

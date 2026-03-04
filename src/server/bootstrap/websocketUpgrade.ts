@@ -27,7 +27,7 @@ export function createWsServers(context: ServerContext): WsServers {
   terminalWss.on("connection", (socket) => {
     const workerId = (socket as { workerId?: string }).workerId;
     if (!workerId) {
-      socket.close(1008, "Invalid worker id");
+      socket.close(1008, "Invalid agent id");
       return;
     }
 

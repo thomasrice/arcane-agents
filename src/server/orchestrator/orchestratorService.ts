@@ -129,7 +129,7 @@ export class OrchestratorService {
     try {
       await this.tmux.stop(worker.tmuxRef);
     } catch {
-      throw conflictError(`Failed to stop worker '${workerId}'.`, "worker_stop_failed");
+      throw conflictError(`Failed to stop agent '${workerId}'.`, "worker_stop_failed");
     }
 
     const removed = this.workers.deleteWorker(workerId);
@@ -143,7 +143,7 @@ export class OrchestratorService {
   updatePosition(workerId: string, position: WorkerPosition): Worker {
     const updated = this.workers.updatePosition(workerId, position);
     if (!updated) {
-      throw notFoundError(`Worker '${workerId}' not found.`, "worker_not_found");
+      throw notFoundError(`Agent '${workerId}' not found.`, "worker_not_found");
     }
     return updated;
   }
@@ -165,7 +165,7 @@ export class OrchestratorService {
   setMovementMode(workerId: string, movementMode: MovementMode): Worker {
     const updated = this.workers.updateMovementMode(workerId, movementMode);
     if (!updated) {
-      throw notFoundError(`Worker '${workerId}' not found.`, "worker_not_found");
+      throw notFoundError(`Agent '${workerId}' not found.`, "worker_not_found");
     }
 
     return updated;
@@ -177,7 +177,7 @@ export class OrchestratorService {
       await this.tmux.openInExternalTerminal(worker.tmuxRef, worker.id);
     } catch (error) {
       if (error instanceof Error && error.message.includes("not available")) {
-        throw conflictError(`Worker '${workerId}' is unavailable for external terminal attach.`, "worker_terminal_unavailable");
+        throw conflictError(`Agent '${workerId}' is unavailable for external terminal attach.`, "worker_terminal_unavailable");
       }
       throw error;
     }
@@ -341,7 +341,7 @@ export class OrchestratorService {
   private requireWorker(workerId: string): Worker {
     const worker = this.workers.getWorker(workerId);
     if (!worker) {
-      throw notFoundError(`Worker '${workerId}' not found.`, "worker_not_found");
+      throw notFoundError(`Agent '${workerId}' not found.`, "worker_not_found");
     }
     return worker;
   }

@@ -29,7 +29,6 @@ import {
 import { isWorkerBehindAnyOcclusionRect } from "./render/layers/occlusion";
 
 const fadingWorkerDurationMs = 420;
-const summonWorkerDurationMs = 520;
 const occludedGhostAlpha = 0.44;
 const activityOverlayMaxBadgeWidth = 320;
 

@@ -30,7 +30,6 @@ export async function createServerContext(): Promise<ServerContext> {
   const discoveryService = new DiscoveryService();
   const initialDiscovery = await discoveryService.discover(baseConfig);
   for (const warning of initialDiscovery.warnings) {
-    // eslint-disable-next-line no-console
     console.warn(`[overworld] ${warning}`);
   }
 

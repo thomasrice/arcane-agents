@@ -21,7 +21,7 @@ export class TerminalBridge {
   connect(workerId: string, socket: WebSocket): void {
     const worker = this.workers.getWorker(workerId);
     if (!worker) {
-      socket.send(JSON.stringify({ type: "error", message: `Unknown worker '${workerId}'.` }));
+      socket.send(JSON.stringify({ type: "error", message: `Unknown agent '${workerId}'.` }));
       socket.close();
       return;
     }

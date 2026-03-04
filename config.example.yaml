@@ -1,22 +1,29 @@
 # Overworld example config
+#
+# Copy this file to:
+#   ~/.config/overworld/config.yaml
+#
+# Then customize project paths, runtimes, and shortcuts for your machine.
 
+# Projects available for spawning.
 projects:
-  personal-assistant:
-    path: ~/code/personal-assistant
-    shortName: pa
-  labyrinth:
-    path: ~/minotaur/labyrinth
-    shortName: lab
-  taurient:
-    path: ~/minotaur/taurient
-    shortName: taur
-  obsidian:
-    path: ~/ObsidianVault
-    shortName: obs
+  app:
+    path: ~/code/my-app
+    shortName: app
+  api:
+    path: ~/code/my-api
+    shortName: api
+  docs:
+    path: ~/code/my-docs
+    shortName: docs
+  sandbox:
+    path: ~/code/sandbox
+    shortName: sbx
 
+# Runtimes that can be launched inside a project directory.
 runtimes:
   claude:
-    command: ["claude", "--dangerously-skip-permissions"]
+    command: ["claude"]
     label: Claude Code
   opencode:
     command: ["opencode"]
@@ -25,42 +32,52 @@ runtimes:
     command: ["bash"]
     label: Shell
 
+# Quick-spawn buttons shown in the bottom bar.
 shortcuts:
-  - label: PA
-    project: personal-assistant
+  - label: APP
+    project: app
     runtime: opencode
-    hotkeys: ["Ctrl+A"]
-  - label: Labyrinth
-    project: labyrinth
+    hotkeys: ["Ctrl+1"]
+  - label: API
+    project: api
     runtime: claude
-    hotkeys: ["Ctrl+Shift+A"]
-  - label: Taurient
-    project: taurient
+    hotkeys: ["Ctrl+2"]
+  - label: DOCS
+    project: docs
     runtime: opencode
-    hotkeys: ["Ctrl+S"]
-  - label: Obsidian
-    project: obsidian
-    runtime: opencode
-  - label: Kairos
-    project: taurient
+    hotkeys: ["Ctrl+3"]
+  - label: SH
+    project: sandbox
     runtime: shell
-    command: ["poetry", "run", "python", "chat.py", "-a", "kairos"]
-    hotkeys: ["Ctrl+K"]
+    hotkeys: ["Ctrl+4"]
+
+# Optional shortcut with a command override and pinned avatar.
+  - label: Tests
+    project: app
+    runtime: shell
+    command: ["npm", "test", "--", "--watch"]
+    hotkeys: ["Ctrl+T"]
     avatar: elder-wizard
 
+# Optional project discovery rules.
 discovery:
   - name: code-projects
     type: directories
     path: ~/code
     match: ".git"
-    exclude: ["node_modules", ".cache"]
-    maxDepth: 1
+    exclude: ["node_modules", ".cache", "dist"]
+    maxDepth: 2
+  - name: app-worktrees
+    type: worktrees
+    path: ~/code/my-app
 
+# Backend runtime settings.
 backend:
   tmux:
     sessionName: overworld
     pollIntervalMs: 2500
 
+# Server bind settings.
 server:
   host: 127.0.0.1
   port: 7600

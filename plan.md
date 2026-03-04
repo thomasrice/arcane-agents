@@ -587,15 +587,17 @@ Discovered projects are ephemeral (not written to config) but appear in the cust
 - [x] Replace placeholder character circles with sprite rendering plus fallback shapes when missing.
 - [x] Document expected sprite asset directory structure for drop-in avatar assets.
 - [x] Add character name labels and status text rendering.
-- [ ] Polish animations (spawn effect, status transitions, walk cycles).
-- [ ] Continue map presentation polish (occlusion/readability tuning, feedback effects).
+- [x] Polish animations (spawn effect, status transitions, walk cycles).
+- [x] Continue map presentation polish (occlusion/readability tuning, feedback effects).
 
 ### Phase 5 — OSS release prep
 
 - [ ] Write README with screenshots and usage guide.
+  - [x] Usage guide + install/run instructions are in `README.md`.
+  - [ ] Add screenshots (or GIF walkthrough) for core workflows.
 - [ ] Write configuration documentation.
 - [ ] Add `config.example.yaml` with thorough comments.
-- [ ] Packaging and install instructions (npm, or standalone).
+- [x] Packaging and install instructions (npm path documented in `README.md`).
 - [ ] First tagged release.
 
 ### Phase 6 — Quality hardening + maintainability (2026-03-04)
@@ -610,30 +612,24 @@ The goal is to make the codebase safer to change and easier to hand off across A
 - Several edge-case lifecycle paths should be hardened before wider adoption.
 - A few files are large enough that future feature work will slow down without refactoring.
 
-#### Current quality snapshot (baseline)
+#### Current quality snapshot (updated)
 
-Quality review run date: 2026-03-04.
+Validation run date: 2026-03-04.
 
 - Build health:
   - `npm run typecheck` passes.
   - `npm run build` passes.
-  - Build warns about a large client chunk (~529 kB minified JS).
+  - Build warns about a large client chunk (~578 kB minified JS).
 - Security/deps:
   - `npm audit --omit=dev` reports 0 vulnerabilities.
   - `npm outdated` shows several major upgrades available (React/Vite/Express/Zod/etc).
-- Testing/linting gaps:
-  - No lint or test scripts yet in `package.json`.
-  - No CI quality gate enforcing typecheck/build/test/lint.
-- Reliability hotspots identified:
-  - HTTP error mapping is too coarse (`src/server/http/errorResponse.ts`).
-  - Stop path deletes worker before tmux stop finishes (`src/server/orchestrator/orchestratorService.ts`).
-  - Shutdown calls `process.exit(0)` immediately (`src/server/bootstrap/shutdown.ts`).
-  - Websocket terminal worker id decode is not guarded (`src/server/bootstrap/websocketUpgrade.ts`).
-  - Status poll path includes heavy transcript work (`src/server/status/statusPipeline.ts`, `src/server/status/claudeTranscriptTracker.ts`).
-- Maintainability hotspots identified:
-  - `src/client/components/MapCanvas.tsx` is a high-complexity file with many responsibilities.
-  - `src/server/status/claudeTranscriptTracker.ts` is large and does multiple jobs.
-  - `public/map-mask-editor.html` is large and mostly unmodular.
+- Testing/linting status:
+  - Lint/test scripts exist in `package.json`.
+  - CI quality gate runs `npm ci`, `typecheck`, `lint`, `test:ci`, and `build`.
+  - `npm run lint` passes cleanly.
+- Remaining maintainability hotspots:
+  - `src/client/components/MapCanvas.tsx` remains a high-complexity file with many responsibilities.
+  - `public/map-mask-editor.html` remains large and mostly unmodular.
 
 #### Working agreements for this phase
 
@@ -700,10 +696,10 @@ Quality review run date: 2026-03-04.
 
 - [ ] Decompose `MapCanvas` into focused hooks/modules while preserving behavior:
   - [ ] pointer and selection interactions
-  - [ ] keyboard/pan/move orchestration
+  - [x] keyboard/pan/move orchestration
   - [ ] movement simulation and commit logic
-  - [ ] render prep state derivation
-- [ ] Keep `renderScene` and render layers as composition-oriented modules.
+  - [x] render prep state derivation
+- [x] Keep `renderScene` and render layers as composition-oriented modules.
 - [ ] Add unit tests for extracted pure logic where feasible.
 - [ ] Optional (low priority): modularize `public/map-mask-editor.html` if this tool remains actively edited.
 
@@ -740,7 +736,7 @@ Quality review run date: 2026-03-04.
 - [x] `npm run build` passes.
 - [x] Stop/shutdown/ws malformed-input cases are covered by tests.
 - [x] Status decision logic has unit coverage for key transitions.
-- [ ] Manual smoke test with 10+ workers remains stable and responsive.
+- [x] Manual smoke test with 10+ workers remains stable and responsive (validated with ~100 concurrent workers).
 
 #### New-context AI quickstart (must follow)
 
@@ -749,9 +745,11 @@ When starting this phase in a fresh AI context, do this sequence first:
 1. Read `AGENTS.md` and this section of `plan.md`.
 2. Run baseline commands:
    - `npm run typecheck`
+   - `npm run lint`
+   - `npm run test:ci`
    - `npm run build`
-3. Confirm current scripts in `package.json` before adding lint/test scripts.
-4. Start with PR1 (tooling + CI), not with dependency majors.
+3. Confirm current scripts in `package.json` and `.github/workflows/ci.yml` before changing tooling.
+4. Start with open items in 6.3/6.5 before dependency majors in 6.4.
 5. Keep changes incremental and update this checklist as tasks are completed.
 
 ## Future (v2+)
@@ -780,4 +778,4 @@ When starting this phase in a fresh AI context, do this sequence first:
 - [x] Can stop and restart workers from the contextual toolbar.
 - [x] Dragging characters repositions them; positions persist across reloads.
 - [x] Restarting the server preserves workers and reconciles with tmux.
-- [ ] Works with 10+ concurrent workers without performance issues.
+- [x] Works with 10+ concurrent workers without performance issues (validated with ~100 concurrent workers).

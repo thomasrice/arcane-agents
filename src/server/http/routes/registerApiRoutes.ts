@@ -41,7 +41,7 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
     const debug = statusMonitor.getWorkerStatusDebug(req.params.workerId);
     if (!debug) {
       res.status(404).json({
-        error: `No status debug snapshot found for worker '${req.params.workerId}'.`
+        error: `No status debug snapshot found for agent '${req.params.workerId}'.`
       });
       return;
     }

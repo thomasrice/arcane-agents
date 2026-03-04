@@ -587,7 +587,6 @@ export function MapCanvas({
     return () => {
       clearInterval(animationInterval);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -723,6 +722,7 @@ export function MapCanvas({
     spriteLibrary,
     commandFeedback,
     mapPreviewImage,
+    marqueeSelection,
     viewport,
     workerPositionLookup,
     workers
@@ -947,10 +947,13 @@ export function MapCanvas({
     keyboardMoveUnitsPerSecond
   });
 
-  const issueManualMoveOrder = (worker: Worker, point: { x: number; y: number }) => {
-    const target = screenToWorld(point.x, point.y, viewport);
-    issueManualMoveToWorld(worker, target);
-  };
+  const issueManualMoveOrder = useCallback(
+    (worker: Worker, point: { x: number; y: number }) => {
+      const target = screenToWorld(point.x, point.y, viewport);
+      issueManualMoveToWorld(worker, target);
+    },
+    [issueManualMoveToWorld, viewport]
+  );
 
   const applyWorkerSelection = useCallback(
     (nextIds: string[]) => {
@@ -1006,7 +1009,7 @@ export function MapCanvas({
 
       issueManualMoveOrder(selectedWorker, point);
     },
-    [issueManualMoveToWorld, mapData?.tileSize, selectedWorkerId, viewport, workers]
+    [issueManualMoveOrder, issueManualMoveToWorld, mapData?.tileSize, selectedWorkerId, viewport, workers]
   );
 
   const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {

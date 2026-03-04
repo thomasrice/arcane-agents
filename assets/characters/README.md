@@ -2,6 +2,11 @@
 
 Overworld loads character sprites directly from this directory.
 
+## Ownership + License
+
+- Character image assets in this repo are Copyright (c) 2026 Thomas Rice.
+- Assets in this repository are included under the MIT license.
+
 ## Expected Format
 
 - Frame size: `64x64` PNG per frame.
@@ -66,7 +71,7 @@ If these files are present, you can drop in a new folder and it becomes eligible
 
 ## Generation Notes (Recorded)
 
-We do not currently have a checked-in PixelLab preset export or prompt/options log.
+We do not currently have a checked-in generator preset export or prompt/options log.
 
 What we can reliably recover from the current asset set:
 
@@ -79,6 +84,6 @@ What we can reliably recover from the current asset set:
 
 Recommended process for future consistency:
 
-1. When generating a new character, copy the exact PixelLab options/prompt into this file.
+1. When generating a new character, copy the exact generation options/prompt into this file.
 2. Include model, seed (if available), and any style sliders/toggles.
 3. Keep output at `64x64` and preserve the same direction/frame layout.

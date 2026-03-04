@@ -151,7 +151,7 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
     });
     terminal.open(containerRef.current);
 
-    terminal.writeln("Select a worker to connect its terminal.");
+    terminal.writeln("Select an agent to connect its terminal.");
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -188,7 +188,7 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
     scheduleFit();
 
     if (!workerId) {
-      terminal.writeln("Select a worker to connect its terminal.");
+      terminal.writeln("Select an agent to connect its terminal.");
       return;
     }
 

@@ -218,6 +218,9 @@ export function useMapKeyboardMotion({
       flushPendingKeyboardMoveCommits();
     };
 
+    const pressedPanKeys = pressedPanKeysRef.current;
+    const pressedMoveKeys = pressedMoveKeysRef.current;
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
@@ -228,8 +231,8 @@ export function useMapKeyboardMotion({
       window.removeEventListener("blur", onBlur);
       stopPanLoop();
       stopMoveLoop();
-      pressedPanKeysRef.current.clear();
-      pressedMoveKeysRef.current.clear();
+      pressedPanKeys.clear();
+      pressedMoveKeys.clear();
       flushPendingKeyboardMoveCommits();
     };
   }, [

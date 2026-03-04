@@ -59,11 +59,11 @@ export function RenameDialog({
   return (
     <div className="overlay overlay-no-blur" onClick={onClose}>
       <div className="dialog rename-dialog" onClick={(event) => event.stopPropagation()}>
-        <div className="dialog-title">{targetWorkerIds.length > 1 ? "Rename Selected Agents" : "Rename Worker"}</div>
+        <div className="dialog-title">{targetWorkerIds.length > 1 ? "Rename Selected Agents" : "Rename Agent"}</div>
         <div className="rename-subtitle">
           {targetWorkerIds.length > 1
             ? `${targetWorkerIds.length} selected agents`
-            : targetWorkers[0]?.name ?? "Selected worker"}
+            : targetWorkers[0]?.name ?? "Selected agent"}
         </div>
         <form
           className="rename-form"
