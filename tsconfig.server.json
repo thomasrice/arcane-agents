@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "rootDir": "src",
     "outDir": "dist/server",
-    "types": ["node"]
+    "types": ["node", "vitest/globals"]
   },
   "include": ["src/server", "src/shared"]
 }
