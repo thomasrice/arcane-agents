@@ -1,6 +1,6 @@
 # Overworld Plan
 
-Overworld is a local-first visual control room for managing terminal-backed AI coding agents. Each agent is a pixel-art fantasy character in a top-down overworld map. Clicking a character opens its live terminal in an embedded browser terminal panel. The map is a decorative outdoor fantasy scene; spawning and controls happen through an RTS-style bottom bar and command palette.
+Overworld is a local-first visual control room for managing terminal-backed AI coding agents. Each agent appears as an avatar on a top-down 2D map. Clicking a character opens its live terminal in an embedded browser terminal panel. The map is decorative and organizational; spawning and controls happen through an RTS-style bottom bar and command palette.
 
 ## Product Goal
 
@@ -8,7 +8,7 @@ Build an open-source orchestration layer that can:
 
 - spawn terminal workers from config-driven shortcuts,
 - map each worker to a real tmux window,
-- visualise worker state in a top-down pixel-art overworld,
+- visualise worker state in a top-down 2D map,
 - provide an embedded terminal (xterm.js) for direct interaction,
 - detect worker status by monitoring tmux output,
 - allow fast context switching by clicking avatars.
@@ -23,7 +23,7 @@ Generic and open-source by default; user-specific setups live in config files.
 - Terminal-in-browser as primary interaction (xterm.js panel).
 - RTS-style controls: bottom bar for spawning, contextual toolbar for selected worker.
 - Map is decorative and organisational, not functional (spawning is not tied to map location).
-- Fantasy RPG visual theme with pixel-art characters and outdoor overworld.
+- Stylized map-first visual theme with configurable art direction.
 - One-click spawning for common scenarios; command palette for everything else.
 - Always create a new worker on spawn (never reuse/focus existing).
 - Auto-switch terminal panel to newly spawned worker.
@@ -32,8 +32,8 @@ Generic and open-source by default; user-specific setups live in config files.
 
 ### In scope
 
-- Fixed top-down overworld map (outdoor fantasy scene, decorative).
-- Pixel-art fantasy characters with variety (knight, mage, ranger, etc.).
+- Fixed top-down map scene (decorative).
+- Character avatar roster with visual variety.
 - Side-by-side layout: map on left, embedded terminal (xterm.js) on right.
 - Bottom bar with configurable quick-spawn shortcut buttons.
 - "+" button for custom spawn (pick from configured/discovered projects + runtime).
@@ -57,18 +57,15 @@ Generic and open-source by default; user-specific setups live in config files.
 - Multi-user / auth.
 - Kubernetes/Docker runtime backends.
 
-## Name and Theme
+## Name and Visual Direction
 
-"Overworld" evokes a top-down RPG world map. The visual theme is fantasy/outdoors:
+"Overworld" evokes a top-down command map for active workers.
 
-- The map is an outdoor landscape (grass, trees, paths, clearings, water, ruins).
-- Characters are fantasy archetypes (knight, mage, ranger, orc, elf, dwarf, druid, etc).
-- Working characters set up at campfires, workbenches, tree stumps, or rocks.
-- Idle characters wander the map.
-- The map has no functional zones — it is purely decorative and for visual clustering.
-- Users drag characters to arrange them however they like (group by project, priority, etc).
-
-Character variety is important. Each spawned worker gets a distinct fantasy character from a pool. Shortcuts can pin a specific avatar type. Characters generated via PixelLab API or similar pixel-art tools.
+- The map has no functional zones; it is decorative and for visual clustering.
+- Users drag characters to arrange them (group by project, priority, etc).
+- Worker avatars should remain visually distinct for fast recognition.
+- Shortcuts can pin a specific avatar type; non-pinned spawns rotate through the pool.
+- The current default scene is an outpost-style map with background art + logic overlays.
 
 ## Core Workflows
 
@@ -78,7 +75,7 @@ Bottom bar has shortcut buttons defined in config (e.g. "PA", "Lab", "Taur").
 
 1. Click the "PA" shortcut button.
 2. A new worker spawns: OpenCode launches in `~/code/personal-assistant/`.
-3. A fantasy character appears on the map.
+3. A worker avatar appears on the map.
 4. Terminal panel auto-switches to the new worker.
 
 ### Workflow 2: Custom spawn (3 clicks)
@@ -414,7 +411,7 @@ This is heuristic and tool-specific but good enough for visual indicators. Falls
 │        Overworld Map             │     Terminal Panel          │
 │        (Canvas2D)                │     (xterm.js)              │
 │                                  │                            │
-│   fantasy outdoor scene          │   live terminal of          │
+│   decorative map scene           │   live terminal of          │
 │   characters with status         │   selected worker           │
 │   auras, icons, labels           │                            │
 │                                  │   "Select a worker to       │
@@ -429,7 +426,7 @@ This is heuristic and tool-specific but good enough for visual indicators. Falls
 │  [PA] [Lab] [Taur] [Obs] [+] /  │                            │
 │                                  │                            │
 │  When worker selected:           │                            │
-│  ◄ Back │ knight "pa-opencode"   │                            │
+│  ◄ Back │ worker "pa-opencode"   │                            │
 │  [Stop] [Restart] [Detach]       │                            │
 └──────────────────────────────────┴────────────────────────────┘
 ```
@@ -443,7 +440,7 @@ This is heuristic and tool-specific but good enough for visual indicators. Falls
 
 **Selected state (worker clicked):**
 - Back arrow to deselect and return to default bar.
-- Worker identity: avatar icon + name label (e.g. `knight "pa-opencode-a3f2"`).
+- Worker identity: avatar icon + name label (e.g. `worker "pa-opencode-a3f2"`).
 - Project + runtime info.
 - Action buttons: [Stop] [Restart] [Detach].
 - Status indicator (working / idle / attention / error).
@@ -479,20 +476,19 @@ Pressing Enter spawns immediately. Results update as you type.
 
 | Layer | What it shows | How |
 |-------|--------------|-----|
-| Sprite animation | idle / walking / working | Character pose (sitting at campfire vs standing vs walking) |
+| Sprite animation | idle / walking / working | Character pose changes per state |
 | Status aura | broad state | Colour glow: green=idle, blue=working, amber=attention, red=error |
 | Overhead icon | current tool/action | Small pixel icon above head (terminal, book, pencil, magnifying glass) |
 | Speech bubble | needs user input | Amber dots (permission needed) or exclamation mark |
 | Name label | worker identity | Small text below character (project + runtime shorthand) |
 
-### Character art
+### Avatar assets
 
-- Fantasy theme: knight, mage, ranger, orc, elf, dwarf, druid, paladin, rogue, barbarian, etc.
-- Each spawned worker gets the next available character type from a pool (round-robin).
+- Each spawned worker gets the next available avatar type from a pool (round-robin).
 - Shortcuts can pin a specific avatar type in config.
-- Characters are pixel-art sprite sheets generated via PixelLab API or similar tools.
-- Sprite format: walk (4 directions), idle, working poses. Exact sheet layout TBD during Phase 4.
-- For early phases, use placeholder sprites (pixel-agents character sheets or simple coloured tokens).
+- Avatar art is loaded from `assets/characters/<type>/...` sprite directories.
+- Baseline sprite format supports directional walk and idle states; optional working variants can be added.
+- Keep fallback rendering for missing assets so worker visibility is never blocked by art issues.
 
 ## Persistence and Recovery
 
@@ -567,7 +563,7 @@ Discovered projects are ephemeral (not written to config) but appear in the cust
 
 ### Phase 2 — UI: map + terminal + controls
 
-- [x] Build Canvas2D map renderer (outdoor tile map, character sprites).
+- [x] Build Canvas2D map renderer (background scene + map logic + character sprites).
 - [x] Add character rendering with status aura and name labels.
 - [x] Wire xterm.js terminal panel (right side, auto-connect on select).
 - [x] Build bottom bar: shortcut buttons (from config), contextual toolbar.
@@ -584,17 +580,15 @@ Discovered projects are ephemeral (not written to config) but appear in the cust
 - [x] Add persistence and startup reconciliation.
 - [x] Handle edge cases (tmux server restart, stale workers, etc).
 
-### Phase 4 — Character art + visual polish
+### Phase 4 — Avatar + visual polish
 
-- [x] Define sprite asset format and loader conventions for PixelLab per-frame exports.
+- [x] Define sprite asset format and loader conventions for drop-in avatar packs.
 - [x] Implement sprite loader for `assets/characters/<type>/...` rotation + walk frame directories.
 - [x] Replace placeholder character circles with sprite rendering plus fallback shapes when missing.
-- [x] Document expected sprite asset directory structure for drop-in PixelLab exports.
-- [ ] Generate fantasy character sprite sheets (PixelLab or similar).
-- [ ] Create outdoor tileset for overworld map (grass, paths, trees, water, camps).
-- [ ] Add working poses (character sitting at campfire/workbench).
-- [ ] Polish animations (spawn effect, status transitions, walk cycles).
+- [x] Document expected sprite asset directory structure for drop-in avatar assets.
 - [x] Add character name labels and status text rendering.
+- [ ] Polish animations (spawn effect, status transitions, walk cycles).
+- [ ] Continue map presentation polish (occlusion/readability tuning, feedback effects).
 
 ### Phase 5 — OSS release prep
 
@@ -604,12 +598,168 @@ Discovered projects are ephemeral (not written to config) but appear in the cust
 - [ ] Packaging and install instructions (npm, or standalone).
 - [ ] First tagged release.
 
+### Phase 6 — Quality hardening + maintainability (2026-03-04)
+
+This phase is intentionally focused on reliability and maintainability (not net-new product features).
+The goal is to make the codebase safer to change and easier to hand off across AI sessions and contributors.
+
+#### Why this phase exists
+
+- The architecture is good and feature-complete for MVP workflows.
+- The current biggest risk is regression risk due to low automated safety net.
+- Several edge-case lifecycle paths should be hardened before wider adoption.
+- A few files are large enough that future feature work will slow down without refactoring.
+
+#### Current quality snapshot (baseline)
+
+Quality review run date: 2026-03-04.
+
+- Build health:
+  - `npm run typecheck` passes.
+  - `npm run build` passes.
+  - Build warns about a large client chunk (~529 kB minified JS).
+- Security/deps:
+  - `npm audit --omit=dev` reports 0 vulnerabilities.
+  - `npm outdated` shows several major upgrades available (React/Vite/Express/Zod/etc).
+- Testing/linting gaps:
+  - No lint or test scripts yet in `package.json`.
+  - No CI quality gate enforcing typecheck/build/test/lint.
+- Reliability hotspots identified:
+  - HTTP error mapping is too coarse (`src/server/http/errorResponse.ts`).
+  - Stop path deletes worker before tmux stop finishes (`src/server/orchestrator/orchestratorService.ts`).
+  - Shutdown calls `process.exit(0)` immediately (`src/server/bootstrap/shutdown.ts`).
+  - Websocket terminal worker id decode is not guarded (`src/server/bootstrap/websocketUpgrade.ts`).
+  - Status poll path includes heavy transcript work (`src/server/status/statusPipeline.ts`, `src/server/status/claudeTranscriptTracker.ts`).
+- Maintainability hotspots identified:
+  - `src/client/components/MapCanvas.tsx` is a high-complexity file with many responsibilities.
+  - `src/server/status/claudeTranscriptTracker.ts` is large and does multiple jobs.
+  - `public/map-mask-editor.html` is large and mostly unmodular.
+
+#### Working agreements for this phase
+
+- Do not batch unrelated hardening changes in one PR.
+- Each PR should include tests for behavior touched.
+- Preserve existing behavior unless task explicitly calls for behavior change.
+- Defer major dependency upgrades until baseline tests and CI are in place.
+
+#### 6.0 — Tooling + CI quality gates
+
+- [x] Add linting stack for TypeScript + React (including hooks rules).
+- [x] Add test runner stack (Vitest) for unit tests.
+- [x] Add scripts to `package.json`:
+  - [x] `lint`
+  - [x] `lint:fix`
+  - [x] `test`
+  - [x] `test:watch`
+  - [x] `test:ci`
+- [x] Add CI workflow that runs, in order:
+  - [x] `npm ci`
+  - [x] `npm run typecheck`
+  - [x] `npm run lint`
+  - [x] `npm run test:ci`
+  - [x] `npm run build`
+- [x] Add a minimal test baseline covering high-signal pure logic:
+  - [x] `src/server/http/requestParsers.ts`
+  - [x] `src/server/orchestrator/spawn/resolveSpawnPlan.ts`
+  - [x] `src/server/orchestrator/spawn/command.ts`
+  - [x] `src/server/status/engine/stateMachine/decision.ts`
+  - [x] `src/server/status/engine/stateMachine/helpers.ts`
+  - [x] `src/client/map/pathfinding.ts`
+  - [x] `src/client/hotkeys/shortcutHotkeys.ts`
+
+#### 6.1 — Server correctness hardening
+
+- [x] Introduce typed app errors with explicit HTTP status + code.
+- [x] Update request error handling to distinguish validation (400), not-found (404), conflict (409), and internal errors (500).
+- [x] Harden websocket upgrade parsing:
+  - [x] Guard malformed/invalid encoded worker IDs.
+  - [x] Ensure bad upgrade requests are closed cleanly.
+- [x] Harden websocket send/broadcast paths to avoid throwing from stale sockets.
+- [x] Fix worker stop lifecycle ordering to avoid orphaned tmux windows on stop failures.
+- [x] Make stop behavior idempotent for duplicate requests.
+- [x] Improve graceful shutdown:
+  - [x] Stop monitor.
+  - [x] Close HTTP server and wait for callback.
+  - [x] Close SQLite handle.
+  - [x] Exit only after cleanup (or timeout fallback).
+- [x] Strengthen request parser validation to reject empty command tokens and malformed payloads.
+
+#### 6.2 — Status pipeline performance + resilience
+
+- [ ] Refactor transcript tracking so status polling does less synchronous heavy work.
+- [ ] Split transcript tracker responsibilities into smaller modules:
+  - [ ] transcript read/input collection
+  - [ ] parse extraction
+  - [ ] state accumulation
+  - [ ] output adaptation for status pipeline
+- [ ] Add bounded concurrency to status polling for larger worker counts.
+- [ ] Add cheap instrumentation for per-poll and per-worker evaluation time.
+- [ ] Confirm no regression in state transitions (`idle`, `working`, `attention`, `error`, `stopped`).
+
+#### 6.3 — Client refactor for maintainability
+
+- [ ] Decompose `MapCanvas` into focused hooks/modules while preserving behavior:
+  - [ ] pointer and selection interactions
+  - [ ] keyboard/pan/move orchestration
+  - [ ] movement simulation and commit logic
+  - [ ] render prep state derivation
+- [ ] Keep `renderScene` and render layers as composition-oriented modules.
+- [ ] Add unit tests for extracted pure logic where feasible.
+- [ ] Optional (low priority): modularize `public/map-mask-editor.html` if this tool remains actively edited.
+
+#### 6.4 — Dependency update strategy (after 6.0-6.2 baseline)
+
+- [ ] Apply patch/minor dependency updates first.
+- [ ] Stage each major upgrade in a separate PR with migration notes and tests.
+- [ ] Recommended order:
+  - [ ] Zod major update.
+  - [ ] Express major update.
+  - [ ] Vite/React ecosystem major updates.
+- [ ] Do not combine multiple major framework upgrades in one PR.
+
+#### 6.5 — Documentation + contributor handoff
+
+- [ ] Document quality workflow in `README.md` (`typecheck`, `lint`, `test`, `build`).
+- [ ] Add a short reliability runbook for websocket, tmux, and status-debug troubleshooting.
+- [ ] Update contribution notes so all new logic changes include tests.
+
+#### Recommended PR slicing for this phase
+
+- [x] PR1: Tooling baseline (lint + vitest + scripts + CI).
+- [x] PR2: Tests for parser/spawn/state-machine core logic.
+- [x] PR3: Server reliability fixes (error model + ws hardening + stop/shutdown).
+- [ ] PR4: Status tracker/polling performance hardening.
+- [ ] PR5: `MapCanvas` decomposition (behavior-preserving).
+- [ ] PR6+: Major dependency upgrades one by one.
+
+#### Phase 6 acceptance criteria
+
+- [x] `npm run typecheck` passes.
+- [x] `npm run lint` passes.
+- [x] `npm run test:ci` passes.
+- [x] `npm run build` passes.
+- [x] Stop/shutdown/ws malformed-input cases are covered by tests.
+- [x] Status decision logic has unit coverage for key transitions.
+- [ ] Manual smoke test with 10+ workers remains stable and responsive.
+
+#### New-context AI quickstart (must follow)
+
+When starting this phase in a fresh AI context, do this sequence first:
+
+1. Read `AGENTS.md` and this section of `plan.md`.
+2. Run baseline commands:
+   - `npm run typecheck`
+   - `npm run build`
+3. Confirm current scripts in `package.json` before adding lint/test scripts.
+4. Start with PR1 (tooling + CI), not with dependency majors.
+5. Keep changes incremental and update this checklist as tasks are completed.
+
 ## Future (v2+)
 
 - Sound/spatial audio (attention pings, ambient sounds, activity audio cues).
 - Fog of war / procedural map expansion as workers spawn.
 - Deep integrations via Claude Code hooks / OpenCode hooks for richer activity data.
-- Custom map editor (draw your own overworld layout).
+- Map scene editor for background + logic layers.
 - Character levelling / progression (tracks lifetime activity per character type).
 - Multiple map themes (dungeon, space station, village, etc).
 - Plugin system for custom runtime adapters (Docker, SSH, etc).
@@ -619,7 +769,7 @@ Discovered projects are ephemeral (not written to config) but appear in the cust
 
 - [x] Can define shortcuts in config and see them as buttons in the bottom bar.
 - [x] Clicking a shortcut spawns a new worker every time (never reuses).
-- [x] Each worker appears as a distinct fantasy character on the map.
+- [x] Each worker appears as a distinct avatar on the map.
 - [x] Clicking a character selects it and auto-connects xterm.js to its terminal.
 - [x] Terminal panel auto-switches to newly spawned workers.
 - [x] Bottom bar shows contextual controls (stop/restart) when a worker is selected.

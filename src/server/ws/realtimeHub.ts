@@ -20,7 +20,13 @@ export class RealtimeHub {
     if (socket.readyState !== socket.OPEN) {
       return;
     }
-    socket.send(JSON.stringify(event));
+
+    try {
+      socket.send(JSON.stringify(event));
+    } catch {
+      this.clients.delete(socket);
+      socket.terminate();
+    }
   }
 
   broadcast(event: WsServerEvent): void {
@@ -28,9 +34,16 @@ export class RealtimeHub {
 
     for (const socket of this.clients) {
       if (socket.readyState !== socket.OPEN) {
+        this.clients.delete(socket);
         continue;
       }
-      socket.send(payload);
+
+      try {
+        socket.send(payload);
+      } catch {
+        this.clients.delete(socket);
+        socket.terminate();
+      }
     }
   }
 }

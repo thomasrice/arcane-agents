@@ -1,4 +1,5 @@
 import type { WorkerSpawnInput } from "../../shared/types";
+import { validationError } from "./appError";
 
 export interface BroadcastInputBody {
   workerIds: string[];
@@ -7,14 +8,18 @@ export interface BroadcastInputBody {
 }
 
 export function parseSpawnInput(body: unknown): WorkerSpawnInput {
-  if (!body || typeof body !== "object") {
-    throw new Error("Spawn body must be an object.");
+  if (!isRecordObject(body)) {
+    throw validationError("Spawn body must be an object.", "spawn_invalid_body");
   }
 
-  const record = body as Record<string, unknown>;
+  const record = body;
   const spawnNearWorkerIds = parseSpawnNearWorkerIds(record);
 
-  if (typeof record.shortcutIndex === "number" && Number.isInteger(record.shortcutIndex)) {
+  if (typeof record.shortcutIndex !== "undefined") {
+    if (typeof record.shortcutIndex !== "number" || !Number.isInteger(record.shortcutIndex) || record.shortcutIndex < 0) {
+      throw validationError("shortcutIndex must be a non-negative integer.", "spawn_invalid_shortcut_index");
+    }
+
     return {
       shortcutIndex: record.shortcutIndex,
       spawnNearWorkerIds
@@ -22,9 +27,7 @@ export function parseSpawnInput(body: unknown): WorkerSpawnInput {
   }
 
   if (typeof record.projectId === "string" && typeof record.runtimeId === "string") {
-    const command = Array.isArray(record.command)
-      ? record.command.filter((value): value is string => typeof value === "string")
-      : undefined;
+    const command = parseSpawnCommand(record);
     return {
       projectId: record.projectId,
       runtimeId: record.runtimeId,
@@ -33,7 +36,10 @@ export function parseSpawnInput(body: unknown): WorkerSpawnInput {
     };
   }
 
-  throw new Error("Invalid spawn request: expected shortcutIndex or projectId+runtimeId.");
+  throw validationError(
+    "Invalid spawn request: expected shortcutIndex or projectId+runtimeId.",
+    "spawn_invalid_payload"
+  );
 }
 
 function parseSpawnNearWorkerIds(record: Record<string, unknown>): string[] | undefined {
@@ -42,53 +48,118 @@ function parseSpawnNearWorkerIds(record: Record<string, unknown>): string[] | un
   }
 
   if (!Array.isArray(record.spawnNearWorkerIds)) {
-    throw new Error("spawnNearWorkerIds must be an array when provided.");
+    throw validationError("spawnNearWorkerIds must be an array when provided.", "spawn_invalid_nearby_worker_ids");
   }
 
-  const ids = record.spawnNearWorkerIds
-    .filter((value): value is string => typeof value === "string")
-    .map((workerId) => workerId.trim())
-    .filter((workerId, index, array) => workerId.length > 0 && array.indexOf(workerId) === index)
-    .slice(0, 32);
+  const ids: string[] = [];
+  const seenIds = new Set<string>();
+
+  for (const value of record.spawnNearWorkerIds) {
+    if (typeof value !== "string") {
+      throw validationError("spawnNearWorkerIds must only contain strings.", "spawn_invalid_nearby_worker_ids");
+    }
+
+    const workerId = value.trim();
+    if (!workerId) {
+      throw validationError("spawnNearWorkerIds must not contain empty IDs.", "spawn_invalid_nearby_worker_ids");
+    }
+
+    if (seenIds.has(workerId)) {
+      continue;
+    }
+
+    seenIds.add(workerId);
+    ids.push(workerId);
+    if (ids.length >= 32) {
+      break;
+    }
+  }
 
   return ids.length > 0 ? ids : undefined;
 }
 
+function parseSpawnCommand(record: Record<string, unknown>): string[] | undefined {
+  if (typeof record.command === "undefined") {
+    return undefined;
+  }
+
+  if (!Array.isArray(record.command)) {
+    throw validationError("command must be an array of command tokens when provided.", "spawn_invalid_command");
+  }
+
+  if (record.command.length === 0) {
+    throw validationError("command must include at least one token when provided.", "spawn_invalid_command");
+  }
+
+  const command: string[] = [];
+  for (let index = 0; index < record.command.length; index += 1) {
+    const token = record.command[index];
+    if (typeof token !== "string") {
+      throw validationError("command must only contain strings.", "spawn_invalid_command");
+    }
+
+    const normalized = token.trim();
+    if (!normalized) {
+      throw validationError("command must not include empty tokens.", "spawn_invalid_command");
+    }
+
+    command.push(normalized);
+  }
+
+  return command;
+}
+
 export function parseBroadcastInput(body: unknown): BroadcastInputBody {
-  if (!body || typeof body !== "object") {
-    throw new Error("Broadcast input body must be an object.");
+  if (!isRecordObject(body)) {
+    throw validationError("Broadcast input body must be an object.", "broadcast_invalid_body");
   }
 
-  const record = body as Record<string, unknown>;
+  const record = body;
   if (!Array.isArray(record.workerIds)) {
-    throw new Error("Broadcast input requires workerIds array.");
+    throw validationError("Broadcast input requires workerIds array.", "broadcast_invalid_worker_ids");
   }
 
-  const workerIds = record.workerIds
-    .filter((value): value is string => typeof value === "string")
-    .map((workerId) => workerId.trim())
-    .filter((workerId, index, array) => workerId.length > 0 && array.indexOf(workerId) === index);
+  const workerIds: string[] = [];
+  const seenWorkerIds = new Set<string>();
+
+  for (const value of record.workerIds) {
+    if (typeof value !== "string") {
+      throw validationError("Broadcast workerIds must only contain strings.", "broadcast_invalid_worker_ids");
+    }
+
+    const workerId = value.trim();
+    if (!workerId) {
+      throw validationError("Broadcast workerIds must not contain empty IDs.", "broadcast_invalid_worker_ids");
+    }
+
+    if (seenWorkerIds.has(workerId)) {
+      continue;
+    }
+
+    seenWorkerIds.add(workerId);
+    workerIds.push(workerId);
+  }
 
   if (workerIds.length === 0) {
-    throw new Error("Broadcast input requires at least one worker ID.");
+    throw validationError("Broadcast input requires at least one worker ID.", "broadcast_invalid_worker_ids");
   }
 
   if (typeof record.text !== "string") {
-    throw new Error("Broadcast input requires text.");
+    throw validationError("Broadcast input requires text.", "broadcast_invalid_text");
   }
 
   const text = record.text;
   if (text.length > 4096) {
-    throw new Error("Broadcast input text is too long.");
+    throw validationError("Broadcast input text is too long.", "broadcast_invalid_text");
   }
 
   if (typeof record.submit !== "undefined" && typeof record.submit !== "boolean") {
-    throw new Error("Broadcast input submit must be boolean when provided.");
+    throw validationError("Broadcast input submit must be boolean when provided.", "broadcast_invalid_submit");
   }
 
   const submit = record.submit ?? true;
   if (!text.length && !submit) {
-    throw new Error("Broadcast input requires text or submit=true.");
+    throw validationError("Broadcast input requires text or submit=true.", "broadcast_invalid_payload");
   }
 
   return {
@@ -96,4 +167,8 @@ export function parseBroadcastInput(body: unknown): BroadcastInputBody {
     text,
     submit
   };
+}
+
+function isRecordObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

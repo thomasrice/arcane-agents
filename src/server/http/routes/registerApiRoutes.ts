@@ -2,6 +2,7 @@ import type express from "express";
 import { RealtimeHub } from "../../ws/realtimeHub";
 import { OrchestratorService } from "../../orchestrator/orchestratorService";
 import type { StatusMonitor } from "../../status/statusMonitor";
+import { validationError } from "../appError";
 import { handleRequestError } from "../errorResponse";
 import { parseBroadcastInput, parseSpawnInput } from "../requestParsers";
 
@@ -70,9 +71,11 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
 
   app.post("/api/workers/:workerId/stop", async (req, res) => {
     try {
-      const workerId = await orchestrator.stop(req.params.workerId);
-      hub.broadcast({ type: "worker-removed", workerId });
-      res.json({ ok: true, workerId });
+      const result = await orchestrator.stop(req.params.workerId);
+      if (result.removed) {
+        hub.broadcast({ type: "worker-removed", workerId: result.workerId });
+      }
+      res.json({ ok: true, ...result });
     } catch (error) {
       handleRequestError(res, error);
     }
@@ -83,7 +86,7 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
       const x = Number(req.body?.x);
       const y = Number(req.body?.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        throw new Error("Position requires numeric x and y values.");
+        throw validationError("Position requires numeric x and y values.", "position_invalid_payload");
       }
 
       const worker = orchestrator.updatePosition(req.params.workerId, { x, y });
@@ -98,7 +101,7 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
     try {
       const displayName = req.body?.displayName;
       if (typeof displayName !== "string") {
-        throw new Error("Rename request requires a string displayName.");
+        throw validationError("Rename request requires a string displayName.", "rename_invalid_payload");
       }
 
       const worker = orchestrator.rename(req.params.workerId, displayName);
@@ -113,7 +116,7 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
     try {
       const movementMode = req.body?.movementMode;
       if (movementMode !== "hold" && movementMode !== "wander") {
-        throw new Error("movementMode must be 'hold' or 'wander'.");
+        throw validationError("movementMode must be 'hold' or 'wander'.", "movement_mode_invalid_payload");
       }
 
       const worker = orchestrator.setMovementMode(req.params.workerId, movementMode);

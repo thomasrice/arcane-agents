@@ -1,20 +1,27 @@
 import type { ResolvedConfig, WorkerSpawnInput } from "../../../shared/types";
+import { notFoundError } from "../../http/appError";
 import type { SpawnPlan } from "./types";
 
 export function resolveSpawnPlan(config: ResolvedConfig, input: WorkerSpawnInput): SpawnPlan {
   if ("shortcutIndex" in input) {
     const shortcut = config.shortcuts[input.shortcutIndex];
     if (!shortcut) {
-      throw new Error(`Shortcut index '${input.shortcutIndex}' is out of range.`);
+      throw notFoundError(`Shortcut index '${input.shortcutIndex}' is out of range.`, "shortcut_not_found");
     }
 
     const project = config.projects[shortcut.project];
     const runtime = config.runtimes[shortcut.runtime];
     if (!project) {
-      throw new Error(`Shortcut '${shortcut.label}' references unknown project '${shortcut.project}'.`);
+      throw notFoundError(
+        `Shortcut '${shortcut.label}' references unknown project '${shortcut.project}'.`,
+        "project_not_found"
+      );
     }
     if (!runtime) {
-      throw new Error(`Shortcut '${shortcut.label}' references unknown runtime '${shortcut.runtime}'.`);
+      throw notFoundError(
+        `Shortcut '${shortcut.label}' references unknown runtime '${shortcut.runtime}'.`,
+        "runtime_not_found"
+      );
     }
 
     return {
@@ -31,10 +38,10 @@ export function resolveSpawnPlan(config: ResolvedConfig, input: WorkerSpawnInput
   const project = config.projects[input.projectId];
   const runtime = config.runtimes[input.runtimeId];
   if (!project) {
-    throw new Error(`Unknown project '${input.projectId}'.`);
+    throw notFoundError(`Unknown project '${input.projectId}'.`, "project_not_found");
   }
   if (!runtime) {
-    throw new Error(`Unknown runtime '${input.runtimeId}'.`);
+    throw notFoundError(`Unknown runtime '${input.runtimeId}'.`, "runtime_not_found");
   }
 
   return {

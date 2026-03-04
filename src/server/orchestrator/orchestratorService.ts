@@ -9,6 +9,7 @@ import type {
   WorkerPosition,
   WorkerSpawnInput
 } from "../../shared/types";
+import { conflictError, notFoundError } from "../http/appError";
 import { listAvailableAvatarTypes } from "../assets/avatarCatalog";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { isSameWorkerRecord } from "./reconcile/isSameWorkerRecord";
@@ -31,6 +32,12 @@ export interface BroadcastInputResult {
     workerId: string;
     error: string;
   }>;
+}
+
+export interface StopWorkerResult {
+  workerId: string;
+  removed: boolean;
+  alreadyStopped: boolean;
 }
 
 const outpostSpawnSpec = loadOutpostSpawnSpec();
@@ -109,17 +116,34 @@ export class OrchestratorService {
     return worker;
   }
 
-  async stop(workerId: string): Promise<string> {
-    const worker = this.requireWorker(workerId);
-    this.workers.deleteWorker(workerId);
-    await this.tmux.stop(worker.tmuxRef, { background: true }).catch(() => undefined);
-    return workerId;
+  async stop(workerId: string): Promise<StopWorkerResult> {
+    const worker = this.workers.getWorker(workerId);
+    if (!worker) {
+      return {
+        workerId,
+        removed: false,
+        alreadyStopped: true
+      };
+    }
+
+    try {
+      await this.tmux.stop(worker.tmuxRef);
+    } catch {
+      throw conflictError(`Failed to stop worker '${workerId}'.`, "worker_stop_failed");
+    }
+
+    const removed = this.workers.deleteWorker(workerId);
+    return {
+      workerId,
+      removed,
+      alreadyStopped: !removed
+    };
   }
 
   updatePosition(workerId: string, position: WorkerPosition): Worker {
     const updated = this.workers.updatePosition(workerId, position);
     if (!updated) {
-      throw new Error(`Worker '${workerId}' not found.`);
+      throw notFoundError(`Worker '${workerId}' not found.`, "worker_not_found");
     }
     return updated;
   }
@@ -141,7 +165,7 @@ export class OrchestratorService {
   setMovementMode(workerId: string, movementMode: MovementMode): Worker {
     const updated = this.workers.updateMovementMode(workerId, movementMode);
     if (!updated) {
-      throw new Error(`Worker '${workerId}' not found.`);
+      throw notFoundError(`Worker '${workerId}' not found.`, "worker_not_found");
     }
 
     return updated;
@@ -149,7 +173,14 @@ export class OrchestratorService {
 
   async openInExternalTerminal(workerId: string): Promise<void> {
     const worker = this.requireWorker(workerId);
-    await this.tmux.openInExternalTerminal(worker.tmuxRef, worker.id);
+    try {
+      await this.tmux.openInExternalTerminal(worker.tmuxRef, worker.id);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("not available")) {
+        throw conflictError(`Worker '${workerId}' is unavailable for external terminal attach.`, "worker_terminal_unavailable");
+      }
+      throw error;
+    }
   }
 
   async broadcastInput(workerIds: string[], text: string, options?: BroadcastInputOptions): Promise<BroadcastInputResult> {
@@ -310,7 +341,7 @@ export class OrchestratorService {
   private requireWorker(workerId: string): Worker {
     const worker = this.workers.getWorker(workerId);
     if (!worker) {
-      throw new Error(`Worker '${workerId}' not found.`);
+      throw notFoundError(`Worker '${workerId}' not found.`, "worker_not_found");
     }
     return worker;
   }

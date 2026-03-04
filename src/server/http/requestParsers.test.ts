@@ -7,7 +7,7 @@ describe("parseSpawnInput", () => {
 
     const parsed = parseSpawnInput({
       shortcutIndex: 2,
-      spawnNearWorkerIds: [...nearby, " worker-1 ", "", 17]
+      spawnNearWorkerIds: [...nearby, " worker-1 "]
     });
 
     expect(parsed).toEqual({
@@ -16,11 +16,11 @@ describe("parseSpawnInput", () => {
     });
   });
 
-  it("parses project/runtime spawn input and keeps only string command tokens", () => {
+  it("parses project/runtime spawn input with normalized command tokens", () => {
     const parsed = parseSpawnInput({
       projectId: "project-a",
       runtimeId: "shell",
-      command: ["npm", "run", 42, "test", null]
+      command: [" npm ", "run", "test"]
     });
 
     expect(parsed).toMatchObject({
@@ -39,13 +39,19 @@ describe("parseSpawnInput", () => {
     expect(() => parseSpawnInput({ shortcutIndex: 0, spawnNearWorkerIds: "worker-1" })).toThrow(
       "spawnNearWorkerIds must be an array when provided."
     );
+    expect(() => parseSpawnInput({ projectId: "project-a", runtimeId: "shell", command: ["", "test"] })).toThrow(
+      "command must not include empty tokens."
+    );
+    expect(() => parseSpawnInput({ projectId: "project-a", runtimeId: "shell", command: ["npm", 7] })).toThrow(
+      "command must only contain strings."
+    );
   });
 });
 
 describe("parseBroadcastInput", () => {
   it("parses and sanitizes broadcast payload", () => {
     const parsed = parseBroadcastInput({
-      workerIds: [" w1 ", "w1", "w2", 9],
+      workerIds: [" w1 ", "w1", "w2"],
       text: "hello"
     });
 
@@ -62,7 +68,11 @@ describe("parseBroadcastInput", () => {
     );
 
     expect(() => parseBroadcastInput({ workerIds: ["   "], text: "hello" })).toThrow(
-      "Broadcast input requires at least one worker ID."
+      "Broadcast workerIds must not contain empty IDs."
+    );
+
+    expect(() => parseBroadcastInput({ workerIds: ["w1", 9], text: "hello" })).toThrow(
+      "Broadcast workerIds must only contain strings."
     );
 
     expect(() => parseBroadcastInput({ workerIds: ["w1"], text: "", submit: false })).toThrow(

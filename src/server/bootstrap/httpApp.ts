@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import express from "express";
+import { handleRequestError } from "../http/errorResponse";
 import { registerApiRoutes } from "../http/routes/registerApiRoutes";
 import type { ServerContext } from "./serverContext";
 
@@ -26,6 +27,13 @@ export function createHttpApp(context: ServerContext): express.Express {
       res.sendFile(path.join(clientDistPath, "index.html"));
     });
   }
+
+  app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (res.headersSent) {
+      return;
+    }
+    handleRequestError(res, error);
+  });
 
   return app;
 }
