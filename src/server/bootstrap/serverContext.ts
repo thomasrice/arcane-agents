@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { ResolvedConfig } from "../../shared/types";
 import { DiscoveryService } from "../config/discovery";
-import { getOverworldPaths, loadResolvedConfig } from "../config/loadConfig";
+import { getArcaneAgentsPaths, loadResolvedConfig } from "../config/loadConfig";
 import { OrchestratorService } from "../orchestrator/orchestratorService";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { StatusMonitor } from "../status/statusMonitor";
@@ -10,7 +10,7 @@ import { RealtimeHub } from "../ws/realtimeHub";
 import { TerminalBridge } from "../ws/terminalBridge";
 
 export interface ServerContext {
-  paths: ReturnType<typeof getOverworldPaths>;
+  paths: ReturnType<typeof getArcaneAgentsPaths>;
   config: ResolvedConfig;
   workers: WorkerRepository;
   tmux: TmuxAdapter;
@@ -21,7 +21,7 @@ export interface ServerContext {
 }
 
 export async function createServerContext(): Promise<ServerContext> {
-  const paths = getOverworldPaths();
+  const paths = getArcaneAgentsPaths();
   fs.mkdirSync(paths.configDir, { recursive: true });
   fs.mkdirSync(paths.stateDir, { recursive: true });
   fs.mkdirSync(paths.cacheDir, { recursive: true });
@@ -30,7 +30,7 @@ export async function createServerContext(): Promise<ServerContext> {
   const discoveryService = new DiscoveryService();
   const initialDiscovery = await discoveryService.discover(baseConfig);
   for (const warning of initialDiscovery.warnings) {
-    console.warn(`[overworld] ${warning}`);
+    console.warn(`[arcane-agents] ${warning}`);
   }
 
   const workers = new WorkerRepository(paths.dbPath);

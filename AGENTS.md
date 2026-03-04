@@ -1,6 +1,6 @@
-# Overworld
+# Arcane Agents
 
-Overworld is a local-first visual control room for managing terminal-backed AI coding agents. Each agent is a pixel-art fantasy character in a top-down overworld map. Clicking a character opens its live terminal in an embedded browser terminal panel (xterm.js). Workers are backed by tmux windows.
+Arcane Agents is a local-first visual control room for managing terminal-backed AI coding agents. Each agent is a pixel-art fantasy character in a top-down map. Clicking a character opens its live terminal in an embedded browser terminal panel (xterm.js). Workers are backed by tmux windows.
 
 ## Key Files
 
@@ -39,9 +39,9 @@ The app serves at `http://localhost:7600`.
 
 ## Config
 
-User config lives at `~/.config/overworld/config.yaml`. See `config.example.yaml` in the repo root for the full schema.
+User config lives at `~/.config/arcane-agents/config.yaml`. See `config.example.yaml` in the repo root for the full schema.
 
-State is stored at `~/.local/state/overworld/` (SQLite DB + runtime metadata).
+State is stored at `~/.local/state/arcane-agents/` (SQLite DB + runtime metadata).
 
 ## Development Notes
 

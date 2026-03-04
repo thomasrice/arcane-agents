@@ -5,7 +5,7 @@ import type { ResolvedConfig } from "../../shared/types";
 import { partialConfigSchema, resolvedConfigSchema, createDefaultConfig } from "./schema";
 import { resolveUserPath } from "../utils/path";
 
-interface OverworldPaths {
+interface ArcaneAgentsPaths {
   configDir: string;
   configPath: string;
   localOverridePath: string;
@@ -16,21 +16,21 @@ interface OverworldPaths {
 
 type JsonObject = Record<string, unknown>;
 
-export function getOverworldPaths(): OverworldPaths {
-  const configDir = resolveUserPath("~/.config/overworld");
-  const stateDir = resolveUserPath("~/.local/state/overworld");
+export function getArcaneAgentsPaths(): ArcaneAgentsPaths {
+  const configDir = resolveUserPath("~/.config/arcane-agents");
+  const stateDir = resolveUserPath("~/.local/state/arcane-agents");
 
   return {
     configDir,
     configPath: path.join(configDir, "config.yaml"),
     localOverridePath: path.join(configDir, "config.local.yaml"),
     stateDir,
-    dbPath: path.join(stateDir, "overworld.db"),
-    cacheDir: resolveUserPath("~/.cache/overworld")
+    dbPath: path.join(stateDir, "arcane-agents.db"),
+    cacheDir: resolveUserPath("~/.cache/arcane-agents")
   };
 }
 
-export function loadResolvedConfig(paths = getOverworldPaths()): ResolvedConfig {
+export function loadResolvedConfig(paths = getArcaneAgentsPaths()): ResolvedConfig {
   const defaults = createDefaultConfig();
   const userConfig = readConfigFile(paths.configPath);
   const localOverride = readConfigFile(paths.localOverridePath);

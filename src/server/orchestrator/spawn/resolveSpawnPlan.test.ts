@@ -24,7 +24,7 @@ function createConfig(): ResolvedConfig {
     discovery: [],
     backend: {
       tmux: {
-        sessionName: "overworld",
+        sessionName: "arcane-agents",
         pollIntervalMs: 2500
       }
     },

@@ -20,7 +20,7 @@ function createWorker(status: Worker["status"] = "idle"): Worker {
     avatarType: "ranger",
     movementMode: "hold",
     position: { x: 120, y: 180 },
-    tmuxRef: { session: "overworld", window: "worker-1", pane: "%1" },
+    tmuxRef: { session: "arcane-agents", window: "worker-1", pane: "%1" },
     createdAt: "2026-03-04T00:00:00.000Z",
     updatedAt: "2026-03-04T00:00:00.000Z"
   };

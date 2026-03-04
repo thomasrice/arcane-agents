@@ -20,8 +20,8 @@ import { ShortcutsDialog } from "./components/ShortcutsDialog";
 import { SpawnDialog } from "./components/SpawnDialog";
 import { TerminalColumn } from "./components/TerminalColumn";
 import { useAppHotkeys } from "./hooks/useAppHotkeys";
+import { useArcaneAgentsData } from "./hooks/useArcaneAgentsData";
 import { useLayoutAndControlGroups } from "./hooks/useLayoutAndControlGroups";
-import { useOverworldData } from "./hooks/useOverworldData";
 import { useSelectionModel } from "./hooks/useSelectionModel";
 import { useTerminalFocus } from "./hooks/useTerminalFocus";
 import { useWorkerCompletionNotifications } from "./hooks/useWorkerCompletionNotifications";
@@ -43,7 +43,7 @@ export default function App(): JSX.Element {
   const [errorText, setErrorText] = useState<string | undefined>(undefined);
   const rallyCommandInputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const { config, workers, setWorkers, workersHydrated } = useOverworldData(setErrorText);
+  const { config, workers, setWorkers, workersHydrated } = useArcaneAgentsData(setErrorText);
   const { fadingWorkers, queueWorkerFade, removeWorkerFade } = useWorkerFade(killFadeDurationMs);
 
   const activeWorkers = useMemo(() => workers.filter((worker) => worker.status !== "stopped"), [workers]);

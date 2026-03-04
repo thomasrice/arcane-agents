@@ -1,6 +1,6 @@
-# Overworld Plan
+# Arcane Agents Plan
 
-Overworld is a local-first visual control room for managing terminal-backed AI coding agents. Each agent appears as an avatar on a top-down 2D map. Clicking a character opens its live terminal in an embedded browser terminal panel. The map is decorative and organizational; spawning and controls happen through an RTS-style bottom bar and command palette.
+Arcane Agents is a local-first visual control room for managing terminal-backed AI coding agents. Each agent appears as an avatar on a top-down 2D map. Clicking a character opens its live terminal in an embedded browser terminal panel. The map is decorative and organizational; spawning and controls happen through an RTS-style bottom bar and command palette.
 
 ## Product Goal
 
@@ -59,7 +59,7 @@ Generic and open-source by default; user-specific setups live in config files.
 
 ## Name and Visual Direction
 
-"Overworld" evokes a top-down command map for active workers.
+"Arcane Agents" evokes a top-down command map for active workers.
 
 - The map has no functional zones; it is decorative and for visual clustering.
 - Users drag characters to arrange them (group by project, priority, etc).
@@ -141,7 +141,7 @@ Bottom bar has shortcut buttons defined in config (e.g. "PA", "Lab", "Taur").
 │                      Browser (localhost)                       │
 │                                                               │
 │  ┌───────────────────────────┐  ┌──────────────────────────┐  │
-│  │     Overworld Map         │  │    Terminal Panel         │  │
+│  │   Arcane Agents Map       │  │    Terminal Panel         │  │
 │  │     (Canvas2D)            │  │    (xterm.js)             │  │
 │  │                           │  │                           │  │
 │  │  characters, status       │  │  live terminal of         │  │
@@ -182,7 +182,7 @@ Bottom bar has shortcut buttons defined in config (e.g. "PA", "Lab", "Taur").
 ┌──────────────────────────────────────────────────────────────────┐
 │                         tmux server                               │
 │                                                                   │
-│  session: overworld                                               │
+│  session: arcane-agents                                           │
 │    window: pa-opencode-a3f2                                       │
 │    window: labyrinth-claude-7b1c                                  │
 │    window: taurient-claude-9d4e                                   │
@@ -207,11 +207,11 @@ Bottom bar has shortcut buttons defined in config (e.g. "PA", "Lab", "Taur").
 
 ### Config locations (XDG)
 
-- User config: `~/.config/overworld/config.yaml`
-- Optional local override: `~/.config/overworld/config.local.yaml`
-- Runtime state: `~/.local/state/overworld/`
-- SQLite DB: `~/.local/state/overworld/overworld.db`
-- Cache/assets: `~/.cache/overworld/`
+- User config: `~/.config/arcane-agents/config.yaml`
+- Optional local override: `~/.config/arcane-agents/config.local.yaml`
+- Runtime state: `~/.local/state/arcane-agents/`
+- SQLite DB: `~/.local/state/arcane-agents/arcane-agents.db`
+- Cache/assets: `~/.cache/arcane-agents/`
 
 ### Merge order
 
@@ -303,7 +303,7 @@ discovery:
 # Backend settings
 backend:
   tmux:
-    sessionName: overworld
+    sessionName: arcane-agents
     pollIntervalMs: 2500
 
 # Server settings
@@ -381,7 +381,7 @@ This is heuristic and tool-specific but good enough for visual indicators. Falls
 
 ### Naming convention
 
-- Session: `overworld` (single session, configurable)
+- Session: `arcane-agents` (single session, configurable)
 - Window: `${projectShortName}-${runtimeShortName}-${shortId}`
 - Example: `pa-opencode-a3f2`, `lab-claude-7b1c`
 
@@ -390,14 +390,14 @@ This is heuristic and tool-specific but good enough for visual indicators. Falls
 - `spawn(projectPath, command, env?)` — create window, cd to path, run command
 - `attachPty(tmuxRef)` — return PTY stream for xterm.js
 - `stop(tmuxRef)` — send SIGTERM, wait 5s, then SIGKILL if needed
-- `list()` — enumerate overworld-managed windows
+- `list()` — enumerate arcane-agents-managed windows
 - `reconcile(knownWorkers)` — match DB state against live tmux, mark stale workers
 - `capturePane(tmuxRef, lines)` — get terminal content for status parsing
 
 ### Safety
 
 - Only manage windows within the configured session name.
-- Tag windows with overworld metadata (environment variable `OVERWORLD_WORKER_ID`).
+- Tag windows with arcane-agents metadata (environment variable `ARCANE_AGENTS_WORKER_ID`).
 - Graceful stop (SIGTERM + 5s grace) before force kill.
 - Never kill the tmux session itself, only individual windows.
 
@@ -408,13 +408,13 @@ This is heuristic and tool-specific but good enough for visual indicators. Falls
 ```
 ┌──────────────────────────────────┬────────────────────────────┐
 │                                  │                            │
-│        Overworld Map             │     Terminal Panel          │
+│      Arcane Agents Map           │     Terminal Panel          │
 │        (Canvas2D)                │     (xterm.js)              │
 │                                  │                            │
 │   decorative map scene           │   live terminal of          │
 │   characters with status         │   selected worker           │
 │   auras, icons, labels           │                            │
-│                                  │   "Select a worker to       │
+│                                  │   "Select an agent to       │
 │   WASD to pan, wheel to zoom    │    connect its terminal"    │
 │   click character to select      │   (placeholder when none)   │
 │   drag character to reposition   │                            │
@@ -492,15 +492,15 @@ Pressing Enter spawns immediately. Results update as you type.
 
 ## Persistence and Recovery
 
-- SQLite DB at `~/.local/state/overworld/overworld.db`.
+- SQLite DB at `~/.local/state/arcane-agents/arcane-agents.db`.
 - Tables: `workers`, `worker_events` (recent activity log).
 - Worker rows store: id, project, runtime, command, tmux ref, status, position, avatar type, timestamps.
 - On startup:
   1. Load workers from DB.
-  2. Query tmux for live windows in the overworld session.
-  3. Reconcile: match DB workers to live windows by tmux ref / OVERWORLD_WORKER_ID env var.
+  2. Query tmux for live windows in the arcane-agents session.
+  3. Reconcile: match DB workers to live windows by tmux ref / ARCANE_AGENTS_WORKER_ID env var.
   4. Mark workers with no matching window as `stopped`.
-  5. Optionally discover untracked overworld windows and adopt them.
+  5. Optionally discover untracked arcane-agents windows and adopt them.
   6. Push full state to UI via WebSocket.
 
 ## Discovery System

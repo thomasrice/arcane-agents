@@ -1,6 +1,6 @@
 # Character Sprite Assets
 
-Overworld loads character sprites directly from this directory.
+Arcane Agents loads character sprites directly from this directory.
 
 ## Ownership + License
 
@@ -51,7 +51,7 @@ assets/characters/
 
 Create one top-level folder per character type.
 
-Avatar discovery is directory-driven: Overworld treats each subfolder as an available avatar when these required files exist:
+Avatar discovery is directory-driven: Arcane Agents treats each subfolder as an available avatar when these required files exist:
 
 - `rotations/south.png`
 - `rotations/east.png`

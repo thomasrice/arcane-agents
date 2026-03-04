@@ -1,6 +1,6 @@
-# Overworld
+# Arcane Agents
 
-Overworld is a local-first visual control room for terminal-backed AI coding agents.
+Arcane Agents is a local-first visual control room for terminal-backed AI coding agents.
 Each agent appears as a character on a 2D map, and selecting one opens its live terminal in the right panel.
 
 ## What It Does
@@ -13,7 +13,7 @@ Each agent appears as a character on a 2D map, and selecting one opens its live 
 
 ## Screenshots
 
-- Placeholder: add `docs/media/overworld-main.png`.
+- Placeholder: add `docs/media/arcane-agents-main.png`.
 
 ## Screenshot + Video Capture Plan
 
@@ -45,7 +45,7 @@ Suggested lightweight release media:
 
 - Linux: fully supported and recommended.
 - macOS: core app works, but opening an agent in an external terminal (`↗`) is currently Linux-oriented (`xdg-terminal-exec`).
-- Windows: use WSL2 (Ubuntu or similar) and run Overworld inside WSL.
+- Windows: use WSL2 (Ubuntu or similar) and run Arcane Agents inside WSL.
 
 ## Requirements
 
@@ -97,11 +97,11 @@ npm install
 Optional: create your user config from the repo example:
 
 ```bash
-mkdir -p ~/.config/overworld
-cp config.example.yaml ~/.config/overworld/config.yaml
+mkdir -p ~/.config/arcane-agents
+cp config.example.yaml ~/.config/arcane-agents/config.yaml
 ```
 
-Then edit runtime commands and project paths in `~/.config/overworld/config.yaml`.
+Then edit runtime commands and project paths in `~/.config/arcane-agents/config.yaml`.
 
 Start dev mode (client + server):
 
@@ -127,11 +127,11 @@ Default runtime URL: `http://127.0.0.1:7600`
 
 User config file:
 
-- `~/.config/overworld/config.yaml`
+- `~/.config/arcane-agents/config.yaml`
 
 State directory:
 
-- `~/.local/state/overworld/`
+- `~/.local/state/arcane-agents/`
 
 Note: config is loaded at server startup. Changes to `config.yaml` require a server restart.
 These paths are used on Linux/macOS and inside WSL.
@@ -172,22 +172,22 @@ curl http://127.0.0.1:7601/api/health
 ## Status Debugging
 
 To log status transitions (for example `working -> idle`) in the server terminal, set
-`OVERWORLD_STATUS_TRACE` when launching the backend:
+`ARCANE_AGENTS_STATUS_TRACE` when launching the backend:
 
 ```bash
-OVERWORLD_STATUS_TRACE=transitions npm run dev:server
+ARCANE_AGENTS_STATUS_TRACE=transitions npm run dev:server
 ```
 
 Useful modes:
 
-- `OVERWORLD_STATUS_TRACE=off` (default)
-- `OVERWORLD_STATUS_TRACE=transitions` (only status changes; no output when status stays the same)
-- `OVERWORLD_STATUS_TRACE=verbose` (every status evaluation)
+- `ARCANE_AGENTS_STATUS_TRACE=off` (default)
+- `ARCANE_AGENTS_STATUS_TRACE=transitions` (only status changes; no output when status stays the same)
+- `ARCANE_AGENTS_STATUS_TRACE=verbose` (every status evaluation)
 
 If you run full dev mode:
 
 ```bash
-OVERWORLD_STATUS_TRACE=transitions npm run dev
+ARCANE_AGENTS_STATUS_TRACE=transitions npm run dev
 ```
 
 Status debugging APIs:

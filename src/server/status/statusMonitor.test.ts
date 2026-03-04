@@ -59,7 +59,7 @@ function createWorker(workerId: string, status: Worker["status"] = "idle"): Work
     avatarType: "wizard",
     movementMode: "hold",
     position: { x: 10, y: 10 },
-    tmuxRef: { session: "overworld", window: workerId, pane: `%${workerId}` },
+    tmuxRef: { session: "arcane-agents", window: workerId, pane: `%${workerId}` },
     createdAt: "2026-03-04T00:00:00.000Z",
     updatedAt: "2026-03-04T00:00:00.000Z"
   };
@@ -137,7 +137,7 @@ describe("StatusMonitor", () => {
     collectMock.mockResolvedValue(createSignals());
     evaluateMock.mockImplementation((worker) => createEvaluation(worker.status));
     normalizeMock.mockImplementation((evaluation) => evaluation);
-    delete process.env.OVERWORLD_STATUS_POLL_CONCURRENCY;
+    delete process.env.ARCANE_AGENTS_STATUS_POLL_CONCURRENCY;
   });
 
   it("keeps expected status transitions including stopped removal", async () => {
@@ -174,7 +174,7 @@ describe("StatusMonitor", () => {
   });
 
   it("bounds concurrent worker evaluations", async () => {
-    process.env.OVERWORLD_STATUS_POLL_CONCURRENCY = "2";
+    process.env.ARCANE_AGENTS_STATUS_POLL_CONCURRENCY = "2";
 
     const repository = createRepository([
       createWorker("worker-1"),

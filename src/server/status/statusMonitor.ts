@@ -380,7 +380,7 @@ export class StatusMonitor {
     }
 
     console.log(
-      `[overworld][status] poll workers=${timing.workerCount} duration=${Math.round(timing.durationMs)}ms ` +
+      `[arcane-agents][status] poll workers=${timing.workerCount} duration=${Math.round(timing.durationMs)}ms ` +
         `avgWorker=${Math.round(timing.averageWorkerDurationMs)}ms maxWorker=${Math.round(timing.maxWorkerDurationMs)}ms ` +
         `outcomes={updated:${timing.outcomeCounts.updated},unchanged:${timing.outcomeCounts.unchanged},removed:${timing.outcomeCounts.removed},failed:${timing.outcomeCounts.failed}}`
     );
@@ -418,7 +418,7 @@ export class StatusMonitor {
       `opencode=${evaluation.facts.isOpenCodeSession ? 1 : 0}`;
 
     console.log(
-      `[overworld][status] ${worker.displayName ?? worker.name} ${fromTo} (${Math.round(evaluation.confidence * 100)}%)${activityText} reasons=[${reasonText}] ${traceFacts}`
+      `[arcane-agents][status] ${worker.displayName ?? worker.name} ${fromTo} (${Math.round(evaluation.confidence * 100)}%)${activityText} reasons=[${reasonText}] ${traceFacts}`
     );
   }
 
@@ -449,7 +449,7 @@ export class StatusMonitor {
 }
 
 function resolveStatusPollConcurrency(): number {
-  const rawValue = (process.env.OVERWORLD_STATUS_POLL_CONCURRENCY ?? "").trim();
+  const rawValue = (process.env.ARCANE_AGENTS_STATUS_POLL_CONCURRENCY ?? "").trim();
   const parsed = Number.parseInt(rawValue, 10);
   if (Number.isFinite(parsed) && parsed >= 1) {
     return Math.min(32, parsed);
@@ -489,7 +489,7 @@ async function mapWithConcurrency<T, R>(
 }
 
 function resolveStatusTraceMode(): StatusTraceMode {
-  const rawValue = (process.env.OVERWORLD_STATUS_TRACE ?? "").trim().toLowerCase();
+  const rawValue = (process.env.ARCANE_AGENTS_STATUS_TRACE ?? "").trim().toLowerCase();
   if (rawValue === "verbose" || rawValue === "2") {
     return "verbose";
   }

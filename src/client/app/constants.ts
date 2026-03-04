@@ -1,5 +1,5 @@
-export const controlGroupStorageKey = "overworld.control-groups.v1";
-export const layoutSplitStorageKey = "overworld.layout-split.v1";
+export const controlGroupStorageKey = "arcane-agents.control-groups.v1";
+export const layoutSplitStorageKey = "arcane-agents.layout-split.v1";
 export const killFadeDurationMs = 420;
 export const defaultMapColumnRatio = 0.61;
 export const minMapColumnRatio = 0.42;

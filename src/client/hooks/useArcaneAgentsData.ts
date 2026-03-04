@@ -3,7 +3,7 @@ import type { ResolvedConfig, Worker, WsServerEvent } from "../../shared/types";
 import { fetchConfig, fetchWorkers } from "../api";
 import { upsertWorker } from "../app/utils";
 
-interface UseOverworldDataResult {
+interface UseArcaneAgentsDataResult {
   config: ResolvedConfig | null;
   workers: Worker[];
   setWorkers: Dispatch<SetStateAction<Worker[]>>;
@@ -12,9 +12,9 @@ interface UseOverworldDataResult {
 
 const workerReconcileIntervalMs = 30_000;
 
-export function useOverworldData(
+export function useArcaneAgentsData(
   setErrorText: Dispatch<SetStateAction<string | undefined>>
-): UseOverworldDataResult {
+): UseArcaneAgentsDataResult {
   const [config, setConfig] = useState<ResolvedConfig | null>(null);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [workersHydrated, setWorkersHydrated] = useState(false);
@@ -27,7 +27,7 @@ export function useOverworldData(
         setWorkersHydrated(true);
       })
       .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "Failed to load Overworld data";
+        const message = error instanceof Error ? error.message : "Failed to load Arcane Agents data";
         setErrorText(message);
       });
   }, [setErrorText]);

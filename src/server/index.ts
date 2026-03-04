@@ -13,11 +13,11 @@ export async function bootstrap(): Promise<void> {
   const wsServers = createWsServers(context);
   attachUpgradeHandler(server, wsServers);
 
-  const host = process.env.OVERWORLD_API_HOST ?? context.config.server.host;
-  const port = Number(process.env.OVERWORLD_API_PORT ?? context.config.server.port);
+  const host = process.env.ARCANE_AGENTS_API_HOST ?? context.config.server.host;
+  const port = Number(process.env.ARCANE_AGENTS_API_PORT ?? context.config.server.port);
 
   server.listen(port, host, () => {
-    console.log(`[overworld] server listening on http://${host}:${port}`);
+    console.log(`[arcane-agents] server listening on http://${host}:${port}`);
   });
 
   registerShutdownHandlers({
@@ -28,6 +28,6 @@ export async function bootstrap(): Promise<void> {
 }
 
 void bootstrap().catch((error: unknown) => {
-  console.error("[overworld] fatal startup error", error);
+  console.error("[arcane-agents] fatal startup error", error);
   process.exit(1);
 });

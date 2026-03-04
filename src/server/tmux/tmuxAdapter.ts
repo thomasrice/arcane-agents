@@ -51,7 +51,7 @@ export class TmuxAdapter {
   async spawnWorker(input: SpawnTmuxInput): Promise<TmuxRef> {
     const target = `${this.sessionName}:${input.windowName}`;
     const commandLine = input.command.map(shellQuote).join(" ");
-    const env = `OVERWORLD_WORKER_ID=${input.workerId}`;
+    const env = `ARCANE_AGENTS_WORKER_ID=${input.workerId}`;
 
     if (await this.hasSession()) {
       await this.runTmux([
@@ -86,12 +86,12 @@ export class TmuxAdapter {
     await this.ensureSessionClipboardDefaults();
 
     await this.setWindowMetadata(target, {
-      "@overworld_managed": "1",
-      "@overworld_worker_id": input.workerId,
-      "@overworld_project_id": input.projectId,
-      "@overworld_runtime_id": input.runtimeId,
-      "@overworld_runtime_label": input.runtimeLabel,
-      "@overworld_project_path": input.projectPath
+      "@arcane_agents_managed": "1",
+      "@arcane_agents_worker_id": input.workerId,
+      "@arcane_agents_project_id": input.projectId,
+      "@arcane_agents_runtime_id": input.runtimeId,
+      "@arcane_agents_runtime_label": input.runtimeLabel,
+      "@arcane_agents_project_path": input.projectPath
     });
 
     const [,, paneOutput] = await Promise.all([
@@ -161,7 +161,7 @@ export class TmuxAdapter {
       "list-panes",
       "-a",
       "-F",
-      "#{window_name}\t#{pane_id}\t#{@overworld_managed}\t#{@overworld_worker_id}\t#{@overworld_project_id}\t#{@overworld_runtime_id}\t#{@overworld_runtime_label}\t#{@overworld_project_path}"
+      "#{window_name}\t#{pane_id}\t#{@arcane_agents_managed}\t#{@arcane_agents_worker_id}\t#{@arcane_agents_project_id}\t#{@arcane_agents_runtime_id}\t#{@arcane_agents_runtime_label}\t#{@arcane_agents_project_path}"
     ]);
 
     const seenWindows = new Set<string>();
@@ -369,7 +369,7 @@ function delay(ms: number): Promise<void> {
 function createExternalSessionName(workerId: string): string {
   const safeId = workerId.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || "worker";
   const stamp = Date.now().toString(36);
-  return `overworld-ext-${safeId}-${stamp}`;
+  return `arcane-agents-ext-${safeId}-${stamp}`;
 }
 
 function normalizeOption(value: string | undefined): string | undefined {

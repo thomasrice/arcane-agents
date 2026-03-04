@@ -1,7 +1,7 @@
-# Overworld example config
+# Arcane Agents example config
 #
 # Copy this file to:
-#   ~/.config/overworld/config.yaml
+#   ~/.config/arcane-agents/config.yaml
 #
 # Then customize project paths, runtimes, and shortcuts for your machine.
 
@@ -74,7 +74,7 @@ discovery:
 # Backend runtime settings.
 backend:
   tmux:
-    sessionName: overworld
+    sessionName: arcane-agents
     pollIntervalMs: 2500
 
 # Server bind settings.

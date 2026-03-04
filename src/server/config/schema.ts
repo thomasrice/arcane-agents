@@ -77,10 +77,10 @@ export const resolvedConfigSchema = z.object({
 export function createDefaultConfig(): ResolvedConfig {
   return {
     projects: {
-      overworld: {
+      "arcane-agents": {
         path: process.cwd(),
-        shortName: "ow",
-        label: "Overworld",
+        shortName: "aa",
+        label: "Arcane Agents",
         source: "config"
       }
     },
@@ -92,15 +92,15 @@ export function createDefaultConfig(): ResolvedConfig {
     },
     shortcuts: [
       {
-        label: "OW",
-        project: "overworld",
+        label: "AA",
+        project: "arcane-agents",
         runtime: "shell"
       }
     ],
     discovery: [],
     backend: {
       tmux: {
-        sessionName: "overworld",
+        sessionName: "arcane-agents",
         pollIntervalMs: 2500
       }
     },
