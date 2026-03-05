@@ -205,6 +205,7 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
     });
 
     socket.addEventListener("open", () => {
+      sendResizeMessage();
       scheduleFit(24);
     });
 
@@ -233,7 +234,7 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
         socketRef.current = null;
       }
     };
-  }, [scheduleFit, workerId, workerName]);
+  }, [scheduleFit, sendResizeMessage, workerId, workerName]);
 
   useEffect(() => {
     if (!workerId) {

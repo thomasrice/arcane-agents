@@ -32,40 +32,53 @@ export class TerminalBridge {
       TERM: "xterm-256color"
     };
 
-    let terminal: pty.IPty;
-    try {
-      terminal = pty.spawn("tmux", ["attach-session", "-t", tmuxTarget], {
-        name: "xterm-256color",
-        cols: 120,
-        rows: 36,
-        cwd: worker.projectPath,
-        env
-      });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      console.error(`[arcane-agents] terminal bridge failed to spawn pty for ${workerId}: ${detail}`);
-      socket.close(1011, "Failed to attach terminal");
-      return;
-    }
-
-    terminal.onData((chunk) => {
-      if (socket.readyState === socket.OPEN) {
-        socket.send(chunk);
-      }
-    });
-
-    terminal.onExit(() => {
-      if (socket.readyState === socket.OPEN) {
-        socket.close();
-      }
-    });
+    let terminal: pty.IPty | undefined;
+    let ready = false;
 
     socket.on("message", (raw) => {
       const incoming = rawDataToString(raw);
       const control = parseResizeMessage(incoming);
 
       if (control) {
-        terminal.resize(Math.max(20, control.cols), Math.max(5, control.rows));
+        const cols = Math.max(20, control.cols);
+        const rows = Math.max(5, control.rows);
+
+        if (!terminal) {
+          try {
+            terminal = pty.spawn("tmux", ["attach-session", "-t", tmuxTarget], {
+              name: "xterm-256color",
+              cols,
+              rows,
+              cwd: worker.projectPath,
+              env
+            });
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            console.error(`[arcane-agents] terminal bridge failed to spawn pty for ${workerId}: ${detail}`);
+            socket.close(1011, "Failed to attach terminal");
+            return;
+          }
+
+          terminal.onData((chunk) => {
+            if (socket.readyState === socket.OPEN) {
+              socket.send(chunk);
+            }
+          });
+
+          terminal.onExit(() => {
+            if (socket.readyState === socket.OPEN) {
+              socket.close();
+            }
+          });
+
+          ready = true;
+        } else {
+          terminal.resize(cols, rows);
+        }
+        return;
+      }
+
+      if (!ready) {
         return;
       }
 
@@ -73,11 +86,11 @@ export class TerminalBridge {
         this.options.onSubmittedInput?.(worker.id);
       }
 
-      terminal.write(incoming);
+      terminal!.write(incoming);
     });
 
     const cleanup = () => {
-      terminal.kill();
+      terminal?.kill();
     };
 
     socket.on("close", cleanup);
