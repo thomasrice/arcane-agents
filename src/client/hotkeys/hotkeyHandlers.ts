@@ -18,9 +18,11 @@ export function handleSystemHotkeys(event: KeyboardEvent, context: AppHotkeyCont
     const hotkeyShortcutIndexes = context.findMatchingShortcutIndexes(context.shortcutHotkeyBindings, event);
     if (hotkeyShortcutIndexes.length > 0) {
       event.preventDefault();
+      event.stopPropagation();
       for (const shortcutIndex of hotkeyShortcutIndexes) {
         void context.runSpawn({ shortcutIndex });
       }
+      return true;
     }
   }
 
