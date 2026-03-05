@@ -30,7 +30,7 @@ function shouldSuppressShellHistorySignals(context: WorkerStatusSignalContext): 
     return false;
   }
 
-  return hasLikelyInteractiveShellPrompt(context.output);
+  return true;
 }
 
 function hasLikelyInteractiveShellPrompt(output: string): boolean {
