@@ -1,7 +1,11 @@
 # Arcane Agents
 
-Arcane Agents is a local-first visual control room for terminal-backed AI coding agents.
+Built and maintained by [Thomas Rice](https://www.thomasrice.com), Co-founder of
+[Minotaur Capital](https://www.minotaurcapital.com).
+
+Arcane Agents is a local-first visual control room for terminal-backed AI agents.
 Each agent appears as a character on a 2D map, and selecting one opens its live terminal in the right panel.
+Common setups use Claude Code or OpenCode runtimes, but any terminal-accessible runtime can work.
 
 ## What It Does
 
@@ -150,10 +154,36 @@ Default URLs:
 
 - Use shortcut buttons in the bottom bar to quickly spawn agents.
 - Use the `+` button for custom spawn (project + runtime selection).
-- Press `/` to open the command palette.
 - Click an agent to focus it and attach the terminal panel.
 - Drag agents on the map to organize them visually.
 - Use contextual controls to stop/restart selected agents.
+
+## Keyboard Guide
+
+### Selection vs terminal focus
+
+- `Selection` focus: map/roster shortcuts are active.
+- `Terminal` focus: keys go directly to the attached terminal.
+- `Enter` on a selected agent focuses its terminal.
+- With no selection, `Enter` activates the highlighted roster item; press `Enter` again to focus terminal input.
+- `Ctrl+D` or `Ctrl+]` exits terminal focus back to selection focus.
+- Press `Ctrl+D` or `Ctrl+]` again in selection focus to clear selection.
+
+### Common shortcuts
+
+- `/`: open command palette.
+- `?`: show the full shortcut list in-app.
+- `Tab` / `Shift+Tab`: cycle agents (or cycle selected-group focus).
+- `.` / `,` / `Shift+.`: cycle idle agents.
+- `1-0`: select control group.
+- `Ctrl+1-0`: assign selected agents to a control group.
+- `K`: open kill confirmation for selected agents.
+- `Shift+K`: kill highlighted roster agent (then `Enter` to confirm).
+- `R`: rename selected agent.
+- `M`: toggle movement mode for selected agent(s).
+- `[` / `]`: resize split; `Shift+[` / `Shift+]`: jump split to edge; `=`: reset split.
+- Left-drag the divider between map and terminal panes to resize.
+- `Esc`: close overlays/dialogs, then deselect.
 
 ## Configuration
 
@@ -182,16 +212,60 @@ arcane-agents config edit  # open config.yaml in $VISUAL/$EDITOR
 
 ### Top-level sections
 
-- `projects`: named project paths available for spawning.
-- `runtimes`: command presets (CLI command arrays + labels).
-- `shortcuts`: quick-spawn entries shown in UI and command palette.
+- `projects`: named working directories (`cwd`) agents can launch into.
+- `runtimes`: command presets to run in a project directory.
+- `shortcuts`: saved `project + runtime` combinations; can also include hotkeys.
 - `discovery`: optional auto-discovery rules for additional projects.
 - `backend.tmux`: tmux session and status poll settings.
 - `server`: API bind host/port.
 
+### Quick example (Claude Code + OpenCode)
+
+If you want to launch Claude Code in `~/minotaur/taurient` and OpenCode in
+`~/code/personal-assistant`, a minimal config looks like this:
+
+```yaml
+projects:
+  home:
+    path: "~"
+    shortName: home
+  taurient:
+    path: ~/minotaur/taurient
+    shortName: taur
+  personal-assistant:
+    path: ~/code/personal-assistant
+    shortName: pa
+
+runtimes:
+  claude:
+    command: ["claude"]
+    label: Claude Code
+  opencode:
+    command: ["opencode"]
+    label: OpenCode
+  shell:
+    command: ["bash"]
+    label: Shell
+
+shortcuts:
+  - label: Taurient Claude
+    project: taurient
+    runtime: claude
+    hotkeys: ["Ctrl-U"]
+  - label: PA OpenCode
+    project: personal-assistant
+    runtime: opencode
+    hotkeys: ["Ctrl-A"]
+  - label: Home Shell
+    project: home
+    runtime: shell
+    hotkeys: ["Ctrl-S"]
+```
+
 ### `projects`
 
-`projects` is a map keyed by project id.
+`projects` is a map keyed by project id. Each entry defines the working
+directory used when launching an agent.
 
 Required fields per project:
 
@@ -214,7 +288,8 @@ projects:
 
 ### `runtimes`
 
-`runtimes` is a map keyed by runtime id.
+`runtimes` is a map keyed by runtime id. Each runtime defines the command Arcane
+Agents runs inside a selected project directory.
 
 Required fields per runtime:
 
@@ -235,7 +310,9 @@ runtimes:
 
 ### `shortcuts`
 
-`shortcuts` is an array.
+`shortcuts` is an array of saved launch recipes. Each shortcut combines a
+`project` with a `runtime`, and can optionally include one or more keyboard
+hotkeys.
 
 Required fields per shortcut:
 
@@ -386,26 +463,6 @@ Status debugging APIs:
 - `GET /api/workers/:workerId/status-debug`
 - `GET /api/workers/:workerId/status-history`
 
-## Screenshots
-
-- Placeholder: add `docs/media/arcane-agents-main.png`.
-
-## Screenshot + Video Capture Plan
-
-Capture these before public launch:
-
-1. Main layout overview (map + terminal + bottom bar, 3-5 agents visible).
-2. Quick-spawn flow (click shortcut -> agent appears -> terminal auto-switch).
-3. Attention flow (agent shows attention state -> user clicks and responds in terminal).
-4. Agent control flow (select agent -> stop/restart from contextual controls).
-5. Group interaction flow (multi-select + move/rally if available in your current build).
-
-Suggested lightweight release media:
-
-- 3-5 annotated screenshots for README.
-- One short GIF/video (20-45s) covering spawn, switch, attention, and stop.
-- Optional: one performance clip with many active agents (for example, 50-100).
-
 ## Stack
 
 - TypeScript (client + server)
@@ -428,4 +485,4 @@ assets/     Maps, character art
 
 ## License
 
-- Code is licensed under MIT (`LICENSE`).
+- Licensed under MIT.
