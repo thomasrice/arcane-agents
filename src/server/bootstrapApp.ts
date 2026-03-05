@@ -17,6 +17,7 @@ export async function bootstrap(): Promise<void> {
   const port = Number(process.env.ARCANE_AGENTS_API_PORT ?? context.config.server.port);
 
   server.listen(port, host, () => {
+    console.log(`[arcane-agents] using config file: ${context.paths.configPath}`);
     console.log(`[arcane-agents] server listening on http://${host}:${port}`);
   });
 

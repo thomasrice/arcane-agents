@@ -60,7 +60,15 @@ npm install -g arcane-agents
 arcane-agents init
 ```
 
-4) Edit `~/.config/arcane-agents/config.yaml` with your project paths and runtime commands.
+`arcane-agents start` also auto-creates a starter config if it is missing.
+
+4) Edit your config.
+
+```bash
+arcane-agents config edit
+```
+
+This opens `~/.config/arcane-agents/config.yaml` in `$VISUAL` or `$EDITOR`.
 
 5) Run setup checks.
 
@@ -116,11 +124,16 @@ npm install
 3) Create your user config.
 
 ```bash
-mkdir -p ~/.config/arcane-agents
-cp config.example.yaml ~/.config/arcane-agents/config.yaml
+npm run cli -- init
 ```
 
-4) Edit `~/.config/arcane-agents/config.yaml` with your own project paths and runtime commands.
+4) Edit your config.
+
+```bash
+npm run cli -- config edit
+```
+
+Or edit `~/.config/arcane-agents/config.yaml` directly.
 
 5) Start dev mode (client + server).
 
@@ -158,6 +171,14 @@ Config is loaded at server startup and merged in this order:
 3. `config.local.yaml`
 
 Changes require a server restart.
+
+### Config CLI helpers
+
+```bash
+arcane-agents config path  # print config and local override paths
+arcane-agents config show  # print config.yaml
+arcane-agents config edit  # open config.yaml in $VISUAL/$EDITOR
+```
 
 ### Top-level sections
 

@@ -1,75 +1,71 @@
-# Arcane Agents example config
+# Arcane Agents starter config
 #
-# Copy this file to:
+# Default location:
 #   ~/.config/arcane-agents/config.yaml
 #
-# Then customize project paths, runtimes, and shortcuts for your machine.
+# Helpful commands:
+#   arcane-agents config path   # print config file locations
+#   arcane-agents config show   # print current config
+#   arcane-agents config edit   # open config in your editor
+#
+# Customize project paths, runtimes, and shortcuts for your machine.
 
-# Projects available for spawning.
+# Minimal starter entries (safe defaults).
+# Add your real projects and runtimes below.
 projects:
-  app:
-    path: ~/code/my-app
-    shortName: app
-  api:
-    path: ~/code/my-api
-    shortName: api
-  docs:
-    path: ~/code/my-docs
-    shortName: docs
-  sandbox:
-    path: ~/code/sandbox
-    shortName: sbx
+  workspace:
+    path: "~"
+    shortName: ws
+    label: Home
 
-# Runtimes that can be launched inside a project directory.
 runtimes:
-  claude:
-    command: ["claude"]
-    label: Claude Code
-  opencode:
-    command: ["opencode"]
-    label: OpenCode
   shell:
     command: ["bash"]
     label: Shell
 
-# Quick-spawn buttons shown in the bottom bar.
 shortcuts:
-  - label: APP
-    project: app
-    runtime: opencode
-    hotkeys: ["Ctrl+1"]
-  - label: API
-    project: api
-    runtime: claude
-    hotkeys: ["Ctrl+2"]
-  - label: DOCS
-    project: docs
-    runtime: opencode
-    hotkeys: ["Ctrl+3"]
   - label: SH
-    project: sandbox
+    project: workspace
     runtime: shell
-    hotkeys: ["Ctrl+4"]
+    hotkeys: ["Ctrl+1"]
 
-# Optional shortcut with a command override and pinned avatar.
-  - label: Tests
-    project: app
-    runtime: shell
-    command: ["npm", "test", "--", "--watch"]
-    hotkeys: ["Ctrl+T"]
-    avatar: elder-wizard
-
-# Optional project discovery rules.
-discovery:
-  - name: code-projects
-    type: directories
-    path: ~/code
-    match: ".git"
-    exclude: ["node_modules", ".cache", "dist"]
-    maxDepth: 2
-  - name: app-worktrees
-    type: worktrees
-    path: ~/code/my-app
+# Optional examples:
+#
+# projects:
+#   app:
+#     path: ~/code/my-app
+#     shortName: app
+#
+# runtimes:
+#   claude:
+#     command: ["claude"]
+#     label: Claude Code
+#   opencode:
+#     command: ["opencode"]
+#     label: OpenCode
+#
+# shortcuts:
+#   - label: APP
+#     project: app
+#     runtime: opencode
+#     hotkeys: ["Ctrl+2"]
+#   - label: Tests
+#     project: app
+#     runtime: shell
+#     command: ["npm", "test", "--", "--watch"]
+#     hotkeys: ["Ctrl+T"]
+#     avatar: elder-wizard
+#
+# discovery:
+#   - name: code-projects
+#     type: directories
+#     path: ~/code
+#     match: ".git"
+#     exclude: ["node_modules", ".cache", "dist"]
+#     maxDepth: 2
+#   - name: app-worktrees
+#     type: worktrees
+#     path: ~/code/my-app
 
 # Backend runtime settings.
 backend:
