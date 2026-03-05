@@ -22,6 +22,7 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: "dist/client"
+    outDir: "dist/client",
+    target: "es2021"
   }
 });

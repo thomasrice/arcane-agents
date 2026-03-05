@@ -32,13 +32,21 @@ export class TerminalBridge {
       TERM: "xterm-256color"
     };
 
-    const terminal = pty.spawn("tmux", ["attach-session", "-t", tmuxTarget], {
-      name: "xterm-256color",
-      cols: 120,
-      rows: 36,
-      cwd: worker.projectPath,
-      env
-    });
+    let terminal: pty.IPty;
+    try {
+      terminal = pty.spawn("tmux", ["attach-session", "-t", tmuxTarget], {
+        name: "xterm-256color",
+        cols: 120,
+        rows: 36,
+        cwd: worker.projectPath,
+        env
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`[arcane-agents] terminal bridge failed to spawn pty for ${workerId}: ${detail}`);
+      socket.close(1011, "Failed to attach terminal");
+      return;
+    }
 
     terminal.onData((chunk) => {
       if (socket.readyState === socket.OPEN) {

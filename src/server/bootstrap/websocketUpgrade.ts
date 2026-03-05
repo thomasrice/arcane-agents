@@ -31,7 +31,15 @@ export function createWsServers(context: ServerContext): WsServers {
       return;
     }
 
-    context.terminalBridge.connect(workerId, socket);
+    try {
+      context.terminalBridge.connect(workerId, socket);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`[arcane-agents] terminal connection error for ${workerId}: ${detail}`);
+      if (socket.readyState === socket.OPEN) {
+        socket.close(1011, "Terminal connection failed");
+      }
+    }
   });
 
   return {
