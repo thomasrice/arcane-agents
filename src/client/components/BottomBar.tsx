@@ -11,6 +11,7 @@ interface BottomBarProps {
   onKillSelected: () => void;
   onRenameSelected: () => void;
   onToggleMovementMode: () => void;
+  onScatterSelected: () => void;
 }
 
 export function BottomBar({
@@ -23,7 +24,8 @@ export function BottomBar({
   onDeselect,
   onKillSelected,
   onRenameSelected,
-  onToggleMovementMode
+  onToggleMovementMode,
+  onScatterSelected
 }: BottomBarProps): JSX.Element {
   if (selectedWorkers.length > 0) {
     const stopped = selectedWorkers.every((worker) => worker.status === "stopped");
@@ -56,6 +58,11 @@ export function BottomBar({
         <button className="bar-btn" onClick={onToggleMovementMode}>
           {movementModeLabel === "Mixed" ? "Mode: Mixed" : `Mode: ${movementModeLabel}`}
         </button>
+        {selectedWorkers.length > 1 ? (
+          <button className="bar-btn" onClick={onScatterSelected}>
+            Scatter
+          </button>
+        ) : null}
         <button className="bar-btn" onClick={onRenameSelected}>
           Rename
         </button>

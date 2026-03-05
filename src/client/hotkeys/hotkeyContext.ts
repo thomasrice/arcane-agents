@@ -29,6 +29,7 @@ export interface AppHotkeyContext {
   onActivateRosterIndex: (index: number) => void;
   onKillRosterActive: () => void;
   onKillSelected: () => void;
+  onScatterSelected: () => void | Promise<void>;
   onToggleMovementModeSelected: () => void | Promise<void>;
   openRenameForWorkers: (workersToRename: Worker[]) => void;
   batchSpawnDialogOpen: boolean;

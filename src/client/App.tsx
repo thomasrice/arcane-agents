@@ -47,6 +47,8 @@ export default function App(): JSX.Element {
   const [rallyCommandSending, setRallyCommandSending] = useState(false);
   const [rallyCommandResultText, setRallyCommandResultText] = useState<string | undefined>(undefined);
   const [errorText, setErrorText] = useState<string | undefined>(undefined);
+  const [scatterMoveOrders, setScatterMoveOrders] = useState<Array<{ workerId: string; target: { x: number; y: number } }>>([]);
+  const [scatterMoveToken, setScatterMoveToken] = useState(0);
   const rallyCommandInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { config, workers, setWorkers, workersHydrated } = useArcaneAgentsData(setErrorText);
@@ -171,6 +173,27 @@ export default function App(): JSX.Element {
     return true;
   }, []);
 
+  const onScatterSelected = useCallback(() => {
+    if (selectedWorkers.length < 2) {
+      return;
+    }
+
+    const cx = selectedWorkers.reduce((sum, w) => sum + w.position.x, 0) / selectedWorkers.length;
+    const cy = selectedWorkers.reduce((sum, w) => sum + w.position.y, 0) / selectedWorkers.length;
+    const spread = 80 + selectedWorkers.length * 20;
+
+    const orders = selectedWorkers.map((worker) => ({
+      workerId: worker.id,
+      target: {
+        x: cx + (Math.random() - 0.5) * spread * 2,
+        y: cy + (Math.random() - 0.5) * spread * 2
+      }
+    }));
+
+    setScatterMoveOrders(orders);
+    setScatterMoveToken((t) => t + 1);
+  }, [selectedWorkers]);
+
   const updateMapColumnRatioFromPointer = useCallback(
     (clientX: number) => {
       const shell = appShellRef.current;
@@ -277,6 +300,7 @@ export default function App(): JSX.Element {
     onActivateRosterIndex,
     onKillRosterActive,
     onKillSelected,
+    onScatterSelected,
     onToggleMovementModeSelected,
     openRenameForWorkers,
     paletteOpen,
@@ -328,6 +352,8 @@ export default function App(): JSX.Element {
           onActivateWorker={onActivateWorker}
           onMoveOrderIssued={playMoveVoiceLine}
           onPositionCommit={onPositionCommit}
+          externalMoveOrders={scatterMoveOrders}
+          externalMoveOrderToken={scatterMoveToken}
           centerOnWorkerId={mapCenterWorkerId}
           centerRequestKey={mapCenterToken}
         />
@@ -355,6 +381,9 @@ export default function App(): JSX.Element {
           }}
           onToggleMovementMode={() => {
             void onToggleMovementModeSelected();
+          }}
+          onScatterSelected={() => {
+            void onScatterSelected();
           }}
         />
       </div>

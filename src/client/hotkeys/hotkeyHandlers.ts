@@ -362,6 +362,12 @@ export function handleActionHotkeys(event: KeyboardEvent, context: AppHotkeyCont
     return true;
   }
 
+  if (keyLower === "s" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && context.selectedWorkers.length > 1) {
+    event.preventDefault();
+    void context.onScatterSelected();
+    return true;
+  }
+
   if (isUnmodifiedEnter(event) && context.selectedWorkerId) {
     event.preventDefault();
     context.requestTerminalFocus();

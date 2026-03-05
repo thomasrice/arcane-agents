@@ -60,6 +60,8 @@ interface MapCanvasProps {
   onActivateWorker?: (workerId: string) => void;
   onMoveOrderIssued?: (workerId: string) => void;
   onPositionCommit: (workerId: string, position: WorkerPosition) => void;
+  externalMoveOrders?: Array<{ workerId: string; target: WorkerPosition }>;
+  externalMoveOrderToken?: number;
   centerOnWorkerId?: string;
   centerRequestKey?: number;
 }
@@ -128,12 +130,15 @@ export function MapCanvas({
   onActivateWorker,
   onMoveOrderIssued,
   onPositionCommit,
+  externalMoveOrders,
+  externalMoveOrderToken,
   centerOnWorkerId,
   centerRequestKey
 }: MapCanvasProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastCenterRequestRef = useRef<number | undefined>(undefined);
+  const lastExternalMoveOrderTokenRef = useRef<number | undefined>(undefined);
   const previousWorkerPositionsRef = useRef<Record<string, WorkerPosition>>({});
   const workerMovingUntilRef = useRef<Record<string, number>>({});
   const workerFacingRef = useRef<Record<string, SpriteDirection>>({});
@@ -830,6 +835,26 @@ export function MapCanvas({
     },
     [blockedTileKeys, mapData, onMoveOrderIssued]
   );
+
+  useEffect(() => {
+    if (
+      externalMoveOrderToken === undefined ||
+      externalMoveOrderToken === lastExternalMoveOrderTokenRef.current ||
+      !externalMoveOrders ||
+      externalMoveOrders.length === 0
+    ) {
+      return;
+    }
+
+    lastExternalMoveOrderTokenRef.current = externalMoveOrderToken;
+    const workersById = new Map(workers.map((w) => [w.id, w]));
+    for (const order of externalMoveOrders) {
+      const worker = workersById.get(order.workerId);
+      if (worker) {
+        issueManualMoveToWorld(worker, order.target);
+      }
+    }
+  }, [externalMoveOrderToken, externalMoveOrders, workers, issueManualMoveToWorld]);
 
   const commitWorkerPositions = useCallback(
     (workerIds: Iterable<string>, positions: Record<string, WorkerPosition>) => {
