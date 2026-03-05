@@ -97,7 +97,7 @@ export class OrchestratorService {
     const worker: Worker = {
       id: workerId,
       name: windowName,
-      displayName: plan.displayName,
+      displayName: deduplicateDisplayName(plan.displayName, currentWorkers),
       projectId: plan.projectId,
       projectPath: plan.project.path,
       runtimeId: plan.runtimeId,
@@ -456,5 +456,28 @@ export class OrchestratorService {
         ...this.discoveredProjects
       }
     };
+  }
+}
+
+function deduplicateDisplayName(baseName: string | undefined, workers: Worker[]): string | undefined {
+  if (!baseName) {
+    return undefined;
+  }
+
+  const existing = new Set(
+    workers
+      .map((w) => w.displayName)
+      .filter((n): n is string => typeof n === "string")
+  );
+
+  if (!existing.has(baseName)) {
+    return baseName;
+  }
+
+  for (let n = 2; ; n += 1) {
+    const candidate = `${baseName} ${n}`;
+    if (!existing.has(candidate)) {
+      return candidate;
+    }
   }
 }
