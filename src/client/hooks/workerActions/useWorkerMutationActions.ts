@@ -21,8 +21,14 @@ interface UseWorkerMutationActionsParams {
   showError: (error: unknown) => void;
 }
 
+export interface BatchSpawnItem {
+  input: WorkerSpawnInput;
+  displayName: string;
+}
+
 interface UseWorkerMutationActionsResult {
   runSpawn: (input: WorkerSpawnInput) => Promise<void>;
+  runBatchSpawn: (items: BatchSpawnItem[], onProgress: (done: number, total: number) => void) => Promise<void>;
   submitRename: (draft: string) => Promise<void>;
   onToggleMovementModeSelected: () => Promise<void>;
   onOpenSelectedInTerminal: () => Promise<void>;
@@ -62,6 +68,40 @@ export function useWorkerMutationActions({
       }
     },
     [applySelection, selectedWorkers, setPaletteOpen, setSpawnDialogOpen, setWorkers, showError]
+  );
+
+  const runBatchSpawn = useCallback(
+    async (items: BatchSpawnItem[], onProgress: (done: number, total: number) => void) => {
+      const spawnedWorkerIds: string[] = [];
+      let lastWorkerId: string | undefined;
+
+      for (let i = 0; i < items.length; i++) {
+        onProgress(i, items.length);
+        const item = items[i];
+        const spawnInput: WorkerSpawnInput = {
+          ...item.input,
+          displayName: item.displayName,
+          spawnNearWorkerIds: lastWorkerId ? [lastWorkerId] : selectedWorkers.map((w) => w.id).slice(0, 1)
+        };
+
+        try {
+          const worker = await spawnWorker(spawnInput);
+          setWorkers((currentWorkers) => upsertWorker(currentWorkers, worker));
+          spawnedWorkerIds.push(worker.id);
+          lastWorkerId = worker.id;
+        } catch (error) {
+          showError(error);
+          break;
+        }
+      }
+
+      onProgress(spawnedWorkerIds.length, items.length);
+
+      if (spawnedWorkerIds.length > 0) {
+        applySelection(spawnedWorkerIds, { center: true });
+      }
+    },
+    [applySelection, selectedWorkers, setWorkers, showError]
   );
 
   const submitRename = useCallback(async (draft: string) => {
@@ -143,6 +183,7 @@ export function useWorkerMutationActions({
 
   return {
     runSpawn,
+    runBatchSpawn,
     submitRename,
     onToggleMovementModeSelected,
     onOpenSelectedInTerminal,

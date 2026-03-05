@@ -30,7 +30,7 @@ export function resolveSpawnPlan(config: ResolvedConfig, input: WorkerSpawnInput
       runtimeId: shortcut.runtime,
       runtime,
       command: shortcut.command ?? runtime.command,
-      displayName: shortcut.label,
+      displayName: input.displayName ?? shortcut.label,
       avatar: shortcut.avatar
     };
   }
@@ -49,6 +49,7 @@ export function resolveSpawnPlan(config: ResolvedConfig, input: WorkerSpawnInput
     project,
     runtimeId: input.runtimeId,
     runtime,
-    command: input.command && input.command.length > 0 ? input.command : runtime.command
+    command: input.command && input.command.length > 0 ? input.command : runtime.command,
+    displayName: input.displayName
   };
 }

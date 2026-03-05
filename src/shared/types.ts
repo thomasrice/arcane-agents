@@ -106,6 +106,7 @@ export interface Worker {
 }
 
 interface WorkerSpawnPlacementInput {
+  displayName?: string;
   spawnNearWorkerIds?: string[];
 }
 

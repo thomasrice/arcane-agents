@@ -15,6 +15,7 @@ import {
   parseControlGroupDigit
 } from "./app/utils";
 import { BottomBar } from "./components/BottomBar";
+import { BatchSpawnDialog } from "./components/BatchSpawnDialog";
 import { CommandPalette } from "./components/CommandPalette";
 import { KillConfirmDialog } from "./components/KillConfirmDialog";
 import { MapCanvas } from "./components/MapCanvas";
@@ -36,6 +37,7 @@ import { buildShortcutHotkeyBindings, findMatchingShortcutIndexes } from "./hotk
 export default function App(): JSX.Element {
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [batchSpawnDialogOpen, setBatchSpawnDialogOpen] = useState(false);
   const [shortcutsOverlayOpen, setShortcutsOverlayOpen] = useState(false);
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [killConfirmWorkerIds, setKillConfirmWorkerIds] = useState<string[]>([]);
@@ -200,6 +202,7 @@ export default function App(): JSX.Element {
     renameTargetWorkers,
     killConfirmWorkers,
     runSpawn,
+    runBatchSpawn,
     closeRenameModal,
     closeKillConfirm,
     openRenameForWorkers,
@@ -250,6 +253,7 @@ export default function App(): JSX.Element {
   useAppHotkeys({
     activeWorkers,
     applySelection,
+    batchSpawnDialogOpen,
     clampNumber,
     closeKillConfirm,
     closeRenameModal,
@@ -287,6 +291,7 @@ export default function App(): JSX.Element {
     selectedWorkerId,
     selectedWorkerIds,
     selectedWorkers,
+    setBatchSpawnDialogOpen,
     setControlGroups,
     setFocusedSelectedWorkerId,
     setPaletteOpen,
@@ -449,6 +454,19 @@ export default function App(): JSX.Element {
           onSpawnProjectRuntime={(projectId, runtimeId) => {
             void runSpawn({ projectId, runtimeId });
           }}
+          onOpenBatchSpawn={() => {
+            setPaletteOpen(false);
+            setBatchSpawnDialogOpen(true);
+          }}
+        />
+      ) : null}
+
+      {config ? (
+        <BatchSpawnDialog
+          open={batchSpawnDialogOpen}
+          config={config}
+          onClose={() => setBatchSpawnDialogOpen(false)}
+          onBatchSpawn={runBatchSpawn}
         />
       ) : null}
 

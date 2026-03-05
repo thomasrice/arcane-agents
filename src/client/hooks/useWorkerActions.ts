@@ -3,7 +3,7 @@ import type { Worker, WorkerSpawnInput } from "../../shared/types";
 import type { RosterEntry } from "../app/types";
 import { useWorkerActionUiState } from "./workerActions/useWorkerActionUiState";
 import { useWorkerKillActions } from "./workerActions/useWorkerKillActions";
-import { useWorkerMutationActions } from "./workerActions/useWorkerMutationActions";
+import { useWorkerMutationActions, type BatchSpawnItem } from "./workerActions/useWorkerMutationActions";
 import { useWorkerRallyActions } from "./workerActions/useWorkerRallyActions";
 
 interface UseWorkerActionsParams {
@@ -43,6 +43,7 @@ interface UseWorkerActionsResult {
   renameTargetWorkers: Worker[];
   killConfirmWorkers: Worker[];
   runSpawn: (input: WorkerSpawnInput) => Promise<void>;
+  runBatchSpawn: (items: BatchSpawnItem[], onProgress: (done: number, total: number) => void) => Promise<void>;
   closeRenameModal: () => void;
   closeKillConfirm: () => void;
   openRenameForWorkers: (workersToRename: Worker[]) => void;
@@ -111,7 +112,7 @@ export function useWorkerActions({
       setRenameDraft
     });
 
-  const { runSpawn, submitRename, onToggleMovementModeSelected, onOpenSelectedInTerminal, onPositionCommit } =
+  const { runSpawn, runBatchSpawn, submitRename, onToggleMovementModeSelected, onOpenSelectedInTerminal, onPositionCommit } =
     useWorkerMutationActions({
       setWorkers,
       selectedWorkers,
@@ -183,6 +184,7 @@ export function useWorkerActions({
     renameTargetWorkers,
     killConfirmWorkers,
     runSpawn,
+    runBatchSpawn,
     closeRenameModal,
     closeKillConfirm,
     openRenameForWorkers,

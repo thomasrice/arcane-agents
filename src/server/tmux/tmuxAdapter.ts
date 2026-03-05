@@ -253,16 +253,13 @@ export class TmuxAdapter {
 
     const normalizedText = text.replace(/\r\n?/g, "\n");
     if (normalizedText.length > 0) {
-      const lines = normalizedText.split("\n");
-      for (let index = 0; index < lines.length; index += 1) {
-        const line = lines[index] ?? "";
-        if (line.length > 0) {
-          await this.runTmux(["send-keys", "-t", target, "-l", line]);
-        }
-
-        if (index < lines.length - 1) {
-          await this.runTmux(["send-keys", "-t", target, "Enter"]);
-        }
+      const isMultiline = normalizedText.includes("\n");
+      if (isMultiline) {
+        await this.runTmux(["send-keys", "-t", target, "-l", "\x1b[200~"]);
+        await this.runTmux(["send-keys", "-t", target, "-l", normalizedText]);
+        await this.runTmux(["send-keys", "-t", target, "-l", "\x1b[201~"]);
+      } else {
+        await this.runTmux(["send-keys", "-t", target, "-l", normalizedText]);
       }
     }
 

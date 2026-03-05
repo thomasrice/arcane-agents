@@ -31,6 +31,7 @@ export interface AppHotkeyContext {
   onKillSelected: () => void;
   onToggleMovementModeSelected: () => void | Promise<void>;
   openRenameForWorkers: (workersToRename: Worker[]) => void;
+  batchSpawnDialogOpen: boolean;
   paletteOpen: boolean;
   parseControlGroupDigit: (event: KeyboardEvent) => number | undefined;
   renameModalOpen: boolean;
@@ -45,6 +46,7 @@ export interface AppHotkeyContext {
   selectedWorkers: Worker[];
   setControlGroups: Dispatch<SetStateAction<ControlGroupMap>>;
   setFocusedSelectedWorkerId: Dispatch<SetStateAction<string | undefined>>;
+  setBatchSpawnDialogOpen: Dispatch<SetStateAction<boolean>>;
   setPaletteOpen: Dispatch<SetStateAction<boolean>>;
   setRosterActiveIndex: Dispatch<SetStateAction<number>>;
   setSelectedGroupActiveIndex: Dispatch<SetStateAction<number>>;

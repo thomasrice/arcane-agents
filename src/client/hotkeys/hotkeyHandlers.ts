@@ -33,6 +33,12 @@ export function handleSystemHotkeys(event: KeyboardEvent, context: AppHotkeyCont
       return true;
     }
 
+    if (context.batchSpawnDialogOpen) {
+      event.preventDefault();
+      context.setBatchSpawnDialogOpen(false);
+      return true;
+    }
+
     if (context.shortcutsOverlayOpen) {
       event.preventDefault();
       context.setShortcutsOverlayOpen(false);
@@ -60,6 +66,7 @@ export function handleSystemHotkeys(event: KeyboardEvent, context: AppHotkeyCont
   if (context.isTerminalEscapeShortcut(event)) {
     if (
       !context.renameModalOpen &&
+      !context.batchSpawnDialogOpen &&
       !context.shortcutsOverlayOpen &&
       !context.paletteOpen &&
       !context.spawnDialogOpen &&
@@ -84,6 +91,7 @@ export function handleSystemHotkeys(event: KeyboardEvent, context: AppHotkeyCont
 
     if (
       !context.renameModalOpen &&
+      !context.batchSpawnDialogOpen &&
       !context.shortcutsOverlayOpen &&
       !context.paletteOpen &&
       !context.spawnDialogOpen &&

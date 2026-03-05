@@ -14,6 +14,7 @@ export function parseSpawnInput(body: unknown): WorkerSpawnInput {
 
   const record = body;
   const spawnNearWorkerIds = parseSpawnNearWorkerIds(record);
+  const displayName = parseDisplayName(record);
 
   if (typeof record.shortcutIndex !== "undefined") {
     if (typeof record.shortcutIndex !== "number" || !Number.isInteger(record.shortcutIndex) || record.shortcutIndex < 0) {
@@ -22,6 +23,7 @@ export function parseSpawnInput(body: unknown): WorkerSpawnInput {
 
     return {
       shortcutIndex: record.shortcutIndex,
+      displayName,
       spawnNearWorkerIds
     };
   }
@@ -32,6 +34,7 @@ export function parseSpawnInput(body: unknown): WorkerSpawnInput {
       projectId: record.projectId,
       runtimeId: record.runtimeId,
       command,
+      displayName,
       spawnNearWorkerIds
     };
   }
@@ -40,6 +43,19 @@ export function parseSpawnInput(body: unknown): WorkerSpawnInput {
     "Invalid spawn request: expected shortcutIndex or projectId+runtimeId.",
     "spawn_invalid_payload"
   );
+}
+
+function parseDisplayName(record: Record<string, unknown>): string | undefined {
+  if (typeof record.displayName === "undefined") {
+    return undefined;
+  }
+
+  if (typeof record.displayName !== "string") {
+    throw validationError("displayName must be a string when provided.", "spawn_invalid_display_name");
+  }
+
+  const trimmed = record.displayName.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function parseSpawnNearWorkerIds(record: Record<string, unknown>): string[] | undefined {

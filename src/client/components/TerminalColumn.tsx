@@ -152,13 +152,9 @@ export function TerminalColumn({
                 onRallyCommandDraftChange(event.target.value);
               }}
               onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.shiftKey &&
-                  !event.ctrlKey &&
-                  !event.metaKey &&
-                  !event.altKey
-                ) {
+                const bare = !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+                const ctrlOnly = (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey;
+                if (event.key === "Enter" && (bare || ctrlOnly)) {
                   event.preventDefault();
                   void onSendRallyCommand();
                 }

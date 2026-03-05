@@ -6,6 +6,7 @@ interface CommandPaletteProps {
   config: ResolvedConfig;
   onSpawnShortcut: (shortcutIndex: number) => void;
   onSpawnProjectRuntime: (projectId: string, runtimeId: string) => void;
+  onOpenBatchSpawn: () => void;
   onClose: () => void;
 }
 
@@ -22,6 +23,7 @@ export function CommandPalette({
   config,
   onSpawnShortcut,
   onSpawnProjectRuntime,
+  onOpenBatchSpawn,
   onClose
 }: CommandPaletteProps): JSX.Element | null {
   const [query, setQuery] = useState("");
@@ -30,6 +32,14 @@ export function CommandPalette({
 
   const items = useMemo<PaletteItem[]>(() => {
     const nextItems: PaletteItem[] = [];
+
+    nextItems.push({
+      id: "meta-batch-spawn",
+      label: "Batch Spawn...",
+      subLabel: "Spawn many agents from a name list",
+      searchText: "batch spawn names list multiple",
+      run: () => onOpenBatchSpawn()
+    });
 
     config.shortcuts.forEach((shortcut, index) => {
       nextItems.push({
@@ -54,7 +64,7 @@ export function CommandPalette({
     }
 
     return nextItems;
-  }, [config, onSpawnProjectRuntime, onSpawnShortcut]);
+  }, [config, onOpenBatchSpawn, onSpawnProjectRuntime, onSpawnShortcut]);
 
   const filteredItems = useMemo(() => {
     const term = query.trim().toLowerCase();
