@@ -26,6 +26,9 @@ function createConfig(): ResolvedConfig {
         pollIntervalMs: 2500
       }
     },
+    status: {
+      interactiveCommands: []
+    },
     server: {
       host: "127.0.0.1",
       port: 7600

@@ -113,7 +113,8 @@ function createSignals(): WorkerStatusSignals {
       lastOutputSignature: "",
       lastOutputChangeAtMs: Date.now()
     } as PaneObservation,
-    transcriptSnapshot: undefined
+    transcriptSnapshot: undefined,
+    interactiveCommands: new Set<string>()
   };
 }
 
