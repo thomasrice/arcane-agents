@@ -54,8 +54,12 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps): JSX.El
             <span>Pan map</span>
           </div>
           <div className="shortcut-row">
-            <kbd>[ / ] / =</kbd>
-            <span>Resize columns or reset split</span>
+            <kbd>[ / ] / Shift+[ / Shift+] / =</kbd>
+            <span>Resize columns, jump split to edge, or reset split</span>
+          </div>
+          <div className="shortcut-row">
+            <kbd>Left-drag divider</kbd>
+            <span>Drag to resize map and terminal columns</span>
           </div>
           <div className="shortcut-row">
             <kbd>Enter</kbd>

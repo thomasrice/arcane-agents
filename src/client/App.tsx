@@ -1,7 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   killFadeDurationMs,
-  mapColumnRatioStep
+  mapColumnRatioStep,
+  maxMapColumnRatio,
+  minMapColumnRatio,
+  splitPaneDividerWidthPx
 } from "./app/constants";
 import type { RosterEntry } from "./app/types";
 import {
@@ -53,9 +56,14 @@ export default function App(): JSX.Element {
     setControlGroups,
     controlGroupByDigitRef,
     mapColumnRatio,
+    setMapColumnRatio,
     nudgeMapColumnRatio,
     resetMapColumnRatio
   } = useLayoutAndControlGroups(activeWorkers, workersHydrated);
+
+  const appShellRef = useRef<HTMLDivElement | null>(null);
+  const splitDividerPointerIdRef = useRef<number | undefined>(undefined);
+  const [splitDividerDragging, setSplitDividerDragging] = useState(false);
 
   const summonShortcuts = useMemo(() => config?.shortcuts ?? [], [config]);
   const shortcutHotkeyBindings = useMemo(() => buildShortcutHotkeyBindings(summonShortcuts), [summonShortcuts]);
@@ -152,6 +160,33 @@ export default function App(): JSX.Element {
     input.setSelectionRange(cursor, cursor);
     return true;
   }, []);
+
+  const updateMapColumnRatioFromPointer = useCallback(
+    (clientX: number) => {
+      const shell = appShellRef.current;
+      if (!shell) {
+        return;
+      }
+
+      const bounds = shell.getBoundingClientRect();
+      const availableWidth = Math.max(1, bounds.width - splitPaneDividerWidthPx);
+      const pointerOffsetX = clientX - bounds.left - splitPaneDividerWidthPx / 2;
+      const nextRatio = clampNumber(pointerOffsetX / availableWidth, minMapColumnRatio, maxMapColumnRatio);
+      setMapColumnRatio(nextRatio);
+    },
+    [setMapColumnRatio]
+  );
+
+  useEffect(() => {
+    if (!splitDividerDragging) {
+      return;
+    }
+
+    document.body.classList.add("split-pane-dragging");
+    return () => {
+      document.body.classList.remove("split-pane-dragging");
+    };
+  }, [splitDividerDragging]);
 
   const {
     renameTargetWorkers,
@@ -258,9 +293,10 @@ export default function App(): JSX.Element {
 
   return (
     <div
+      ref={appShellRef}
       className="app-shell"
       style={{
-        gridTemplateColumns: `minmax(380px, ${mapColumnRatio.toFixed(3)}fr) minmax(360px, ${(1 - mapColumnRatio).toFixed(3)}fr)`
+        gridTemplateColumns: `minmax(0px, ${mapColumnRatio.toFixed(3)}fr) ${splitPaneDividerWidthPx}px minmax(0px, ${(1 - mapColumnRatio).toFixed(3)}fr)`
       }}
     >
       <div className="map-column">
@@ -308,6 +344,55 @@ export default function App(): JSX.Element {
           }}
         />
       </div>
+
+      <div
+        className={`layout-divider${splitDividerDragging ? " layout-divider-active" : ""}`}
+        role="separator"
+        aria-label="Resize map and terminal columns"
+        aria-orientation="vertical"
+        onPointerDown={(event) => {
+          if (event.button !== 0) {
+            return;
+          }
+
+          event.preventDefault();
+          splitDividerPointerIdRef.current = event.pointerId;
+          setSplitDividerDragging(true);
+          event.currentTarget.setPointerCapture(event.pointerId);
+          updateMapColumnRatioFromPointer(event.clientX);
+        }}
+        onPointerMove={(event) => {
+          if (splitDividerPointerIdRef.current !== event.pointerId) {
+            return;
+          }
+
+          event.preventDefault();
+          updateMapColumnRatioFromPointer(event.clientX);
+        }}
+        onPointerUp={(event) => {
+          if (splitDividerPointerIdRef.current !== event.pointerId) {
+            return;
+          }
+
+          event.preventDefault();
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+          splitDividerPointerIdRef.current = undefined;
+          setSplitDividerDragging(false);
+        }}
+        onPointerCancel={(event) => {
+          if (splitDividerPointerIdRef.current !== event.pointerId) {
+            return;
+          }
+
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+          splitDividerPointerIdRef.current = undefined;
+          setSplitDividerDragging(false);
+        }}
+      />
 
       <TerminalColumn
         activeWorkers={activeWorkers}

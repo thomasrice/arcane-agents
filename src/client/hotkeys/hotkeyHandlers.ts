@@ -110,19 +110,22 @@ export function handleSystemHotkeys(event: KeyboardEvent, context: AppHotkeyCont
   }
 
   if (
-    (event.key === "[" || event.key === "]" || event.key === "=") &&
+    (event.code === "BracketLeft" ||
+      event.code === "BracketRight" ||
+      (event.key === "=" && !event.shiftKey)) &&
     !event.ctrlKey &&
     !event.metaKey &&
     !event.altKey &&
-    !event.shiftKey &&
     !context.isEditableTarget(event.target) &&
     !context.isTerminalTarget(event.target)
   ) {
     event.preventDefault();
-    if (event.key === "=") {
-      context.resetMapColumnRatio();
+    if (event.code === "BracketLeft") {
+      context.nudgeMapColumnRatio(event.shiftKey ? -1 : -context.mapColumnRatioStep);
+    } else if (event.code === "BracketRight") {
+      context.nudgeMapColumnRatio(event.shiftKey ? 1 : context.mapColumnRatioStep);
     } else {
-      context.nudgeMapColumnRatio(event.key === "]" ? context.mapColumnRatioStep : -context.mapColumnRatioStep);
+      context.resetMapColumnRatio();
     }
     return true;
   }

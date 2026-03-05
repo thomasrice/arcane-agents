@@ -15,6 +15,7 @@ interface UseLayoutAndControlGroupsResult {
   setControlGroups: Dispatch<SetStateAction<ControlGroupMap>>;
   controlGroupByDigitRef: MutableRefObject<ControlGroupMap>;
   mapColumnRatio: number;
+  setMapColumnRatio: (value: number) => void;
   nudgeMapColumnRatio: (delta: number) => void;
   resetMapColumnRatio: () => void;
 }
@@ -75,6 +76,12 @@ export function useLayoutAndControlGroups(
     setControlGroups,
     controlGroupByDigitRef,
     mapColumnRatio,
+    setMapColumnRatio: (value) => {
+      setMapColumnRatio((current) => {
+        const clamped = clampNumber(value, minMapColumnRatio, maxMapColumnRatio);
+        return clamped === current ? current : clamped;
+      });
+    },
     nudgeMapColumnRatio: (delta) => {
       setMapColumnRatio((current) => clampNumber(current + delta, minMapColumnRatio, maxMapColumnRatio));
     },

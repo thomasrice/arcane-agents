@@ -26,8 +26,37 @@ body {
   height: 100%;
   display: grid;
   grid-template-columns: minmax(380px, 1.55fr) minmax(360px, 1fr);
-  gap: 10px;
+  gap: 0;
   padding: 10px;
+}
+
+.layout-divider {
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.layout-divider::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 2px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background: rgba(214, 230, 186, 0.24);
+  transition: background-color 110ms ease;
+}
+
+.layout-divider:hover::before,
+.layout-divider.layout-divider-active::before {
+  background: rgba(234, 243, 214, 0.68);
+}
+
+body.split-pane-dragging {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .map-column {
