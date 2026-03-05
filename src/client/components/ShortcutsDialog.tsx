@@ -54,6 +54,10 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps): JSX.El
             <span>Pan map</span>
           </div>
           <div className="shortcut-row">
+            <kbd>+ / -</kbd>
+            <span>Zoom map in or out (outside terminal focus)</span>
+          </div>
+          <div className="shortcut-row">
             <kbd>[ / ] / Shift+[ / Shift+] / =</kbd>
             <span>Resize columns, jump split to edge, or reset split</span>
           </div>

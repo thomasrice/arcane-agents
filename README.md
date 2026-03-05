@@ -181,6 +181,7 @@ Default URLs:
 - `Shift+K`: kill highlighted roster agent (then `Enter` to confirm).
 - `R`: rename selected agent.
 - `M`: toggle movement mode for selected agent(s).
+- `+` / `-`: zoom map in or out (outside terminal focus).
 - `[` / `]`: resize split; `Shift+[` / `Shift+]`: jump split to edge; `=`: reset split.
 - Left-drag the divider between map and terminal panes to resize.
 - `Esc`: close overlays/dialogs, then deselect.

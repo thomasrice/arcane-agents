@@ -43,6 +43,7 @@ import {
   type ActivityOverlayAnimationState
 } from "../map/workerVisualState";
 import { useMapKeyboardMotion } from "../map/runtime/useMapKeyboardMotion";
+import { isEditableTarget, isElementInTerminalPanel } from "../app/utils";
 
 interface MapCanvasProps {
   workers: Worker[];
@@ -1227,21 +1228,52 @@ export function MapCanvas({
     }
   };
 
+  const zoomViewportAroundPoint = useCallback(
+    (point: { x: number; y: number }, zoomDelta: number) => {
+      setConstrainedViewport((current) => {
+        const worldBeforeZoom = screenToWorld(point.x, point.y, current);
+        const nextScale = clamp(current.scale * zoomDelta, 0.05, maxZoomScale);
+        return {
+          scale: nextScale,
+          offsetX: point.x - worldBeforeZoom.x * nextScale,
+          offsetY: point.y - worldBeforeZoom.y * nextScale
+        };
+      });
+    },
+    [setConstrainedViewport]
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+
+      if (isEditableTarget(event.target) || isElementInTerminalPanel(event.target)) {
+        return;
+      }
+
+      const zoomIn = event.key === "+" || (event.code === "Equal" && event.shiftKey) || event.code === "NumpadAdd";
+      const zoomOut = event.key === "-" || (event.code === "Minus" && !event.shiftKey) || event.code === "NumpadSubtract";
+      if (!zoomIn && !zoomOut) {
+        return;
+      }
+
+      event.preventDefault();
+      zoomViewportAroundPoint({ x: canvasSize.width / 2, y: canvasSize.height / 2 }, zoomIn ? 1.1 : 0.9);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [canvasSize.height, canvasSize.width, zoomViewportAroundPoint]);
+
   const handleWheel = (event: WheelEvent<HTMLCanvasElement>) => {
     event.preventDefault();
 
     const point = readPointerOnCanvas(event);
-    const worldBeforeZoom = screenToWorld(point.x, point.y, viewport);
-    const zoomDelta = event.deltaY < 0 ? 1.1 : 0.9;
-
-    setConstrainedViewport((current) => {
-      const nextScale = clamp(current.scale * zoomDelta, 0.05, maxZoomScale);
-      return {
-        scale: nextScale,
-        offsetX: point.x - worldBeforeZoom.x * nextScale,
-        offsetY: point.y - worldBeforeZoom.y * nextScale
-      };
-    });
+    zoomViewportAroundPoint(point, event.deltaY < 0 ? 1.1 : 0.9);
   };
 
   return (
