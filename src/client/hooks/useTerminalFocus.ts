@@ -5,8 +5,9 @@ export function useTerminalFocus(terminalWorkerId: string | undefined): boolean 
   const [terminalFocused, setTerminalFocused] = useState(false);
 
   useEffect(() => {
-    if (!terminalWorkerId) {
-      setTerminalFocused(false);
+    setTerminalFocused(false);
+    if (document.activeElement instanceof HTMLElement && document.activeElement.closest(".terminal-panel")) {
+      document.activeElement.blur();
     }
   }, [terminalWorkerId]);
 
