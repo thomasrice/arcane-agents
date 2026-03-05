@@ -26,33 +26,64 @@ Each agent appears as a character on a 2D map, and selecting one opens its live 
   - `git` (for worktree/discovery workflows)
   - `xdg-terminal-exec` (Linux external terminal button)
 
-## Package Install (Planned)
+## Install (Non-Developers)
 
-Arcane Agents now includes a CLI entrypoint intended for global package installs:
+1) Install system dependencies.
 
-- `arcane-agents` (same as `arcane-agents start`)
-- `arcane-agents init` (writes `~/.config/arcane-agents/config.yaml` from template)
-- `arcane-agents doctor` (checks dependencies and configured runtime commands)
-
-The package is not published yet, but you can test the exact install flow locally:
+Linux (Debian/Ubuntu):
 
 ```bash
-npm run build
-npm pack
-npm install -g ./arcane-agents-0.1.0.tgz
+sudo apt update
+sudo apt install -y tmux git
+```
 
+macOS (Homebrew):
+
+```bash
+brew install tmux git
+```
+
+Windows:
+
+- Install WSL2 and Ubuntu.
+- Run the Linux setup steps inside WSL.
+
+2) Install Arcane Agents globally.
+
+```bash
+npm install -g arcane-agents
+```
+
+3) Create your user config.
+
+```bash
 arcane-agents init
+```
+
+4) Edit `~/.config/arcane-agents/config.yaml` with your project paths and runtime commands.
+
+5) Run setup checks.
+
+```bash
 arcane-agents doctor
+```
+
+6) Start Arcane Agents.
+
+```bash
 arcane-agents
 ```
 
-To remove the global test install:
+7) Open `http://127.0.0.1:7600`.
+
+Optional maintenance commands:
 
 ```bash
-npm uninstall -g arcane-agents
+npm install -g arcane-agents@latest  # upgrade
+npm uninstall -g arcane-agents       # uninstall
 ```
 
-## Install From Source
+## Run Locally (Developers)
 
 1) Install system dependencies.
 
