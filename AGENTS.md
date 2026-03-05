@@ -43,6 +43,14 @@ User config lives at `~/.config/arcane-agents/config.yaml`. See `config.example.
 
 State is stored at `~/.local/state/arcane-agents/` (SQLite DB + runtime metadata).
 
+## Dev Server Hot Reload
+
+`tsx watch` may not detect file changes made by external processes (e.g. Claude Code editing files). After making code changes, force a reload:
+
+```bash
+touch src/server/index.ts
+```
+
 ## Development Notes
 
 - The plan.md has detailed implementation phases with checkbox task lists. Work through them in order.

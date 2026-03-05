@@ -48,10 +48,10 @@ export async function resolveTranscriptPath({
       }
     }
 
-    const latest = await findLatestTranscriptFile(transcriptDir, nowMs);
-    if (latest) {
+    const match = await findMatchingTranscriptFile(transcriptDir, nowMs, state.claudeSessionStartAtMs);
+    if (match) {
       state.nextTranscriptLookupAtMs = 0;
-      return latest;
+      return match;
     }
   }
 
@@ -96,37 +96,100 @@ function buildTranscriptCandidateDirs(workerProjectPath: string, paneCurrentPath
   return [...unique];
 }
 
-async function findLatestTranscriptFile(directoryPath: string, nowMs: number): Promise<string | undefined> {
-  let latestPath: string | undefined;
-  let latestMtimeMs = 0;
+const sessionMatchWindowMs = 10_000;
 
+interface TranscriptCandidate {
+  fullPath: string;
+  mtimeMs: number;
+  firstRecordTimestampMs: number | undefined;
+}
+
+async function findMatchingTranscriptFile(
+  directoryPath: string,
+  nowMs: number,
+  claudeSessionStartAtMs: number | undefined
+): Promise<string | undefined> {
   const entries = await fs.readdir(directoryPath, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) {
-      continue;
-    }
+  const jsonlEntries = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"));
 
-    const fullPath = path.join(directoryPath, entry.name);
-    const stats = await fs.stat(fullPath);
-    if (!stats.isFile()) {
-      continue;
-    }
-
-    if (stats.mtimeMs > latestMtimeMs) {
-      latestMtimeMs = stats.mtimeMs;
-      latestPath = fullPath;
-    }
-  }
-
-  if (!latestPath) {
+  if (jsonlEntries.length === 0) {
     return undefined;
   }
 
-  if (nowMs - latestMtimeMs > maxRecentTranscriptAgeMs) {
+  const candidates = (
+    await Promise.all(
+      jsonlEntries.map(async (entry) => {
+        const fullPath = path.join(directoryPath, entry.name);
+        const stats = await fs.stat(fullPath);
+        if (nowMs - stats.mtimeMs > maxRecentTranscriptAgeMs) {
+          return undefined;
+        }
+
+        return { fullPath, mtimeMs: stats.mtimeMs, firstRecordTimestampMs: undefined as number | undefined };
+      })
+    )
+  ).filter((c): c is TranscriptCandidate => c !== undefined);
+
+  if (candidates.length === 0) {
     return undefined;
   }
 
-  return latestPath;
+  if (claudeSessionStartAtMs) {
+    await Promise.all(
+      candidates.map(async (candidate) => {
+        candidate.firstRecordTimestampMs = await readFirstRecordTimestamp(candidate.fullPath);
+      })
+    );
+
+    const matched = findClosestByStartTime(candidates, claudeSessionStartAtMs);
+    if (matched) {
+      return matched;
+    }
+  }
+
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return candidates[0]?.fullPath;
+}
+
+function findClosestByStartTime(candidates: TranscriptCandidate[], targetMs: number): string | undefined {
+  let bestPath: string | undefined;
+  let bestDistance = Infinity;
+
+  for (const candidate of candidates) {
+    if (candidate.firstRecordTimestampMs === undefined) {
+      continue;
+    }
+
+    const distance = Math.abs(candidate.firstRecordTimestampMs - targetMs);
+    if (distance <= sessionMatchWindowMs && distance < bestDistance) {
+      bestDistance = distance;
+      bestPath = candidate.fullPath;
+    }
+  }
+
+  return bestPath;
+}
+
+async function readFirstRecordTimestamp(filePath: string): Promise<number | undefined> {
+  try {
+    const chunk = await readFileRange(filePath, 0, 4096);
+    const newlineIndex = chunk.indexOf("\n");
+    const firstLine = newlineIndex >= 0 ? chunk.slice(0, newlineIndex) : chunk;
+    if (!firstLine.trim()) {
+      return undefined;
+    }
+
+    const record = JSON.parse(firstLine) as Record<string, unknown>;
+    const timestamp = record.timestamp;
+    if (typeof timestamp === "string") {
+      const parsed = Date.parse(timestamp);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
 }
 
 async function readFileRange(filePath: string, startOffset: number, length: number): Promise<string> {

@@ -43,7 +43,7 @@ export async function collectWorkerStatusSignals({
 
   const [output, transcriptSnapshot] = await Promise.all([
     tmux.capturePane(worker.tmuxRef, capturePaneLineCount(worker, paneState.currentCommand.toLowerCase())),
-    claudeTranscript.poll(worker, paneState.currentCommand, paneState.currentPath)
+    claudeTranscript.poll(worker, paneState.currentCommand, paneState.currentPath, paneState.panePid)
   ]);
   const observation = observePane(paneObservation, worker.id, paneState.currentCommand, output);
 

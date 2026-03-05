@@ -18,6 +18,7 @@ interface PaneState {
   currentCommand: string;
   isDead: boolean;
   currentPath?: string;
+  panePid?: number;
 }
 
 interface StopOptions {
@@ -280,14 +281,16 @@ export class TmuxAdapter {
       "-t",
       this.target(ref),
       "-F",
-      "#{pane_current_command}\t#{pane_dead}\t#{pane_current_path}"
+      "#{pane_current_command}\t#{pane_dead}\t#{pane_current_path}\t#{pane_pid}"
     ]);
 
-    const [currentCommand = "", deadFlag = "0", currentPath = ""] = firstLine(output).split("\t");
+    const [currentCommand = "", deadFlag = "0", currentPath = "", panePidRaw = ""] = firstLine(output).split("\t");
+    const panePid = Number.parseInt(panePidRaw, 10);
     return {
       currentCommand,
       isDead: deadFlag === "1",
-      currentPath: currentPath.trim().length > 0 ? currentPath : undefined
+      currentPath: currentPath.trim().length > 0 ? currentPath : undefined,
+      panePid: Number.isFinite(panePid) && panePid > 0 ? panePid : undefined
     };
   }
 

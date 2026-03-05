@@ -6,22 +6,35 @@ import {
 } from "./claudeTranscript/accumulator";
 import { collectTranscriptInputLines, resolveTranscriptPath } from "./claudeTranscript/io";
 import { extractTranscriptRecords } from "./claudeTranscript/parser";
+import { findClaudeSessionStartTimeMs } from "./claudeTranscript/process";
 import { buildSnapshot } from "./claudeTranscript/snapshot";
 import type { ClaudeStatusSnapshot, ClaudeTranscriptState } from "./claudeTranscript/types";
 import { isLikelyClaudeSession } from "./runtime/sessionDetection";
 
 export type { ClaudeStatusSnapshot } from "./claudeTranscript/types";
 
+const failedSessionLookupSentinel = 0;
+
 export class ClaudeTranscriptTracker {
   private readonly states = new Map<string, ClaudeTranscriptState>();
 
-  async poll(worker: Worker, paneCurrentCommand: string, paneCurrentPath?: string): Promise<ClaudeStatusSnapshot | undefined> {
+  async poll(
+    worker: Worker,
+    paneCurrentCommand: string,
+    paneCurrentPath?: string,
+    panePid?: number
+  ): Promise<ClaudeStatusSnapshot | undefined> {
     if (!isLikelyClaudeSession(worker, paneCurrentCommand.toLowerCase())) {
       this.states.delete(worker.id);
       return undefined;
     }
 
     const state = this.getState(worker.id);
+
+    if (panePid && state.claudeSessionStartAtMs === undefined) {
+      const startTime = await findClaudeSessionStartTimeMs(panePid).catch(() => undefined);
+      state.claudeSessionStartAtMs = startTime ?? failedSessionLookupSentinel;
+    }
 
     let transcriptPath: string | undefined;
     try {

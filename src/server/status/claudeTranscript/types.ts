@@ -10,6 +10,7 @@ export interface ActiveToolEntry {
 
 export interface ClaudeTranscriptState {
   transcriptPath?: string;
+  claudeSessionStartAtMs?: number;
   nextTranscriptLookupAtMs: number;
   fileOffset: number;
   lineBuffer: string;
