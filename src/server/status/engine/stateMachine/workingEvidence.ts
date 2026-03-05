@@ -4,6 +4,7 @@ import type { StatusReason, WorkerStatusSignalContext } from "../types";
 import { cachedActivityWindowMs, commandWarmupWindowMs, parsedStrongEvidenceWindowMs, stickyWorkingWindowMs } from "./constants";
 import {
   hasAnyWorkingEvidence,
+  isInteractiveCommand,
   isShellCommand,
   looksLikeActiveRuntimeText,
   pushMaybe,
@@ -88,6 +89,7 @@ function collectWorkingEvidence(context: WorkerStatusSignalContext, hasRecoverab
   if (
     context.commandQuietForMs <= commandWarmupWindowMs &&
     !isShellCommand(context.commandLower) &&
+    !isInteractiveCommand(context) &&
     !context.parsed.activity.needsInput &&
     !context.parsed.activity.hasError
   ) {

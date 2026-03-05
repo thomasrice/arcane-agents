@@ -48,6 +48,7 @@ export interface WorkerStatusSignalContext {
   outputQuietForMs: number;
   commandQuietForMs: number;
   workerAgeMs: number;
+  interactiveCommands: ReadonlySet<string>;
 }
 
 export const shellCommands = new Set(["bash", "zsh", "fish", "sh", "nu", "pwsh"]);

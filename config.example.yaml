@@ -67,6 +67,28 @@ shortcuts:
 #     type: worktrees
 #     path: ~/code/my-app
 
+# Status detection settings.
+#
+# interactiveCommands: programs where terminal output changes are user-driven
+# (scrolling, status bars, etc.) and should not trigger working/idle transitions.
+# Set this to replace defaults entirely, or use extraInteractiveCommands to add
+# to the defaults without replacing them.
+#
+# Default interactive commands:
+#   nvim, vim, vi, nano, helix, hx, emacs, emacsclient, less, more, man,
+#   htop, btop, top, watch, lazygit, lazydocker, ranger, nnn, lf, yazi, tmux
+status:
+  # Replace the default list entirely:
+  # interactiveCommands:
+  #   - nvim
+  #   - vim
+  #   - my-custom-editor
+  #
+  # Or extend the defaults with additional commands:
+  # extraInteractiveCommands:
+  #   - my-custom-editor
+  #   - my-other-tool
+
 # Audio playback settings.
 audio:
   enableSound: true

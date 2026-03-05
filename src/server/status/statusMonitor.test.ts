@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Worker } from "../../shared/types";
+import type { ResolvedConfig, Worker } from "../../shared/types";
 import type { WorkerRepository } from "../persistence/workerRepository";
 import type { TmuxAdapter } from "../tmux/tmuxAdapter";
 import type { PaneObservation } from "./paneObservation";
@@ -24,6 +24,8 @@ interface TestRepository {
   updateStatus: ReturnType<typeof vi.fn>;
   deleteWorker: ReturnType<typeof vi.fn>;
 }
+
+const testConfig = { status: { interactiveCommands: [] } } as unknown as ResolvedConfig;
 
 const defaultFacts: WorkerStatusEvaluation["facts"] = {
   command: "claude",
@@ -147,7 +149,7 @@ describe("StatusMonitor", () => {
     } as unknown as TmuxAdapter;
     const onWorkerUpdated = vi.fn();
     const onWorkerRemoved = vi.fn();
-    const monitor = new StatusMonitor(repository.repo, tmux, 1_000, onWorkerUpdated, onWorkerRemoved);
+    const monitor = new StatusMonitor(repository.repo, tmux, 1_000, onWorkerUpdated, onWorkerRemoved, testConfig);
 
     const statusSequence: Worker["status"][] = ["working", "attention", "error", "idle", "stopped"];
     let nextStatusIndex = 0;
@@ -196,7 +198,7 @@ describe("StatusMonitor", () => {
       })
     } as unknown as TmuxAdapter;
 
-    const monitor = new StatusMonitor(repository.repo, tmux, 1_000, () => undefined, () => undefined);
+    const monitor = new StatusMonitor(repository.repo, tmux, 1_000, () => undefined, () => undefined, testConfig);
     await monitor.pollOnce();
 
     expect(maxInFlight).toBeLessThanOrEqual(2);
@@ -208,7 +210,7 @@ describe("StatusMonitor", () => {
     const tmux = {
       windowExists: vi.fn(async () => true)
     } as unknown as TmuxAdapter;
-    const monitor = new StatusMonitor(repository.repo, tmux, 1_000, () => undefined, () => undefined);
+    const monitor = new StatusMonitor(repository.repo, tmux, 1_000, () => undefined, () => undefined, testConfig);
 
     evaluateMock.mockImplementation((worker) => {
       if (worker.id === "worker-1") {

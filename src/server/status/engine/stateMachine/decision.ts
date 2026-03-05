@@ -3,7 +3,7 @@ import { detectIdleBlocker, isPromptDominantOpenCodeIdle } from "./idleBlockers"
 import { classifyParserError } from "./parserErrorRules";
 import { resolveWorkingActivity } from "./activity";
 import { collectWorkingEvidence, shouldKeepStickyWorking } from "./workingEvidence";
-import { statusFreshnessWindowMs } from "./helpers";
+import { isInteractiveCommand, statusFreshnessWindowMs } from "./helpers";
 import { commandWarmupWindowMs } from "./constants";
 import type { StatusReason, WorkerStatusDecision, WorkerStatusSignalContext } from "../types";
 
@@ -33,7 +33,7 @@ function deriveWorkerStatusDecision(context: WorkerStatusSignalContext): WorkerS
     );
   }
 
-  if (context.parsed.activity.needsInput) {
+  if (context.parsed.activity.needsInput && !isInteractiveCommand(context)) {
     pushReason({ code: "parser-input-prompt", message: "Terminal output indicates input is required." });
     return finalizeDecision(
       context,
@@ -84,7 +84,7 @@ function deriveWorkerStatusDecision(context: WorkerStatusSignalContext): WorkerS
     );
   }
 
-  const parserErrorClassification = classifyParserError(context);
+  const parserErrorClassification = isInteractiveCommand(context) ? "none" : classifyParserError(context);
   if (parserErrorClassification === "fatal" && transcriptStatus !== "working") {
     pushReason({
       code: "parser-error-signal",

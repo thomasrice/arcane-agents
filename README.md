@@ -226,6 +226,7 @@ arcane-agents config edit  # open config.yaml in $VISUAL/$EDITOR
 - `shortcuts`: saved `project + runtime` combinations; can also include hotkeys.
 - `discovery`: optional auto-discovery rules for additional projects.
 - `avatars`: avatar selection settings (for example disabling specific avatar types from random allocation).
+- `status`: status detection settings (for example interactive command filtering).
 - `audio`: client sound settings.
 - `backend.tmux`: tmux session and status poll settings.
 - `server`: API bind host/port.
@@ -402,6 +403,39 @@ backend:
   tmux:
     sessionName: arcane-agents
     pollIntervalMs: 2500
+```
+
+### `status`
+
+Controls how Arcane Agents detects agent activity.
+
+- `interactiveCommands`: programs where terminal output changes are user-driven
+  (scrolling, status bar updates, etc.) and should not trigger `working`/`idle`
+  transitions. Setting this replaces the defaults entirely.
+- `extraInteractiveCommands`: additional commands to add to the default list
+  without replacing it.
+
+Default interactive commands: `nvim`, `vim`, `vi`, `nano`, `helix`, `hx`,
+`emacs`, `emacsclient`, `less`, `more`, `man`, `htop`, `btop`, `top`, `watch`,
+`lazygit`, `lazydocker`, `ranger`, `nnn`, `lf`, `yazi`, `tmux`.
+
+Example — replace defaults entirely:
+
+```yaml
+status:
+  interactiveCommands:
+    - nvim
+    - vim
+    - my-custom-editor
+```
+
+Example — extend defaults with extra commands:
+
+```yaml
+status:
+  extraInteractiveCommands:
+    - my-custom-editor
+    - my-other-tool
 ```
 
 ### `audio`

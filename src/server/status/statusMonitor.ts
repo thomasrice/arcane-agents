@@ -1,4 +1,4 @@
-import type { Worker } from "../../shared/types";
+import type { ResolvedConfig, Worker } from "../../shared/types";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { TmuxAdapter } from "../tmux/tmuxAdapter";
 import type { PaneObservation } from "./paneObservation";
@@ -104,14 +104,18 @@ export class StatusMonitor {
   private readonly recentPollTiming: StatusPollTimingSnapshot[] = [];
   private readonly traceMode: StatusTraceMode = resolveStatusTraceMode();
   private readonly workerPollConcurrency = resolveStatusPollConcurrency();
+  private readonly interactiveCommands: ReadonlySet<string>;
 
   constructor(
     private readonly workers: WorkerRepository,
     private readonly tmux: TmuxAdapter,
     private readonly pollIntervalMs: number,
     private readonly onWorkerUpdated: (worker: Worker) => void,
-    private readonly onWorkerRemoved: (workerId: string) => void
-  ) {}
+    private readonly onWorkerRemoved: (workerId: string) => void,
+    config: ResolvedConfig
+  ) {
+    this.interactiveCommands = new Set(config.status.interactiveCommands.map((cmd) => cmd.toLowerCase()));
+  }
 
   start(): void {
     if (this.intervalId) {
@@ -253,7 +257,8 @@ export class StatusMonitor {
         worker,
         tmux: this.tmux,
         paneObservation: this.paneObservation,
-        claudeTranscript: this.claudeTranscript
+        claudeTranscript: this.claudeTranscript,
+        interactiveCommands: this.interactiveCommands
       });
 
       if (!signals) {

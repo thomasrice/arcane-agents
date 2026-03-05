@@ -58,6 +58,9 @@ export interface ResolvedConfig {
   audio: {
     enableSound: boolean;
   };
+  status: {
+    interactiveCommands: string[];
+  };
   backend: {
     tmux: {
       sessionName: string;

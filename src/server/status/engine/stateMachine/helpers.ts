@@ -3,8 +3,7 @@ import { shellCommands, type WorkerStatusSignalContext } from "../types";
 import {
   claudeWorkingFreshWindowMs,
   genericWorkingFreshWindowMs,
-  openCodeWorkingFreshWindowMs,
-  shellPromptTailMatchers
+  openCodeWorkingFreshWindowMs
 } from "./constants";
 import type { WorkingEvidence } from "./types";
 
@@ -22,7 +21,7 @@ function isAgentRuntime(context: WorkerStatusSignalContext): boolean {
 }
 
 function shouldSuppressShellHistorySignals(context: WorkerStatusSignalContext): boolean {
-  if (!isShellCommand(context.commandLower)) {
+  if (!isShellCommand(context.commandLower) && !isInteractiveCommand(context)) {
     return false;
   }
 
@@ -33,27 +32,8 @@ function shouldSuppressShellHistorySignals(context: WorkerStatusSignalContext): 
   return true;
 }
 
-function hasLikelyInteractiveShellPrompt(output: string): boolean {
-  const lines = output
-    .split("\n")
-    .map((line) => normalizePromptLine(line))
-    .filter((line) => line.length > 0)
-    .slice(-6)
-    .reverse();
-
-  for (const line of lines) {
-    if (shellPromptTailMatchers.some((matcher) => matcher.test(line))) {
-      return true;
-    }
-
-    return false;
-  }
-
-  return false;
-}
-
-function normalizePromptLine(line: string): string {
-  return line.replace(/^[\s│┃╹▀▣⬝■]+/, "").trim();
+function isInteractiveCommand(context: WorkerStatusSignalContext): boolean {
+  return context.interactiveCommands.has(context.commandLower);
 }
 
 function looksLikeActiveRuntimeText(activityText: string | undefined): boolean {
@@ -124,8 +104,7 @@ export {
   recentNormalizedLines,
   isAgentRuntime,
   shouldSuppressShellHistorySignals,
-  hasLikelyInteractiveShellPrompt,
-  normalizePromptLine,
+  isInteractiveCommand,
   looksLikeActiveRuntimeText,
   statusFreshnessWindowMs,
   isShellCommand,

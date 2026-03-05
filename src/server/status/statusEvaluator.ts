@@ -11,6 +11,7 @@ interface EvaluateWorkerStatusInput {
   output: string;
   observation: PaneObservation;
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
+  interactiveCommands: ReadonlySet<string>;
 }
 
 export interface EvaluatedWorkerStatus {
@@ -28,7 +29,8 @@ export function evaluateWorkerStatus({
   currentCommand,
   output,
   observation,
-  transcriptSnapshot
+  transcriptSnapshot,
+  interactiveCommands
 }: EvaluateWorkerStatusInput): EvaluatedWorkerStatus {
   const context = buildWorkerStatusSignalContext({
     worker,
@@ -36,7 +38,8 @@ export function evaluateWorkerStatus({
     output,
     observation,
     transcriptSnapshot,
-    nowMs: Date.now()
+    nowMs: Date.now(),
+    interactiveCommands
   });
 
   return deriveWorkerStatusDecision(context);

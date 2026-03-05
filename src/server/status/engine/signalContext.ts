@@ -19,6 +19,7 @@ interface BuildWorkerStatusSignalContextInput {
   observation: PaneObservation;
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
   nowMs: number;
+  interactiveCommands: ReadonlySet<string>;
 }
 
 export function buildWorkerStatusSignalContext({
@@ -27,7 +28,8 @@ export function buildWorkerStatusSignalContext({
   output,
   observation,
   transcriptSnapshot,
-  nowMs
+  nowMs,
+  interactiveCommands
 }: BuildWorkerStatusSignalContextInput): WorkerStatusSignalContext {
   const parsed = parseActivity(currentCommand, output);
   const commandLower = currentCommand.toLowerCase();
@@ -62,6 +64,7 @@ export function buildWorkerStatusSignalContext({
     isOpenCodeSession: isOpenCode,
     outputQuietForMs,
     commandQuietForMs,
-    workerAgeMs
+    workerAgeMs,
+    interactiveCommands
   };
 }

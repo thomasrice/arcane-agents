@@ -5,7 +5,6 @@ import type { WorkingEvidence } from "./types";
 import {
   firstDefined,
   hasAnyWorkingEvidence,
-  hasLikelyInteractiveShellPrompt,
   looksLikeActiveRuntimeText,
   pushMaybe,
   recentNormalizedLines,
@@ -70,6 +69,7 @@ function createContext(overrides: Partial<WorkerStatusSignalContext> = {}): Work
     outputQuietForMs: 200,
     commandQuietForMs: 300,
     workerAgeMs: 10_000,
+    interactiveCommands: new Set<string>(),
     ...overrides
   };
 }
@@ -94,11 +94,6 @@ describe("state machine helpers", () => {
       output: "prompt\nuser@host:~/repo$"
     });
     expect(shouldSuppressShellHistorySignals(opencodeContext)).toBe(false);
-  });
-
-  it("detects likely prompt tails in recent output", () => {
-    expect(hasLikelyInteractiveShellPrompt("running\n$ ")).toBe(true);
-    expect(hasLikelyInteractiveShellPrompt("running\nstill working")).toBe(false);
   });
 
   it("recognizes active runtime text and ignores waiting text", () => {

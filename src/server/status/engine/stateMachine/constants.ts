@@ -25,13 +25,6 @@ const recoverableToolErrorMatchers: RegExp[] = [
   /\bhttp(?:\s+status)?\s*(?:code)?\s*:?\s*(?:401|403|404|408|409|410|422|429|500|502|503|504)\b/i
 ];
 
-const shellPromptTailMatchers: RegExp[] = [
-  /[$#%]\s*$/,
-  /(?:❯|›|»|λ|➜|❱)\s*$/,
-  /^ps\s+[^>]*>\s*$/i,
-  /^[A-Za-z]:\\[^>]*>\s*$/
-];
-
 export {
   parsedStrongEvidenceWindowMs,
   recentErrorSignalWindowMs,
@@ -43,6 +36,5 @@ export {
   claudeWorkingFreshWindowMs,
   openCodeWorkingFreshWindowMs,
   fatalRuntimeErrorMatchers,
-  recoverableToolErrorMatchers,
-  shellPromptTailMatchers
+  recoverableToolErrorMatchers
 };

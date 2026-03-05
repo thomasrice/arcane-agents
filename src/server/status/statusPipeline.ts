@@ -11,6 +11,7 @@ export interface WorkerStatusSignals {
   output: string;
   observation: PaneObservation;
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
+  interactiveCommands: ReadonlySet<string>;
 }
 
 export interface WorkerStatusEvaluation {
@@ -28,13 +29,15 @@ interface CollectWorkerStatusSignalsInput {
   tmux: TmuxAdapter;
   paneObservation: Map<string, PaneObservation>;
   claudeTranscript: ClaudeTranscriptTracker;
+  interactiveCommands: ReadonlySet<string>;
 }
 
 export async function collectWorkerStatusSignals({
   worker,
   tmux,
   paneObservation,
-  claudeTranscript
+  claudeTranscript,
+  interactiveCommands
 }: CollectWorkerStatusSignalsInput): Promise<WorkerStatusSignals | undefined> {
   const paneState = await tmux.getPaneState(worker.tmuxRef);
   if (paneState.isDead) {
@@ -51,7 +54,8 @@ export async function collectWorkerStatusSignals({
     currentCommand: paneState.currentCommand,
     output,
     observation,
-    transcriptSnapshot
+    transcriptSnapshot,
+    interactiveCommands
   };
 }
 
@@ -61,7 +65,8 @@ export function evaluateWorkerStatusSignals(worker: Worker, signals: WorkerStatu
     currentCommand: signals.currentCommand,
     output: signals.output,
     observation: signals.observation,
-    transcriptSnapshot: signals.transcriptSnapshot
+    transcriptSnapshot: signals.transcriptSnapshot,
+    interactiveCommands: signals.interactiveCommands
   });
 }
 

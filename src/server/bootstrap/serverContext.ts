@@ -58,7 +58,8 @@ export async function createServerContext(): Promise<ServerContext> {
         type: "worker-removed",
         workerId
       });
-    }
+    },
+    baseConfig
   );
 
   const terminalBridge = new TerminalBridge(workers, {

@@ -1,6 +1,16 @@
 import { z } from "zod";
 import type { ResolvedConfig } from "../../shared/types";
 
+export const defaultInteractiveCommands = [
+  "nvim", "vim", "vi", "nano", "helix", "hx",
+  "emacs", "emacsclient",
+  "less", "more", "man",
+  "htop", "btop", "top",
+  "watch", "lazygit", "lazydocker",
+  "ranger", "nnn", "lf", "yazi",
+  "tmux"
+];
+
 const avatarSchema = z.string().trim().min(1);
 
 const projectSchema = z.object({
@@ -45,6 +55,10 @@ const serverSchema = z.object({
   port: z.number().int().min(1).max(65535)
 });
 
+const statusSchema = z.object({
+  interactiveCommands: z.array(z.string().min(1))
+});
+
 const audioSchema = z.object({
   enableSound: z.boolean()
 });
@@ -60,6 +74,9 @@ export const partialConfigSchema = z
     shortcuts: z.array(shortcutSchema).optional(),
     discovery: z.array(discoveryRuleSchema).optional(),
     avatars: avatarsSchema.partial().optional(),
+    status: statusSchema.partial().extend({
+      extraInteractiveCommands: z.array(z.string().min(1)).optional()
+    }).optional(),
     audio: audioSchema.partial().optional(),
     backend: z
       .object({
@@ -81,6 +98,7 @@ export const resolvedConfigSchema = z.object({
   shortcuts: z.array(shortcutSchema),
   discovery: z.array(discoveryRuleSchema),
   avatars: avatarsSchema,
+  status: statusSchema,
   audio: audioSchema,
   backend: backendSchema,
   server: serverSchema
@@ -112,6 +130,9 @@ export function createDefaultConfig(): ResolvedConfig {
     discovery: [],
     avatars: {
       disabled: []
+    },
+    status: {
+      interactiveCommands: defaultInteractiveCommands
     },
     audio: {
       enableSound: true
