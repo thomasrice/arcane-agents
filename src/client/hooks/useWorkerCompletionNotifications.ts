@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Worker, WorkerStatus } from "../../shared/types";
 
-const completionNotificationSettleMs = 1800;
-
 interface UseWorkerCompletionNotificationsInput {
   workers: Worker[];
   reviewedWorkerId: string | undefined;
@@ -18,8 +16,6 @@ export function useWorkerCompletionNotifications({
 }: UseWorkerCompletionNotificationsInput): UseWorkerCompletionNotificationsResult {
   const [pendingCompletionWorkerIds, setPendingCompletionWorkerIds] = useState<string[]>([]);
   const previousStatusByWorkerRef = useRef<Map<string, WorkerStatus>>(new Map());
-  const pendingTimerByWorkerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const latestWorkersByIdRef = useRef<Map<string, Worker>>(new Map());
   const reviewedWorkerIdRef = useRef<string | undefined>(reviewedWorkerId);
 
   useEffect(() => {
@@ -27,20 +23,9 @@ export function useWorkerCompletionNotifications({
   }, [reviewedWorkerId]);
 
   useEffect(() => {
-    latestWorkersByIdRef.current = new Map(workers.map((worker) => [worker.id, worker]));
-  }, [workers]);
-
-  useEffect(() => {
-    const timers = pendingTimerByWorkerRef.current;
     const currentWorkerIds = new Set(workers.map((worker) => worker.id));
     const removePendingNow = new Set<string>();
-
-    for (const [workerId, timer] of timers.entries()) {
-      if (!currentWorkerIds.has(workerId)) {
-        clearTimeout(timer);
-        timers.delete(workerId);
-      }
-    }
+    const addPendingNow = new Set<string>();
 
     for (const worker of workers) {
       const previousStatus = previousStatusByWorkerRef.current.get(worker.id);
@@ -50,37 +35,8 @@ export function useWorkerCompletionNotifications({
           continue;
         }
 
-        if (!timers.has(worker.id)) {
-          const timer = setTimeout(() => {
-            timers.delete(worker.id);
-
-            const latestWorker = latestWorkersByIdRef.current.get(worker.id);
-            if (!latestWorker || latestWorker.status !== "idle") {
-              return;
-            }
-
-            if (reviewedWorkerIdRef.current === worker.id) {
-              return;
-            }
-
-            setPendingCompletionWorkerIds((current) => {
-              if (current.includes(worker.id)) {
-                return current;
-              }
-
-              return [...current, worker.id];
-            });
-          }, completionNotificationSettleMs);
-
-          timers.set(worker.id, timer);
-        }
+        addPendingNow.add(worker.id);
       } else {
-        const pendingTimer = timers.get(worker.id);
-        if (pendingTimer) {
-          clearTimeout(pendingTimer);
-          timers.delete(worker.id);
-        }
-
         if (worker.status !== "idle") {
           removePendingNow.add(worker.id);
         }
@@ -95,7 +51,19 @@ export function useWorkerCompletionNotifications({
 
     setPendingCompletionWorkerIds((current) => {
       const filtered = current.filter((workerId) => currentWorkerIds.has(workerId) && !removePendingNow.has(workerId));
-      return filtered.length === current.length ? current : filtered;
+      const next = [...filtered];
+
+      for (const workerId of addPendingNow) {
+        if (!next.includes(workerId)) {
+          next.push(workerId);
+        }
+      }
+
+      if (next.length === current.length && next.every((workerId, index) => workerId === current[index])) {
+        return current;
+      }
+
+      return next;
     });
   }, [workers]);
 
@@ -104,25 +72,8 @@ export function useWorkerCompletionNotifications({
       return;
     }
 
-    const pendingTimer = pendingTimerByWorkerRef.current.get(reviewedWorkerId);
-    if (pendingTimer) {
-      clearTimeout(pendingTimer);
-      pendingTimerByWorkerRef.current.delete(reviewedWorkerId);
-    }
-
     setPendingCompletionWorkerIds((current) => current.filter((workerId) => workerId !== reviewedWorkerId));
   }, [reviewedWorkerId]);
-
-  useEffect(() => {
-    const timers = pendingTimerByWorkerRef.current;
-
-    return () => {
-      for (const timer of timers.values()) {
-        clearTimeout(timer);
-      }
-      timers.clear();
-    };
-  }, []);
 
   return {
     pendingCompletionWorkerIds

@@ -45,12 +45,22 @@ const serverSchema = z.object({
   port: z.number().int().min(1).max(65535)
 });
 
+const audioSchema = z.object({
+  enableSound: z.boolean()
+});
+
+const avatarsSchema = z.object({
+  disabled: z.array(avatarSchema)
+});
+
 export const partialConfigSchema = z
   .object({
     projects: z.record(projectSchema).optional(),
     runtimes: z.record(runtimeSchema).optional(),
     shortcuts: z.array(shortcutSchema).optional(),
     discovery: z.array(discoveryRuleSchema).optional(),
+    avatars: avatarsSchema.partial().optional(),
+    audio: audioSchema.partial().optional(),
     backend: z
       .object({
         tmux: z
@@ -70,6 +80,8 @@ export const resolvedConfigSchema = z.object({
   runtimes: z.record(runtimeSchema),
   shortcuts: z.array(shortcutSchema),
   discovery: z.array(discoveryRuleSchema),
+  avatars: avatarsSchema,
+  audio: audioSchema,
   backend: backendSchema,
   server: serverSchema
 });
@@ -98,6 +110,12 @@ export function createDefaultConfig(): ResolvedConfig {
       }
     ],
     discovery: [],
+    avatars: {
+      disabled: []
+    },
+    audio: {
+      enableSound: true
+    },
     backend: {
       tmux: {
         sessionName: "arcane-agents",

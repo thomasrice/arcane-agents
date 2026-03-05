@@ -67,6 +67,18 @@ shortcuts:
 #     type: worktrees
 #     path: ~/code/my-app
 
+# Audio playback settings.
+audio:
+  enableSound: true
+
+# Avatar selection settings.
+# Disabled avatars remain available when explicitly pinned on a shortcut,
+# but are excluded from random avatar allocation.
+avatars:
+  disabled: []
+  # - minotaur-strategist
+  # - gothic-witch
+
 # Backend runtime settings.
 backend:
   tmux:

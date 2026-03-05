@@ -29,6 +29,7 @@ import { useSelectionModel } from "./hooks/useSelectionModel";
 import { useTerminalFocus } from "./hooks/useTerminalFocus";
 import { useWorkerCompletionNotifications } from "./hooks/useWorkerCompletionNotifications";
 import { useWorkerFade } from "./hooks/useWorkerFade";
+import { useWorkerVoiceLines } from "./hooks/useWorkerVoiceLines";
 import { useWorkerActions } from "./hooks/useWorkerActions";
 import { buildShortcutHotkeyBindings, findMatchingShortcutIndexes } from "./hotkeys/shortcutHotkeys";
 
@@ -131,6 +132,13 @@ export default function App(): JSX.Element {
   const { pendingCompletionWorkerIds } = useWorkerCompletionNotifications({
     workers: activeWorkers,
     reviewedWorkerId: terminalWorkerId
+  });
+
+  const { playMoveVoiceLine } = useWorkerVoiceLines({
+    config,
+    workers: activeWorkers,
+    workersHydrated,
+    selectedWorkerIds
   });
 
   const escapeTerminalFocus = useCallback((): boolean => {
@@ -313,6 +321,7 @@ export default function App(): JSX.Element {
           onSelect={onSelectWorker}
           onSelectionChange={onSelectionChange}
           onActivateWorker={onActivateWorker}
+          onMoveOrderIssued={playMoveVoiceLine}
           onPositionCommit={onPositionCommit}
           centerOnWorkerId={mapCenterWorkerId}
           centerRequestKey={mapCenterToken}

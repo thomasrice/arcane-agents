@@ -47,6 +47,17 @@ assets/characters/
         1.png
         ...
         15.png
+    voice-lines/              # optional
+      arrive.mp3
+      move_variant_1.mp3      # optional random move variant
+      move_variant_2.mp3      # optional random move variant
+      move_variant_3.mp3      # optional random move variant
+      attention.mp3
+      complete.mp3
+      death.mp3
+      selected_variant_1.mp3  # optional random selection variant
+      selected_variant_2.mp3  # optional random selection variant
+      selected_variant_3.mp3  # optional random selection variant
 ```
 
 Create one top-level folder per character type.
@@ -61,6 +72,20 @@ Avatar discovery is directory-driven: Arcane Agents treats each subfolder as an 
 - `animations/working/0.png`
 
 If these files are present, you can drop in a new folder and it becomes eligible automatically (including random spawn selection).
+
+## Optional Voice Lines
+
+Character packs can include optional voice clips in `voice-lines/`.
+
+- `arrive.mp3`: plays when a worker first spawns.
+- `move*.mp3`: random pick when a manual move order is issued.
+- `attention.mp3`: plays when status changes to `attention`.
+- `complete.mp3`: plays when status changes from `working` to `idle`.
+- `death.mp3`: plays when a worker is removed.
+- `selected*.mp3`: random pick when a worker becomes newly selected.
+
+Selection audio only triggers on a real selection change. Clicking the currently selected worker again does not replay the selection line.
+Move and selection audio use filename prefix matching. Any `move*.mp3` or `selected*.mp3` clip in the directory is eligible.
 
 ## Runtime Behavior
 

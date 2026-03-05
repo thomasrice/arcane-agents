@@ -1,4 +1,5 @@
 import type express from "express";
+import { listAvatarVoiceLineFiles } from "../../assets/voiceLineCatalog";
 import { RealtimeHub } from "../../ws/realtimeHub";
 import { OrchestratorService } from "../../orchestrator/orchestratorService";
 import type { StatusMonitor } from "../../status/statusMonitor";
@@ -22,6 +23,15 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
 
   app.get("/api/config", (_req, res) => {
     res.json(orchestrator.getConfig());
+  });
+
+  app.get("/api/avatars/:avatarType/voice-lines", (req, res) => {
+    const avatarType = req.params.avatarType;
+    const files = listAvatarVoiceLineFiles(avatarType);
+    res.json({
+      avatarType,
+      files
+    });
   });
 
   app.get("/api/workers", (_req, res) => {

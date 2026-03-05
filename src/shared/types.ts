@@ -52,6 +52,12 @@ export interface ResolvedConfig {
   runtimes: Record<string, RuntimeConfig>;
   shortcuts: ShortcutConfig[];
   discovery: DiscoveryRule[];
+  avatars: {
+    disabled: AvatarType[];
+  };
+  audio: {
+    enableSound: boolean;
+  };
   backend: {
     tmux: {
       sessionName: string;

@@ -58,6 +58,7 @@ interface MapCanvasProps {
   onSelect: (workerId: string | undefined) => void;
   onSelectionChange?: (workerIds: string[]) => void;
   onActivateWorker?: (workerId: string) => void;
+  onMoveOrderIssued?: (workerId: string) => void;
   onPositionCommit: (workerId: string, position: WorkerPosition) => void;
   centerOnWorkerId?: string;
   centerRequestKey?: number;
@@ -125,6 +126,7 @@ export function MapCanvas({
   onSelect,
   onSelectionChange,
   onActivateWorker,
+  onMoveOrderIssued,
   onPositionCommit,
   centerOnWorkerId,
   centerRequestKey
@@ -822,9 +824,11 @@ export function MapCanvas({
         path: [currentPosition, ...waypoints]
       });
 
+      onMoveOrderIssued?.(worker.id);
+
       return true;
     },
-    [blockedTileKeys, mapData]
+    [blockedTileKeys, mapData, onMoveOrderIssued]
   );
 
   const commitWorkerPositions = useCallback(

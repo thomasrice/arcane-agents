@@ -8,11 +8,14 @@ interface SelectNextAvatarInput {
 }
 
 export function selectNextAvatar({ preferred, config, workers, availableAvatars }: SelectNextAvatarInput): AvatarType {
-  if (preferred && availableAvatars.includes(preferred)) {
+  const disabledAvatarTypes = new Set(config.avatars.disabled);
+  const enabledAvailableAvatars = availableAvatars.filter((avatarType) => !disabledAvatarTypes.has(avatarType));
+
+  if (preferred && enabledAvailableAvatars.includes(preferred)) {
     return preferred;
   }
 
-  const pool = availableAvatars.length > 0 ? availableAvatars : ["knight"];
+  const pool = enabledAvailableAvatars.length > 0 ? enabledAvailableAvatars : availableAvatars.length > 0 ? availableAvatars : ["knight"];
   const reservedConfiguredAvatars = new Set(
     config.shortcuts
       .map((shortcut) => shortcut.avatar)

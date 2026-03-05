@@ -14,6 +14,12 @@ function createConfig(): ResolvedConfig {
     },
     shortcuts: [],
     discovery: [],
+    avatars: {
+      disabled: []
+    },
+    audio: {
+      enableSound: true
+    },
     backend: {
       tmux: {
         sessionName: "arcane-agents",

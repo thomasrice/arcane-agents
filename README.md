@@ -181,7 +181,9 @@ Default URLs:
 - `Shift+K`: kill highlighted roster agent (then `Enter` to confirm).
 - `R`: rename selected agent.
 - `M`: toggle movement mode for selected agent(s).
-- `+` / `-`: zoom map in or out (outside terminal focus).
+- `W/A/S/D` or arrow keys: move selected agents.
+- `Shift+W/A/S/D` or `Shift+Arrow keys`: pan the map viewport.
+- `-` / `+`: zoom map out or in (outside terminal focus).
 - `[` / `]`: resize split; `Shift+[` / `Shift+]`: jump split to edge; `=`: reset split.
 - Left-drag the divider between map and terminal panes to resize.
 - `Esc`: close overlays/dialogs, then deselect.
@@ -217,6 +219,8 @@ arcane-agents config edit  # open config.yaml in $VISUAL/$EDITOR
 - `runtimes`: command presets to run in a project directory.
 - `shortcuts`: saved `project + runtime` combinations; can also include hotkeys.
 - `discovery`: optional auto-discovery rules for additional projects.
+- `avatars`: avatar selection settings (for example disabling specific avatar types from random allocation).
+- `audio`: client sound settings.
 - `backend.tmux`: tmux session and status poll settings.
 - `server`: API bind host/port.
 
@@ -394,6 +398,31 @@ backend:
     pollIntervalMs: 2500
 ```
 
+### `audio`
+
+- `enableSound`: enable or disable in-app voice/sound playback (default `true`).
+
+Example:
+
+```yaml
+audio:
+  enableSound: true
+```
+
+### `avatars`
+
+- `disabled`: avatar folder names to exclude from random avatar allocation.
+- Disabled avatars can still be used when explicitly pinned via `shortcuts[].avatar`.
+
+Example:
+
+```yaml
+avatars:
+  disabled:
+    - minotaur-strategist
+    - gothic-witch
+```
+
 ### `server`
 
 - `host`: bind address for the API server.
@@ -483,6 +512,16 @@ src/
   shared/   Shared types/config models
 assets/     Maps, character art
 ```
+
+## Customizing Avatars
+
+Avatar packs are directory-driven under `assets/characters/<avatar-type>/`.
+
+- Required sprite files are documented in `assets/characters/README.md`.
+- Optional voice clips are loaded from `assets/characters/<avatar-type>/voice-lines/`.
+- Voice file names: fixed events use `arrive.mp3`, `attention.mp3`, `complete.mp3`, `death.mp3`; random events match any `move*.mp3` and `selected*.mp3` clips in the folder.
+- In app runtime, clips are served from `/api/assets/characters/<avatar-type>/voice-lines/<file>.mp3`.
+- Add a new avatar by dropping in a compliant folder; it becomes available automatically.
 
 ## License
 

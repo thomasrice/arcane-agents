@@ -22,6 +22,12 @@ function createConfig(): ResolvedConfig {
       }
     ],
     discovery: [],
+    avatars: {
+      disabled: []
+    },
+    audio: {
+      enableSound: true
+    },
     backend: {
       tmux: {
         sessionName: "arcane-agents",
