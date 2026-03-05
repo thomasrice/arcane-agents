@@ -110,8 +110,10 @@ body.split-pane-dragging {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 74px;
+  height: 74px;
+  flex-shrink: 0;
   padding: 11px;
+  overflow: hidden;
   border-top: 1px solid rgba(218, 235, 186, 0.18);
   background: linear-gradient(180deg, rgba(16, 26, 22, 0.92), rgba(13, 20, 18, 0.95));
 }
@@ -168,6 +170,9 @@ body.split-pane-dragging {
 .selected-worker-subline {
   font-size: 12px;
   color: rgba(238, 243, 223, 0.8);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 .terminal-column {
@@ -684,7 +689,4 @@ kbd {
     grid-template-columns: 1fr;
   }
 
-  .bottom-bar {
-    flex-wrap: wrap;
-  }
 }
