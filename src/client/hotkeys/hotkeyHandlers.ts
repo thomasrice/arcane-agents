@@ -249,7 +249,7 @@ export function handleActionHotkeys(event: KeyboardEvent, context: AppHotkeyCont
     !event.ctrlKey &&
     !event.metaKey &&
     !event.altKey &&
-    (!context.inSelectedGroupView ? !event.shiftKey : event.shiftKey);
+    (context.inSelectedGroupView ? event.shiftKey : context.selectedWorkerIds.length === 1 || !event.shiftKey);
 
   if (
     (killViaK || event.key === "Delete") &&
