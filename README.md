@@ -7,6 +7,12 @@ Arcane Agents is a local-first visual control room for terminal-backed AI agents
 Each agent appears as a character on a 2D map, and selecting one opens its live terminal in the right panel.
 Common setups use Claude Code or OpenCode runtimes, but any terminal-accessible runtime can work.
 
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/b85ee107-17f4-4a78-b546-71951adeabd3" controls width="720"></video>
+</p>
+
+> [Watch the demo on YouTube →](https://youtu.be/vOUcloQTCoQ)
+
 ## What It Does
 
 - Manages agents as tmux windows.
