@@ -58,9 +58,13 @@ export class ClaudeTranscriptTracker {
     }
 
     try {
+      const wasInitialized = state.initialized;
       const lines = await collectTranscriptInputLines(state);
       const records = extractTranscriptRecords(lines);
       applyParsedTranscriptRecords(state, records);
+      if (!wasInitialized && state.initialized) {
+        state.busyUntilMs = 0;
+      }
     } catch {
       return undefined;
     }

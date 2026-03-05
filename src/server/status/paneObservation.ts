@@ -1,3 +1,5 @@
+const initialObservationAgeMs = 30_000;
+
 export interface PaneObservation {
   lastCommand: string;
   lastCommandChangeAtMs: number;
@@ -18,9 +20,9 @@ export function observePane(
   if (!existing) {
     const initial: PaneObservation = {
       lastCommand: currentCommand,
-      lastCommandChangeAtMs: now,
+      lastCommandChangeAtMs: now - initialObservationAgeMs,
       lastOutputSignature: signature,
-      lastOutputChangeAtMs: now
+      lastOutputChangeAtMs: now - initialObservationAgeMs
     };
     observations.set(workerId, initial);
     return initial;

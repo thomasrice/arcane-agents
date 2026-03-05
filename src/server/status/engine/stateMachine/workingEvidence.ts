@@ -20,8 +20,11 @@ function collectWorkingEvidence(context: WorkerStatusSignalContext, hasRecoverab
 
   const suppressShellHistorySignals = shouldSuppressShellHistorySignals(context);
 
+  const transcriptIsIdle = context.transcriptSnapshot !== undefined && context.transcriptSnapshot.status !== "working";
+
   const parsedStrongSignal =
     !suppressShellHistorySignals &&
+    !transcriptIsIdle &&
     (Boolean(context.parsed.activity.filePath) ||
       (Boolean(context.parsed.activity.tool) && context.parsed.activity.tool !== "terminal"));
 
