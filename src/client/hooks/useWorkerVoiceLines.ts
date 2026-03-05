@@ -270,7 +270,7 @@ export function useWorkerVoiceLines({ config, workers, workersHydrated, selected
         playVoiceLine(worker, "attention");
       }
 
-      if (transitionedToComplete(previousWorker.status, worker.status)) {
+      if (transitionedToComplete(previousWorker.status, worker.status) && !isRecentlySpawned(worker)) {
         playVoiceLine(worker, "complete");
       }
     }
@@ -362,6 +362,12 @@ function transitionedToAttention(previous: WorkerStatus, next: WorkerStatus): bo
 
 function transitionedToComplete(previous: WorkerStatus, next: WorkerStatus): boolean {
   return previous === "working" && next === "idle";
+}
+
+const spawnGraceMs = 10_000;
+
+function isRecentlySpawned(worker: Worker): boolean {
+  return Date.now() - new Date(worker.createdAt).getTime() < spawnGraceMs;
 }
 
 function chooseRandomItem<T>(items: T[]): T | undefined {
