@@ -5,6 +5,8 @@ import { registerShutdownHandlers } from "./bootstrap/shutdown";
 import { attachUpgradeHandler, createWsServers } from "./bootstrap/websocketUpgrade";
 
 export async function bootstrap(): Promise<void> {
+  console.log("[arcane-agents] launching Arcane Agents...");
+
   const context = await createServerContext();
   context.statusMonitor.start();
 
@@ -15,15 +17,19 @@ export async function bootstrap(): Promise<void> {
 
   const host = process.env.ARCANE_AGENTS_API_HOST ?? context.config.server.host;
   const port = Number(process.env.ARCANE_AGENTS_API_PORT ?? context.config.server.port);
+  const appUrl = `http://${host}:${port}`;
 
   server.listen(port, host, () => {
-    console.log(`[arcane-agents] using config file: ${context.paths.configPath}`);
-    console.log(`[arcane-agents] server listening on http://${host}:${port}`);
+    console.log("[arcane-agents] Arcane Agents is ready.");
+    console.log(`[arcane-agents] app: ${appUrl}`);
+    console.log(`[arcane-agents] config: ${context.paths.configPath}`);
+    console.log("[arcane-agents] press Ctrl-C to stop.");
   });
 
   registerShutdownHandlers({
     statusMonitor: context.statusMonitor,
     server,
+    wsServers,
     workers: context.workers
   });
 }

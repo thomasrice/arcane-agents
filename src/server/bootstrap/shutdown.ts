@@ -1,29 +1,57 @@
 import type http from "node:http";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { StatusMonitor } from "../status/statusMonitor";
+import type { WsServers } from "./websocketUpgrade";
 
 interface RegisterShutdownHandlersInput {
   statusMonitor: StatusMonitor;
   server: http.Server;
   workers: WorkerRepository;
+  wsServers?: WsServers;
   timeoutMs?: number;
   exit?: (code: number) => void;
 }
 
-export function registerShutdownHandlers({ statusMonitor, server, workers, timeoutMs, exit }: RegisterShutdownHandlersInput): void {
+export function registerShutdownHandlers({
+  statusMonitor,
+  server,
+  workers,
+  wsServers,
+  timeoutMs,
+  exit
+}: RegisterShutdownHandlersInput): void {
   const shutdown = createShutdownHandler({
     statusMonitor,
     server,
     workers,
+    wsServers,
     timeoutMs,
     exit
   });
 
+  const forceExit = exit ?? process.exit;
+  let isShuttingDown = false;
+
+  const handleSignal = (signal: NodeJS.Signals): void => {
+    const forceCode = signal === "SIGINT" ? 130 : 143;
+
+    if (!isShuttingDown) {
+      isShuttingDown = true;
+      console.log(`[arcane-agents] received ${signal}; shutting down... (press Ctrl-C again to force exit)`);
+      void shutdown();
+      return;
+    }
+
+    console.warn(`[arcane-agents] received ${signal} again; forcing exit.`);
+    forceExit(forceCode);
+  };
+
   process.on("SIGINT", () => {
-    void shutdown();
+    handleSignal("SIGINT");
   });
+
   process.on("SIGTERM", () => {
-    void shutdown();
+    handleSignal("SIGTERM");
   });
 }
 
@@ -31,7 +59,8 @@ export function createShutdownHandler({
   statusMonitor,
   server,
   workers,
-  timeoutMs = 7_500,
+  wsServers,
+  timeoutMs = 2_000,
   exit = process.exit
 }: RegisterShutdownHandlersInput): () => Promise<void> {
   let shutdownPromise: Promise<void> | undefined;
@@ -46,6 +75,7 @@ export function createShutdownHandler({
       statusMonitor,
       server,
       workers,
+      wsServers,
       timeoutMs,
       exit
     });
@@ -58,6 +88,7 @@ interface RunGracefulShutdownInput {
   statusMonitor: StatusMonitor;
   server: http.Server;
   workers: WorkerRepository;
+  wsServers?: WsServers;
   timeoutMs: number;
   exit: (code: number) => void;
 }
@@ -66,6 +97,7 @@ async function runGracefulShutdown({
   statusMonitor,
   server,
   workers,
+  wsServers,
   timeoutMs,
   exit
 }: RunGracefulShutdownInput): Promise<void> {
@@ -97,6 +129,20 @@ async function runGracefulShutdown({
   const cleanupPromise = (async (): Promise<number> => {
     let hadError = false;
 
+    if (wsServers) {
+      terminateWsClients(wsServers.realtimeWss);
+      terminateWsClients(wsServers.terminalWss);
+
+      const wsCloseResults = await Promise.allSettled([
+        closeWsServer(wsServers.realtimeWss),
+        closeWsServer(wsServers.terminalWss)
+      ]);
+
+      if (wsCloseResults.some((result) => result.status === "rejected")) {
+        hadError = true;
+      }
+    }
+
     try {
       await closeHttpServer(server);
     } catch {
@@ -127,10 +173,45 @@ function closeHttpServer(server: http.Server): Promise<void> {
 
         reject(error);
       });
+
+      if (typeof server.closeIdleConnections === "function") {
+        server.closeIdleConnections();
+      }
+
+      if (typeof server.closeAllConnections === "function") {
+        server.closeAllConnections();
+      }
     } catch (error) {
       reject(error);
     }
   });
+}
+
+function closeWsServer(wsServer: WsServers["realtimeWss"]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      wsServer.close((error?: Error) => {
+        if (!error) {
+          resolve();
+          return;
+        }
+
+        reject(error);
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function terminateWsClients(wsServer: WsServers["realtimeWss"]): void {
+  for (const client of wsServer.clients) {
+    try {
+      client.terminate();
+    } catch {
+      // no-op
+    }
+  }
 }
 
 function isServerNotRunningError(error: Error): boolean {
