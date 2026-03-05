@@ -1,5 +1,5 @@
 import type { WorkerStatusSignalContext } from "../types";
-import { claudeSpawnGraceMs } from "./constants";
+import { claudeSpawnGraceMs, openCodeSpawnGraceMs } from "./constants";
 import { hasAnyWorkingEvidence, isShellCommand, statusFreshnessWindowMs } from "./helpers";
 import type { IdleBlocker, WorkingEvidence } from "./types";
 
@@ -42,6 +42,22 @@ function detectIdleBlocker(context: WorkerStatusSignalContext, evidence: Working
       reason: {
         code: "claude-spawn-grace-idle",
         message: "During early Claude spawn grace window without active signals.",
+        detail: `${Math.round(context.workerAgeMs)}ms since worker creation`
+      }
+    };
+  }
+
+  if (
+    context.isOpenCodeSession &&
+    context.workerAgeMs <= openCodeSpawnGraceMs &&
+    context.transcriptSnapshot?.status !== "working" &&
+    !context.hasOpenCodeActiveSignal &&
+    !evidence.parsedStrongSignal
+  ) {
+    return {
+      reason: {
+        code: "opencode-spawn-grace-idle",
+        message: "During early OpenCode spawn grace window without active signals.",
         detail: `${Math.round(context.workerAgeMs)}ms since worker creation`
       }
     };

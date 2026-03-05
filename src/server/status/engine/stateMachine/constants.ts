@@ -4,6 +4,7 @@ const commandWarmupWindowMs = 2_250;
 const stickyWorkingWindowMs = 3_500;
 const cachedActivityWindowMs = 12_000;
 const claudeSpawnGraceMs = 5_000;
+const openCodeSpawnGraceMs = 5_000;
 const genericWorkingFreshWindowMs = 12_000;
 const claudeWorkingFreshWindowMs = 10_000;
 const openCodeWorkingFreshWindowMs = 12_000;
@@ -32,6 +33,7 @@ export {
   stickyWorkingWindowMs,
   cachedActivityWindowMs,
   claudeSpawnGraceMs,
+  openCodeSpawnGraceMs,
   genericWorkingFreshWindowMs,
   claudeWorkingFreshWindowMs,
   openCodeWorkingFreshWindowMs,

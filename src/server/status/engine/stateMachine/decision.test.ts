@@ -159,4 +159,21 @@ describe("deriveWorkerStatusDecision", () => {
     expect(decision.activityTool).toBeUndefined();
     expect(decision.reasons[0]?.code).toBe("opencode-prompt-idle");
   });
+
+  it("returns idle for freshly spawned OpenCode sessions within grace window", () => {
+    const decision = deriveWorkerStatusDecision(
+      createContext({
+        isOpenCodeSession: true,
+        currentCommand: "opencode",
+        commandLower: "opencode",
+        hasOpenCodePromptSignal: false,
+        hasOpenCodeActiveSignal: false,
+        commandQuietForMs: 500,
+        workerAgeMs: 2_000
+      })
+    );
+
+    expect(decision.status).toBe("idle");
+    expect(decision.reasons.some((r) => r.code === "opencode-spawn-grace-idle")).toBe(true);
+  });
 });
