@@ -26,6 +26,32 @@ Each agent appears as a character on a 2D map, and selecting one opens its live 
   - `git` (for worktree/discovery workflows)
   - `xdg-terminal-exec` (Linux external terminal button)
 
+## Package Install (Planned)
+
+Arcane Agents now includes a CLI entrypoint intended for global package installs:
+
+- `arcane-agents` (same as `arcane-agents start`)
+- `arcane-agents init` (writes `~/.config/arcane-agents/config.yaml` from template)
+- `arcane-agents doctor` (checks dependencies and configured runtime commands)
+
+The package is not published yet, but you can test the exact install flow locally:
+
+```bash
+npm run build
+npm pack
+npm install -g ./arcane-agents-0.1.0.tgz
+
+arcane-agents init
+arcane-agents doctor
+arcane-agents
+```
+
+To remove the global test install:
+
+```bash
+npm uninstall -g arcane-agents
+```
+
 ## Install From Source
 
 1) Install system dependencies.

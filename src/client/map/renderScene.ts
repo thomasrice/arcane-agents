@@ -223,7 +223,7 @@ export function drawScene({
         anchorX: spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x,
         topY: (spriteBounds ? spriteBounds.y + spriteBounds.height : screen.y + radius) + 4 * viewport.scale,
         label: displayLabel,
-        visible: !occludedWorkerIds.has(worker.id),
+        visible: true,
         completionKey: completionPending ? worker.id : undefined,
         attentionKey: attentionPending ? worker.id : undefined
       });
@@ -234,7 +234,7 @@ export function drawScene({
     for (const worker of workers) {
       if (occludedWorkerIds.has(worker.id)) {
         drawWorker(worker, {
-          queueNameplate: false
+          queueNameplate: true
         });
       }
     }

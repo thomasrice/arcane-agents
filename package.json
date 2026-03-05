@@ -3,13 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "description": "Local-first visual control room for tmux-backed coding agents",
+  "bin": {
+    "arcane-agents": "dist/server/server/cli.js"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "config.example.yaml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "npm run dev:clean && concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
     "dev:clean": "node ./kill-dev-ports.mjs 7600 7601",
     "dev:server": "ARCANE_AGENTS_API_PORT=7601 tsx watch src/server/index.ts",
     "dev:client": "vite --host 127.0.0.1 --port 7600",
     "build": "vite build && tsc -p tsconfig.server.json",
-    "start": "node dist/server/server/index.js",
+    "start": "node dist/server/server/cli.js start",
+    "cli": "tsx src/server/cli.ts",
+    "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

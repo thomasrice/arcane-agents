@@ -3,13 +3,14 @@ import path from "node:path";
 import express from "express";
 import { handleRequestError } from "../http/errorResponse";
 import { registerApiRoutes } from "../http/routes/registerApiRoutes";
+import { resolveAppPath } from "../utils/appRoot";
 import type { ServerContext } from "./serverContext";
 
 export function createHttpApp(context: ServerContext): express.Express {
   const app = express();
   app.use(express.json());
 
-  const assetsDir = path.resolve(process.cwd(), "assets");
+  const assetsDir = resolveAppPath("assets");
   if (fs.existsSync(assetsDir)) {
     app.use("/api/assets", express.static(assetsDir));
   }
@@ -20,7 +21,7 @@ export function createHttpApp(context: ServerContext): express.Express {
     statusMonitor: context.statusMonitor
   });
 
-  const clientDistPath = path.resolve(process.cwd(), "dist/client");
+  const clientDistPath = resolveAppPath("dist", "client");
   if (process.env.NODE_ENV === "production" && fs.existsSync(clientDistPath)) {
     app.use(express.static(clientDistPath));
     app.get("*", (_req, res) => {

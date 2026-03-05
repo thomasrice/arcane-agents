@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { resolveAppPath } from "../utils/appRoot";
 
 const requiredAvatarFiles = [
   "rotations/south.png",
@@ -10,7 +11,7 @@ const requiredAvatarFiles = [
   "animations/working/0.png"
 ] as const;
 
-export function listAvailableAvatarTypes(assetsRoot = path.resolve(process.cwd(), "assets/characters")): string[] {
+export function listAvailableAvatarTypes(assetsRoot = resolveAppPath("assets", "characters")): string[] {
   let entries: fs.Dirent[];
 
   try {

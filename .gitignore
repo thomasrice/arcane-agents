@@ -3,4 +3,5 @@ dist/
 .DS_Store
 *.log
 npm-debug.log*
+*.tgz
 config.yaml

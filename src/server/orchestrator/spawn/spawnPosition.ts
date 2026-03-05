@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import path from "node:path";
 import type { Worker, WorkerPosition } from "../../../shared/types";
+import { resolveAppPath } from "../../utils/appRoot";
 import type { OutpostMapSpec } from "./types";
 
 const defaultSpawnSeparationDistancePx = 52;
@@ -12,8 +12,7 @@ interface NextSpawnPositionInput {
   anchorPositions?: WorkerPosition[];
 }
 
-export function loadOutpostSpawnSpec(cwd = process.cwd()): OutpostMapSpec | undefined {
-  const mapPath = path.resolve(cwd, "assets/maps/outpost.json");
+export function loadOutpostSpawnSpec(mapPath = resolveAppPath("assets", "maps", "outpost.json")): OutpostMapSpec | undefined {
   if (!fs.existsSync(mapPath)) {
     return undefined;
   }
