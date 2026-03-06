@@ -23,8 +23,9 @@ export function isNonDefaultSession(sessionName?: string): boolean {
 export function getArcaneAgentsPaths(sessionName?: string): ArcaneAgentsPaths {
   const configDir = resolveUserPath("~/.config/arcane-agents");
   const baseStateDir = resolveUserPath("~/.local/state/arcane-agents");
+  const isNamedSession = sessionName !== undefined && sessionName !== "default";
 
-  const stateDir = isNonDefaultSession(sessionName)
+  const stateDir = isNamedSession
     ? path.join(baseStateDir, "sessions", sessionName)
     : baseStateDir;
 
