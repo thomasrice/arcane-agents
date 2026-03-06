@@ -1,5 +1,6 @@
 import http from "node:http";
 import { createHttpApp } from "./bootstrap/httpApp";
+import { isNonDefaultSession } from "./config/loadConfig";
 import { createServerContext } from "./bootstrap/serverContext";
 import { registerShutdownHandlers } from "./bootstrap/shutdown";
 import { attachUpgradeHandler, createWsServers } from "./bootstrap/websocketUpgrade";
@@ -66,11 +67,16 @@ function renderStartupBanner(): string {
     .join("\n");
 }
 
-export async function bootstrap(): Promise<void> {
+export async function bootstrap(sessionName?: string): Promise<void> {
   console.log(renderStartupBanner());
-  console.log("[arcane-agents] launching Arcane Agents...");
 
-  const context = await createServerContext();
+  if (isNonDefaultSession(sessionName)) {
+    console.log(`[arcane-agents] launching Arcane Agents (session: ${sessionName})...`);
+  } else {
+    console.log("[arcane-agents] launching Arcane Agents...");
+  }
+
+  const context = await createServerContext(sessionName);
   context.statusMonitor.start();
 
   const app = createHttpApp(context);

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { ResolvedConfig } from "../../shared/types";
 import { DiscoveryService } from "../config/discovery";
-import { getArcaneAgentsPaths, loadResolvedConfig } from "../config/loadConfig";
+import { getArcaneAgentsPaths, isNonDefaultSession, loadResolvedConfig } from "../config/loadConfig";
 import { OrchestratorService } from "../orchestrator/orchestratorService";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { StatusMonitor } from "../status/statusMonitor";
@@ -20,13 +20,19 @@ export interface ServerContext {
   statusMonitor: StatusMonitor;
 }
 
-export async function createServerContext(): Promise<ServerContext> {
-  const paths = getArcaneAgentsPaths();
+export async function createServerContext(sessionName?: string): Promise<ServerContext> {
+  const paths = getArcaneAgentsPaths(sessionName);
   fs.mkdirSync(paths.configDir, { recursive: true });
   fs.mkdirSync(paths.stateDir, { recursive: true });
   fs.mkdirSync(paths.cacheDir, { recursive: true });
 
   const baseConfig = loadResolvedConfig(paths);
+
+  if (isNonDefaultSession(sessionName)) {
+    const baseTmuxName = baseConfig.backend.tmux.sessionName;
+    baseConfig.backend.tmux.sessionName = `${baseTmuxName}-${sessionName}`;
+  }
+
   const discoveryService = new DiscoveryService();
   const initialDiscovery = await discoveryService.discover(baseConfig);
   for (const warning of initialDiscovery.warnings) {

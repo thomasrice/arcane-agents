@@ -476,6 +476,36 @@ server:
   port: 7600
 ```
 
+## Named Sessions
+
+Named sessions let you run independent instances of Arcane Agents, each with its
+own worker state (SQLite DB) and tmux session. Config (projects, runtimes,
+shortcuts) stays shared.
+
+### Usage
+
+```bash
+# Start the default session (same as before)
+arcane-agents start
+
+# Start a named session with separate state
+arcane-agents start --session side-project
+arcane-agents start -s experiments
+
+# List all sessions that have been created
+arcane-agents sessions list
+
+# Delete a named session and all its data
+arcane-agents sessions delete side-project
+```
+
+### How it works
+
+- The default session uses `~/.local/state/arcane-agents/arcane-agents.db` (unchanged).
+- Named sessions store their DB under `~/.local/state/arcane-agents/sessions/<name>/arcane-agents.db`.
+- Each named session gets its own tmux session (`arcane-agents-<name>` by default).
+- Config paths are shared across all sessions.
+
 ## Development Commands
 
 ```bash

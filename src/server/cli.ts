@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import readline from "node:readline";
 import type { ResolvedConfig } from "../shared/types";
 import { bootstrap } from "./bootstrapApp";
 import { getArcaneAgentsPaths, loadResolvedConfig } from "./config/loadConfig";
@@ -17,10 +18,42 @@ interface CheckResult {
   detail: string;
 }
 
+function extractSessionFlag(args: string[]): { sessionName: string | undefined; remainingArgs: string[] } {
+  const remaining = [...args];
+  let sessionName: string | undefined;
+
+  for (let i = 0; i < remaining.length; i++) {
+    if (remaining[i] === "--session" || remaining[i] === "-s") {
+      const value = remaining[i + 1];
+      if (!value || value.startsWith("-")) {
+        console.error("[arcane-agents] --session requires a name argument.");
+        process.exit(1);
+      }
+      sessionName = value;
+      remaining.splice(i, 2);
+      break;
+    }
+
+    const eqMatch = remaining[i].match(/^(?:--session|-s)=(.+)$/);
+    if (eqMatch) {
+      sessionName = eqMatch[1];
+      remaining.splice(i, 1);
+      break;
+    }
+  }
+
+  if (sessionName !== undefined && !/^[a-zA-Z0-9_-]+$/.test(sessionName)) {
+    console.error("[arcane-agents] session name must only contain letters, digits, hyphens, and underscores.");
+    process.exit(1);
+  }
+
+  return { sessionName, remainingArgs: remaining };
+}
+
 async function runCli(): Promise<number> {
   setAppRoot(resolveAppRoot());
 
-  const args = process.argv.slice(2);
+  const { sessionName, remainingArgs: args } = extractSessionFlag(process.argv.slice(2));
   const firstArg = args[0];
 
   if (firstArg === "--help" || firstArg === "-h") {
@@ -36,13 +69,15 @@ async function runCli(): Promise<number> {
   const [command = "start", ...commandArgs] = args;
   switch (command) {
     case "start":
-      return runStart();
+      return runStart(sessionName);
     case "init":
       return runInit(commandArgs);
     case "config":
       return runConfig(commandArgs);
     case "doctor":
       return runDoctor();
+    case "sessions":
+      return runSessions(commandArgs);
     case "help":
       printHelp();
       return 0;
@@ -56,12 +91,12 @@ async function runCli(): Promise<number> {
   }
 }
 
-async function runStart(): Promise<number> {
+async function runStart(sessionName?: string): Promise<number> {
   if (!process.env.NODE_ENV) {
     process.env.NODE_ENV = "production";
   }
 
-  const paths = getArcaneAgentsPaths();
+  const paths = getArcaneAgentsPaths(sessionName);
   let configResult: WriteStarterConfigResult;
   try {
     configResult = ensureStarterConfig(paths);
@@ -76,7 +111,7 @@ async function runStart(): Promise<number> {
     console.log("[arcane-agents] next: edit it with 'arcane-agents config edit'.");
   }
 
-  await bootstrap();
+  await bootstrap(sessionName);
   return 0;
 }
 
@@ -288,6 +323,97 @@ Commands:
 `);
 }
 
+async function runSessions(args: string[]): Promise<number> {
+  const [subcommand = "list", ...subcommandArgs] = args;
+
+  switch (subcommand) {
+    case "list":
+      break;
+    case "delete":
+      return runSessionsDelete(subcommandArgs);
+    default:
+      console.error(`[arcane-agents] unknown sessions command '${subcommand}'.`);
+      console.log("Usage: arcane-agents sessions [list|delete <name>]");
+      return 1;
+  }
+
+  const defaultPaths = getArcaneAgentsPaths();
+  const sessionsDir = path.join(defaultPaths.stateDir, "sessions");
+  const defaultDbPath = defaultPaths.dbPath;
+
+  const sessions: string[] = [];
+
+  if (fs.existsSync(defaultDbPath)) {
+    sessions.push("default");
+  }
+
+  if (fs.existsSync(sessionsDir)) {
+    try {
+      const entries = fs.readdirSync(sessionsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const dbPath = path.join(sessionsDir, entry.name, "arcane-agents.db");
+          if (fs.existsSync(dbPath)) {
+            sessions.push(entry.name);
+          }
+        }
+      }
+    } catch {
+      // no-op
+    }
+  }
+
+  if (sessions.length === 0) {
+    console.log("[arcane-agents] no sessions found.");
+  } else {
+    console.log("[arcane-agents] sessions:");
+    for (const session of sessions) {
+      console.log(`  ${session}`);
+    }
+  }
+
+  return 0;
+}
+
+async function runSessionsDelete(args: string[]): Promise<number> {
+  const name = args[0];
+  if (!name) {
+    console.error("[arcane-agents] usage: arcane-agents sessions delete <name>");
+    return 1;
+  }
+
+  if (name === "default") {
+    console.error("[arcane-agents] cannot delete the default session.");
+    return 1;
+  }
+
+  const sessionDir = getArcaneAgentsPaths(name).stateDir;
+  if (!fs.existsSync(sessionDir)) {
+    console.error(`[arcane-agents] session '${name}' not found.`);
+    return 1;
+  }
+
+  const answer = await promptConfirm(`Delete session '${name}' and all its data (${sessionDir})? [y/N] `);
+  if (!answer) {
+    console.log("[arcane-agents] aborted.");
+    return 0;
+  }
+
+  fs.rmSync(sessionDir, { recursive: true, force: true });
+  console.log(`[arcane-agents] deleted session '${name}'.`);
+  return 0;
+}
+
+function promptConfirm(question: string): Promise<boolean> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === "y");
+    });
+  });
+}
+
 function runDoctor(): number {
   const checks: CheckResult[] = [];
 
@@ -421,9 +547,10 @@ function printHelp(): void {
   console.log(`Arcane Agents CLI
 
 Usage:
-  arcane-agents [start]
+  arcane-agents [start] [--session <name>]
   arcane-agents init [--force]
   arcane-agents config [path|show|edit]
+  arcane-agents sessions [list|delete <name>]
   arcane-agents doctor
   arcane-agents --help
   arcane-agents --version
@@ -432,9 +559,15 @@ Commands:
   start      Start the Arcane Agents server
   init       Write ~/.config/arcane-agents/config.yaml from config.example.yaml
   config     Print, show, or edit config files
+  sessions   List or delete named sessions
   doctor     Check dependencies and runtime command availability
   help       Show this help message
   version    Print CLI version
+
+Options:
+  --session <name>, -s <name>
+             Run with a named session (separate DB and tmux session).
+             Default session uses the standard paths for backwards compatibility.
 
 Config paths:
   primary: ${paths.configPath}

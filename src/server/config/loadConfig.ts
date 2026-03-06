@@ -16,9 +16,17 @@ interface ArcaneAgentsPaths {
 
 type JsonObject = Record<string, unknown>;
 
-export function getArcaneAgentsPaths(): ArcaneAgentsPaths {
+export function isNonDefaultSession(sessionName?: string): boolean {
+  return sessionName !== undefined && sessionName !== "default";
+}
+
+export function getArcaneAgentsPaths(sessionName?: string): ArcaneAgentsPaths {
   const configDir = resolveUserPath("~/.config/arcane-agents");
-  const stateDir = resolveUserPath("~/.local/state/arcane-agents");
+  const baseStateDir = resolveUserPath("~/.local/state/arcane-agents");
+
+  const stateDir = isNonDefaultSession(sessionName)
+    ? path.join(baseStateDir, "sessions", sessionName)
+    : baseStateDir;
 
   return {
     configDir,
