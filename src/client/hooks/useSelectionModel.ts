@@ -61,6 +61,8 @@ export function useSelectionModel(
 
     if (options?.focusTerminal && primaryWorkerId) {
       setTerminalFocusToken((current) => (current ?? 0) + 1);
+    } else {
+      setTerminalFocusToken(undefined);
     }
   }, []);
 
