@@ -53,6 +53,7 @@ function createContext(overrides: Partial<WorkerStatusSignalContext> = {}): Work
     runtimeActivityText: undefined,
     activeClaudeTask: undefined,
     activeRuntimeProcess: undefined,
+    hasClaudePromptSignal: false,
     hasClaudeProgressSignal: false,
     hasOpenCodePromptSignal: false,
     hasOpenCodeActiveSignal: false,
@@ -222,5 +223,32 @@ describe("deriveWorkerStatusDecision", () => {
 
     expect(decision.status).toBe("working");
     expect(decision.reasons.some((reason) => reason.code === "agent-runtime-child-process")).toBe(true);
+  });
+
+  it("returns idle when the Claude prompt is visible under a shell wrapper", () => {
+    const decision = deriveWorkerStatusDecision(
+      createContext({
+        worker: {
+          ...createWorker(),
+          runtimeId: "claude",
+          runtimeLabel: "Claude",
+          command: ["claude"]
+        },
+        currentCommand: "bash",
+        commandLower: "bash",
+        isClaudeSession: true,
+        hasClaudePromptSignal: true,
+        activeRuntimeProcess: {
+          pid: 42,
+          runtime: "claude",
+          command: "claude",
+          args: "claude"
+        },
+        outputQuietForMs: 45_000
+      })
+    );
+
+    expect(decision.status).toBe("idle");
+    expect(decision.reasons[0]?.code).toBe("shell-command-idle");
   });
 });

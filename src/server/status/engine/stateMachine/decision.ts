@@ -283,6 +283,7 @@ function finalizeDecision(
       isClaudeSession: context.isClaudeSession,
       isOpenCodeSession: context.isOpenCodeSession,
       isCodexSession: context.isCodexSession,
+      hasClaudePromptSignal: context.hasClaudePromptSignal,
       hasOpenCodePromptSignal: context.hasOpenCodePromptSignal,
       hasOpenCodeActiveSignal: context.hasOpenCodeActiveSignal,
       hasCodexPromptSignal: context.hasCodexPromptSignal,

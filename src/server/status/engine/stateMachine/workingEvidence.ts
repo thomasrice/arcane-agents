@@ -59,7 +59,7 @@ function collectWorkingEvidence(context: WorkerStatusSignalContext, hasRecoverab
     activityToolCandidates.push("terminal");
   }
 
-  if (context.activeRuntimeProcess) {
+  if (context.activeRuntimeProcess && !(context.activeRuntimeProcess.runtime === "claude" && context.hasClaudePromptSignal)) {
     strongReasons.push({
       code: "agent-runtime-child-process",
       message: `${labelRuntime(context.activeRuntimeProcess.runtime)} is still running under the pane shell.`

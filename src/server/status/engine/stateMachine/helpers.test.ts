@@ -62,6 +62,7 @@ function createContext(overrides: Partial<WorkerStatusSignalContext> = {}): Work
     runtimeActivityText: undefined,
     activeClaudeTask: undefined,
     activeRuntimeProcess: undefined,
+    hasClaudePromptSignal: false,
     hasClaudeProgressSignal: false,
     hasOpenCodePromptSignal: false,
     hasOpenCodeActiveSignal: false,

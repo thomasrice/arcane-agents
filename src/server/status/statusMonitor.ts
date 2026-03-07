@@ -78,6 +78,7 @@ const defaultDecisionFacts = {
   isClaudeSession: false,
   isOpenCodeSession: false,
   isCodexSession: false,
+  hasClaudePromptSignal: false,
   hasOpenCodePromptSignal: false,
   hasOpenCodeActiveSignal: false,
   hasCodexPromptSignal: false,

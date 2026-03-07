@@ -4,11 +4,11 @@ import type { ClaudeStatusSnapshot } from "../claudeTranscriptTracker";
 import type { PaneObservation } from "../paneObservation";
 import type { AgentRuntimeProcess } from "../runtime/runtimeProcess";
 import {
+  detectClaudeSignals,
   detectCodexSignals,
   detectOpenCodeSignals,
   extractClaudeActiveTask,
   extractRuntimeActivityText,
-  hasClaudeLiveProgressSignal,
   isLikelyClaudeSession,
   isLikelyCodexSession,
   isLikelyOpenCodeSession
@@ -40,6 +40,7 @@ export function buildWorkerStatusSignalContext({
   const commandLower = currentCommand.toLowerCase();
   const wrappedRuntime = runtimeProcess?.runtime;
   const isClaude = wrappedRuntime === "claude" || isLikelyClaudeSession(worker, commandLower);
+  const claudeSignals = detectClaudeSignals(output);
   const openCodeSignals = detectOpenCodeSignals(output);
   const codexSignals = detectCodexSignals(output);
   const isOpenCode =
@@ -47,8 +48,9 @@ export function buildWorkerStatusSignalContext({
   const isCodex =
     wrappedRuntime === "codex" || isLikelyCodexSession(worker, commandLower) || codexSignals.prompt || codexSignals.active;
   const runtimeActivityText = extractRuntimeActivityText(output, { isClaude, isOpenCode, isCodex });
-  const activeClaudeTask = extractClaudeActiveTask(output);
-  const hasClaudeProgressSignal = isClaude && hasClaudeLiveProgressSignal(output);
+  const activeClaudeTask = isClaude ? extractClaudeActiveTask(output) : undefined;
+  const hasClaudePromptSignal = isClaude && claudeSignals.prompt;
+  const hasClaudeProgressSignal = isClaude && claudeSignals.active;
   const openCodePromptSignal = isOpenCode && openCodeSignals.prompt;
   const openCodeActiveSignal = isOpenCode && openCodeSignals.active;
   const codexPromptSignal = isCodex && codexSignals.prompt;
@@ -70,6 +72,7 @@ export function buildWorkerStatusSignalContext({
     runtimeActivityText,
     activeClaudeTask,
     activeRuntimeProcess: runtimeProcess,
+    hasClaudePromptSignal,
     hasClaudeProgressSignal,
     hasOpenCodePromptSignal: openCodePromptSignal,
     hasOpenCodeActiveSignal: openCodeActiveSignal,

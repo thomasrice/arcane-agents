@@ -18,6 +18,7 @@ export interface StatusDecisionFacts {
   isClaudeSession: boolean;
   isOpenCodeSession: boolean;
   isCodexSession: boolean;
+  hasClaudePromptSignal: boolean;
   hasOpenCodePromptSignal: boolean;
   hasOpenCodeActiveSignal: boolean;
   hasCodexPromptSignal: boolean;
@@ -46,6 +47,7 @@ export interface WorkerStatusSignalContext {
   runtimeActivityText: string | undefined;
   activeClaudeTask: string | undefined;
   activeRuntimeProcess: AgentRuntimeProcess | undefined;
+  hasClaudePromptSignal: boolean;
   hasClaudeProgressSignal: boolean;
   hasOpenCodePromptSignal: boolean;
   hasOpenCodeActiveSignal: boolean;

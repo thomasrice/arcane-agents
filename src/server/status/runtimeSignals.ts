@@ -1,5 +1,5 @@
 export { capturePaneLineCount, isLikelyClaudeSession, isLikelyOpenCodeSession, isLikelyCodexSession } from "./runtime/sessionDetection";
-export { extractClaudeActiveTask, hasClaudeLiveProgressSignal, isGenericClaudeProgressLabel } from "./runtime/claudeSignals";
+export { detectClaudeSignals, extractClaudeActiveTask, hasClaudeLiveProgressSignal, hasClaudePromptSignal, isGenericClaudeProgressLabel } from "./runtime/claudeSignals";
 export { detectOpenCodeSignals, hasOpenCodePromptSignal, hasOpenCodeActiveSignal, preferOpenCodeSpecificActivityText } from "./runtime/openCodeSignals";
 export { detectCodexSignals, hasCodexPromptSignal, hasCodexActiveSignal } from "./runtime/codexSignals";
 export { hasActiveWorkActivityText, hasWaitingActivityText } from "./runtime/textSignals";
