@@ -5,9 +5,11 @@ const stickyWorkingWindowMs = 3_500;
 const cachedActivityWindowMs = 12_000;
 const claudeSpawnGraceMs = 5_000;
 const openCodeSpawnGraceMs = 5_000;
+const codexSpawnGraceMs = 5_000;
 const genericWorkingFreshWindowMs = 12_000;
 const claudeWorkingFreshWindowMs = 10_000;
 const openCodeWorkingFreshWindowMs = 12_000;
+const codexWorkingFreshWindowMs = 10_000;
 
 const fatalRuntimeErrorMatchers: RegExp[] = [
   /^traceback\b/i,
@@ -34,9 +36,11 @@ export {
   cachedActivityWindowMs,
   claudeSpawnGraceMs,
   openCodeSpawnGraceMs,
+  codexSpawnGraceMs,
   genericWorkingFreshWindowMs,
   claudeWorkingFreshWindowMs,
   openCodeWorkingFreshWindowMs,
+  codexWorkingFreshWindowMs,
   fatalRuntimeErrorMatchers,
   recoverableToolErrorMatchers
 };

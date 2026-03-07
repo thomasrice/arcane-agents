@@ -34,10 +34,14 @@ const defaultFacts: WorkerStatusEvaluation["facts"] = {
   workerAgeMs: 0,
   isClaudeSession: true,
   isOpenCodeSession: false,
+  isCodexSession: false,
   hasOpenCodePromptSignal: false,
   hasOpenCodeActiveSignal: false,
+  hasCodexPromptSignal: false,
+  hasCodexActiveSignal: false,
   hasClaudeProgressSignal: false,
   hasActiveClaudeTask: false,
+  hasActiveRuntimeProcess: false,
   hasRuntimeActivityText: false,
   hasParsedStrongSignal: false,
   hasParsedNeedsInput: false,
@@ -114,6 +118,7 @@ function createSignals(): WorkerStatusSignals {
       lastOutputChangeAtMs: Date.now()
     } as PaneObservation,
     transcriptSnapshot: undefined,
+    runtimeProcess: undefined,
     interactiveCommands: new Set<string>()
   };
 }

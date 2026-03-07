@@ -1,6 +1,7 @@
 import type { Worker } from "../../shared/types";
 import type { ClaudeStatusSnapshot } from "./claudeTranscriptTracker";
 import type { PaneObservation } from "./paneObservation";
+import type { AgentRuntimeProcess } from "./runtime/runtimeProcess";
 import { buildWorkerStatusSignalContext } from "./engine/signalContext";
 import { deriveWorkerStatusDecision } from "./engine/stateMachine";
 import type { StatusDecisionFacts, StatusReason } from "./engine/types";
@@ -11,6 +12,7 @@ interface EvaluateWorkerStatusInput {
   output: string;
   observation: PaneObservation;
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
+  runtimeProcess: AgentRuntimeProcess | undefined;
   interactiveCommands: ReadonlySet<string>;
 }
 
@@ -30,6 +32,7 @@ export function evaluateWorkerStatus({
   output,
   observation,
   transcriptSnapshot,
+  runtimeProcess,
   interactiveCommands
 }: EvaluateWorkerStatusInput): EvaluatedWorkerStatus {
   const context = buildWorkerStatusSignalContext({
@@ -38,6 +41,7 @@ export function evaluateWorkerStatus({
     output,
     observation,
     transcriptSnapshot,
+    runtimeProcess,
     nowMs: Date.now(),
     interactiveCommands
   });

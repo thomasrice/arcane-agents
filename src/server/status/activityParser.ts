@@ -25,7 +25,7 @@ const toolMatchers: ToolMatch[] = [
   { tool: "task", label: "Subtask", regex: /\b(Task|subagent|agent)\b/i },
   { tool: "todo", label: "Planning", regex: /\b(TodoWrite|todo\b)\b/i },
   { tool: "web", label: "Fetching", regex: /\b(WebFetch|http|https)\b/i },
-  { tool: "terminal", label: "Terminal", regex: /\b(claude|terminal|tmux)\b/i }
+  { tool: "terminal", label: "Terminal", regex: /\b(claude|codex|terminal|tmux)\b/i }
 ];
 
 const inputPromptLineMatchers: RegExp[] = [

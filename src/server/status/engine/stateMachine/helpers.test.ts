@@ -61,11 +61,15 @@ function createContext(overrides: Partial<WorkerStatusSignalContext> = {}): Work
     },
     runtimeActivityText: undefined,
     activeClaudeTask: undefined,
+    activeRuntimeProcess: undefined,
     hasClaudeProgressSignal: false,
     hasOpenCodePromptSignal: false,
     hasOpenCodeActiveSignal: false,
+    hasCodexPromptSignal: false,
+    hasCodexActiveSignal: false,
     isClaudeSession: false,
     isOpenCodeSession: false,
+    isCodexSession: false,
     outputQuietForMs: 200,
     commandQuietForMs: 300,
     workerAgeMs: 10_000,
@@ -104,6 +108,7 @@ describe("state machine helpers", () => {
   it("returns freshness windows by runtime session", () => {
     expect(statusFreshnessWindowMs(createContext({ isClaudeSession: true }))).toBe(10_000);
     expect(statusFreshnessWindowMs(createContext({ isOpenCodeSession: true }))).toBe(12_000);
+    expect(statusFreshnessWindowMs(createContext({ isCodexSession: true }))).toBe(10_000);
     expect(statusFreshnessWindowMs(createContext())).toBe(12_000);
   });
 

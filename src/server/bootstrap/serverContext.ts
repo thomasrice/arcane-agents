@@ -71,6 +71,9 @@ export async function createServerContext(sessionName?: string): Promise<ServerC
   const terminalBridge = new TerminalBridge(workers, {
     onSubmittedInput: () => {
       statusMonitor.requestPollSoon();
+    },
+    onTerminalOutput: () => {
+      statusMonitor.requestPollSoon(20);
     }
   });
 

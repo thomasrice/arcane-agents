@@ -1,10 +1,14 @@
+import { detectCodexSignals, extractCodexStatusText, normalizeCodexRuntimeLine } from "./codexSignals";
+
 interface SessionContext {
   isClaude: boolean;
   isOpenCode: boolean;
+  isCodex: boolean;
 }
 
 const openCodeCapturePaneLines = 420;
 const openCodeThinkingContinuationMaxLines = 3;
+const codexCapturePaneLines = 240;
 
 export function extractRuntimeActivityText(output: string, session: SessionContext): string | undefined {
   if (session.isClaude) {
@@ -13,6 +17,10 @@ export function extractRuntimeActivityText(output: string, session: SessionConte
 
   if (session.isOpenCode) {
     return extractOpenCodeRuntimeActivityText(output);
+  }
+
+  if (session.isCodex) {
+    return extractCodexRuntimeActivityText(output);
   }
 
   return undefined;
@@ -213,6 +221,52 @@ function normalizeOpenCodeRuntimeLine(line: string): string {
   }
 
   return withoutFrame;
+}
+
+function extractCodexRuntimeActivityText(output: string): string | undefined {
+  const signals = detectCodexSignals(output);
+  const linesNewestFirst = output
+    .split("\n")
+    .slice(-codexCapturePaneLines)
+    .map((line) => normalizeCodexRuntimeLine(line))
+    .filter((line) => line.length > 0)
+    .reverse();
+
+  for (const line of linesNewestFirst) {
+    const statusText = extractCodexStatusText(line);
+    if (!statusText) {
+      continue;
+    }
+
+    const normalizedStatus = statusText.toLowerCase();
+    if (normalizedStatus.includes("waiting on approval") || normalizedStatus.includes("approval requested")) {
+      return "Waiting for approval";
+    }
+
+    if (
+      normalizedStatus.includes("waiting on user input") ||
+      normalizedStatus.includes("question requested") ||
+      normalizedStatus.includes("user input requested")
+    ) {
+      return "Waiting for input";
+    }
+
+    if (normalizedStatus === "finished" || normalizedStatus.includes("agent turn complete")) {
+      return undefined;
+    }
+
+    return truncateActivityText(statusText, 72);
+  }
+
+  if (signals.prompt) {
+    return "Waiting for approval";
+  }
+
+  if (signals.active) {
+    return "Responding";
+  }
+
+  return undefined;
 }
 
 function recentLinesNewestFirst(output: string, limit: number): string[] {

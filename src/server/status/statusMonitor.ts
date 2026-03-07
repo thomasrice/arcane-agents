@@ -77,10 +77,14 @@ const defaultDecisionFacts = {
   workerAgeMs: 0,
   isClaudeSession: false,
   isOpenCodeSession: false,
+  isCodexSession: false,
   hasOpenCodePromptSignal: false,
   hasOpenCodeActiveSignal: false,
+  hasCodexPromptSignal: false,
+  hasCodexActiveSignal: false,
   hasClaudeProgressSignal: false,
   hasActiveClaudeTask: false,
+  hasActiveRuntimeProcess: false,
   hasRuntimeActivityText: false,
   hasParsedStrongSignal: false,
   hasParsedNeedsInput: false,
@@ -420,7 +424,9 @@ export class StatusMonitor {
       `outQuiet=${Math.round(evaluation.facts.outputQuietForMs)}ms ` +
       `cmdQuiet=${Math.round(evaluation.facts.commandQuietForMs)}ms ` +
       `claude=${evaluation.facts.isClaudeSession ? 1 : 0} ` +
-      `opencode=${evaluation.facts.isOpenCodeSession ? 1 : 0}`;
+      `opencode=${evaluation.facts.isOpenCodeSession ? 1 : 0} ` +
+      `codex=${evaluation.facts.isCodexSession ? 1 : 0} ` +
+      `runtimeProc=${evaluation.facts.hasActiveRuntimeProcess ? 1 : 0}`;
 
     console.log(
       `[arcane-agents][status] ${worker.displayName ?? worker.name} ${fromTo} (${Math.round(evaluation.confidence * 100)}%)${activityText} reasons=[${reasonText}] ${traceFacts}`

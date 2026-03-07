@@ -2,12 +2,15 @@ import type { Worker } from "../../../shared/types";
 import { parseActivity } from "../activityParser";
 import type { ClaudeStatusSnapshot } from "../claudeTranscriptTracker";
 import type { PaneObservation } from "../paneObservation";
+import type { AgentRuntimeProcess } from "../runtime/runtimeProcess";
 import {
+  detectCodexSignals,
   detectOpenCodeSignals,
   extractClaudeActiveTask,
   extractRuntimeActivityText,
   hasClaudeLiveProgressSignal,
   isLikelyClaudeSession,
+  isLikelyCodexSession,
   isLikelyOpenCodeSession
 } from "../runtimeSignals";
 import type { WorkerStatusSignalContext } from "./types";
@@ -18,6 +21,7 @@ interface BuildWorkerStatusSignalContextInput {
   output: string;
   observation: PaneObservation;
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
+  runtimeProcess: AgentRuntimeProcess | undefined;
   nowMs: number;
   interactiveCommands: ReadonlySet<string>;
 }
@@ -28,19 +32,27 @@ export function buildWorkerStatusSignalContext({
   output,
   observation,
   transcriptSnapshot,
+  runtimeProcess,
   nowMs,
   interactiveCommands
 }: BuildWorkerStatusSignalContextInput): WorkerStatusSignalContext {
   const parsed = parseActivity(currentCommand, output);
   const commandLower = currentCommand.toLowerCase();
-  const isClaude = isLikelyClaudeSession(worker, commandLower);
+  const wrappedRuntime = runtimeProcess?.runtime;
+  const isClaude = wrappedRuntime === "claude" || isLikelyClaudeSession(worker, commandLower);
   const openCodeSignals = detectOpenCodeSignals(output);
-  const isOpenCode = isLikelyOpenCodeSession(worker, commandLower) || openCodeSignals.prompt || openCodeSignals.active;
-  const runtimeActivityText = extractRuntimeActivityText(output, { isClaude, isOpenCode });
+  const codexSignals = detectCodexSignals(output);
+  const isOpenCode =
+    wrappedRuntime === "opencode" || isLikelyOpenCodeSession(worker, commandLower) || openCodeSignals.prompt || openCodeSignals.active;
+  const isCodex =
+    wrappedRuntime === "codex" || isLikelyCodexSession(worker, commandLower) || codexSignals.prompt || codexSignals.active;
+  const runtimeActivityText = extractRuntimeActivityText(output, { isClaude, isOpenCode, isCodex });
   const activeClaudeTask = extractClaudeActiveTask(output);
   const hasClaudeProgressSignal = isClaude && hasClaudeLiveProgressSignal(output);
   const openCodePromptSignal = isOpenCode && openCodeSignals.prompt;
   const openCodeActiveSignal = isOpenCode && openCodeSignals.active;
+  const codexPromptSignal = isCodex && codexSignals.prompt;
+  const codexActiveSignal = isCodex && codexSignals.active;
   const outputQuietForMs = Math.max(0, nowMs - observation.lastOutputChangeAtMs);
   const commandQuietForMs = Math.max(0, nowMs - observation.lastCommandChangeAtMs);
   const createdAtMs = Date.parse(worker.createdAt);
@@ -57,11 +69,15 @@ export function buildWorkerStatusSignalContext({
     parsed,
     runtimeActivityText,
     activeClaudeTask,
+    activeRuntimeProcess: runtimeProcess,
     hasClaudeProgressSignal,
     hasOpenCodePromptSignal: openCodePromptSignal,
     hasOpenCodeActiveSignal: openCodeActiveSignal,
+    hasCodexPromptSignal: codexPromptSignal,
+    hasCodexActiveSignal: codexActiveSignal,
     isClaudeSession: isClaude,
     isOpenCodeSession: isOpenCode,
+    isCodexSession: isCodex,
     outputQuietForMs,
     commandQuietForMs,
     workerAgeMs,

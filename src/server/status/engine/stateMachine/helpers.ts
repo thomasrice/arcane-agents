@@ -2,6 +2,7 @@ import { hasActiveWorkActivityText, hasWaitingActivityText } from "../../runtime
 import { shellCommands, type WorkerStatusSignalContext } from "../types";
 import {
   claudeWorkingFreshWindowMs,
+  codexWorkingFreshWindowMs,
   genericWorkingFreshWindowMs,
   openCodeWorkingFreshWindowMs
 } from "./constants";
@@ -17,7 +18,7 @@ function recentNormalizedLines(output: string, limit: number): string[] {
 }
 
 function isAgentRuntime(context: WorkerStatusSignalContext): boolean {
-  return context.isOpenCodeSession || context.isClaudeSession;
+  return context.isOpenCodeSession || context.isClaudeSession || context.isCodexSession;
 }
 
 function shouldSuppressShellHistorySignals(context: WorkerStatusSignalContext): boolean {
@@ -64,6 +65,10 @@ function statusFreshnessWindowMs(context: WorkerStatusSignalContext): number {
 
   if (context.isOpenCodeSession) {
     return openCodeWorkingFreshWindowMs;
+  }
+
+  if (context.isCodexSession) {
+    return codexWorkingFreshWindowMs;
   }
 
   return genericWorkingFreshWindowMs;

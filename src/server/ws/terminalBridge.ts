@@ -4,6 +4,7 @@ import { WorkerRepository } from "../persistence/workerRepository";
 
 interface TerminalBridgeOptions {
   onSubmittedInput?: (workerId: string) => void;
+  onTerminalOutput?: (workerId: string) => void;
 }
 
 interface ResizeMessage {
@@ -13,6 +14,8 @@ interface ResizeMessage {
 }
 
 export class TerminalBridge {
+  private readonly lastOutputActivityAtByWorker = new Map<string, number>();
+
   constructor(
     private readonly workers: WorkerRepository,
     private readonly options: TerminalBridgeOptions = {}
@@ -60,6 +63,7 @@ export class TerminalBridge {
           }
 
           terminal.onData((chunk) => {
+            this.handleTerminalOutput(worker.id);
             if (socket.readyState === socket.OPEN) {
               socket.send(chunk);
             }
@@ -95,6 +99,17 @@ export class TerminalBridge {
 
     socket.on("close", cleanup);
     socket.on("error", cleanup);
+  }
+
+  private handleTerminalOutput(workerId: string): void {
+    const nowMs = Date.now();
+    const lastOutputActivityAtMs = this.lastOutputActivityAtByWorker.get(workerId) ?? 0;
+    if (nowMs - lastOutputActivityAtMs < 120) {
+      return;
+    }
+
+    this.lastOutputActivityAtByWorker.set(workerId, nowMs);
+    this.options.onTerminalOutput?.(workerId);
   }
 }
 

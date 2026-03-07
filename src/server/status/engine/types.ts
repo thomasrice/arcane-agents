@@ -2,6 +2,7 @@ import type { Worker } from "../../../shared/types";
 import type { ParsedActivity } from "../activityParser";
 import type { ClaudeStatusSnapshot } from "../claudeTranscriptTracker";
 import type { PaneObservation } from "../paneObservation";
+import type { AgentRuntimeProcess } from "../runtime/runtimeProcess";
 
 export interface StatusReason {
   code: string;
@@ -16,10 +17,14 @@ export interface StatusDecisionFacts {
   workerAgeMs: number;
   isClaudeSession: boolean;
   isOpenCodeSession: boolean;
+  isCodexSession: boolean;
   hasOpenCodePromptSignal: boolean;
   hasOpenCodeActiveSignal: boolean;
+  hasCodexPromptSignal: boolean;
+  hasCodexActiveSignal: boolean;
   hasClaudeProgressSignal: boolean;
   hasActiveClaudeTask: boolean;
+  hasActiveRuntimeProcess: boolean;
   hasRuntimeActivityText: boolean;
   hasParsedStrongSignal: boolean;
   hasParsedNeedsInput: boolean;
@@ -40,11 +45,15 @@ export interface WorkerStatusSignalContext {
   };
   runtimeActivityText: string | undefined;
   activeClaudeTask: string | undefined;
+  activeRuntimeProcess: AgentRuntimeProcess | undefined;
   hasClaudeProgressSignal: boolean;
   hasOpenCodePromptSignal: boolean;
   hasOpenCodeActiveSignal: boolean;
+  hasCodexPromptSignal: boolean;
+  hasCodexActiveSignal: boolean;
   isClaudeSession: boolean;
   isOpenCodeSession: boolean;
+  isCodexSession: boolean;
   outputQuietForMs: number;
   commandQuietForMs: number;
   workerAgeMs: number;

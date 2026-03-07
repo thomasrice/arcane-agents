@@ -52,11 +52,15 @@ function createContext(overrides: Partial<WorkerStatusSignalContext> = {}): Work
     },
     runtimeActivityText: undefined,
     activeClaudeTask: undefined,
+    activeRuntimeProcess: undefined,
     hasClaudeProgressSignal: false,
     hasOpenCodePromptSignal: false,
     hasOpenCodeActiveSignal: false,
+    hasCodexPromptSignal: false,
+    hasCodexActiveSignal: false,
     isClaudeSession: false,
     isOpenCodeSession: false,
+    isCodexSession: false,
     outputQuietForMs: 1_000,
     commandQuietForMs: 5_000,
     workerAgeMs: 30_000,
@@ -175,5 +179,48 @@ describe("deriveWorkerStatusDecision", () => {
 
     expect(decision.status).toBe("idle");
     expect(decision.reasons.some((r) => r.code === "opencode-spawn-grace-idle")).toBe(true);
+  });
+
+  it("returns attention for Codex approval prompts", () => {
+    const decision = deriveWorkerStatusDecision(
+      createContext({
+        worker: {
+          ...createWorker(),
+          runtimeId: "codex",
+          runtimeLabel: "Codex",
+          command: ["codex"]
+        },
+        currentCommand: "bash",
+        commandLower: "bash",
+        runtimeActivityText: "Waiting for approval",
+        hasCodexPromptSignal: true,
+        hasCodexActiveSignal: false,
+        isCodexSession: true
+      })
+    );
+
+    expect(decision.status).toBe("attention");
+    expect(decision.activityText).toBe("Waiting for approval");
+    expect(decision.reasons[0]?.code).toBe("codex-approval-prompt");
+  });
+
+  it("returns working when a wrapped agent runtime process is active", () => {
+    const decision = deriveWorkerStatusDecision(
+      createContext({
+        currentCommand: "bash",
+        commandLower: "bash",
+        activeRuntimeProcess: {
+          pid: 42,
+          runtime: "codex",
+          command: "codex",
+          args: "codex exec"
+        },
+        isCodexSession: true,
+        outputQuietForMs: 45_000
+      })
+    );
+
+    expect(decision.status).toBe("working");
+    expect(decision.reasons.some((reason) => reason.code === "agent-runtime-child-process")).toBe(true);
   });
 });

@@ -33,6 +33,22 @@ function deriveWorkerStatusDecision(context: WorkerStatusSignalContext): WorkerS
     );
   }
 
+  if (context.hasCodexPromptSignal && !context.hasCodexActiveSignal && !isInteractiveCommand(context)) {
+    pushReason({ code: "codex-approval-prompt", message: "Codex is waiting on an approval or question response." });
+    return finalizeDecision(
+      context,
+      {
+        status: "attention",
+        activityText: context.runtimeActivityText ?? context.parsed.activity.text ?? "Waiting for approval",
+        activityTool: "terminal",
+        activityPath: undefined,
+        confidence: 0.94,
+        reasons,
+        parsedStrongSignal: false
+      }
+    );
+  }
+
   if (context.parsed.activity.needsInput && !isInteractiveCommand(context)) {
     pushReason({ code: "parser-input-prompt", message: "Terminal output indicates input is required." });
     return finalizeDecision(
@@ -266,10 +282,14 @@ function finalizeDecision(
       workerAgeMs: context.workerAgeMs,
       isClaudeSession: context.isClaudeSession,
       isOpenCodeSession: context.isOpenCodeSession,
+      isCodexSession: context.isCodexSession,
       hasOpenCodePromptSignal: context.hasOpenCodePromptSignal,
       hasOpenCodeActiveSignal: context.hasOpenCodeActiveSignal,
+      hasCodexPromptSignal: context.hasCodexPromptSignal,
+      hasCodexActiveSignal: context.hasCodexActiveSignal,
       hasClaudeProgressSignal: context.hasClaudeProgressSignal,
       hasActiveClaudeTask: Boolean(context.activeClaudeTask),
+      hasActiveRuntimeProcess: Boolean(context.activeRuntimeProcess),
       hasRuntimeActivityText: Boolean(context.runtimeActivityText),
       hasParsedStrongSignal: partial.parsedStrongSignal,
       hasParsedNeedsInput: context.parsed.activity.needsInput,

@@ -53,6 +53,21 @@ function collectWorkingEvidence(context: WorkerStatusSignalContext, hasRecoverab
     activityToolCandidates.push("terminal");
   }
 
+  if (context.hasCodexActiveSignal) {
+    strongReasons.push({ code: "codex-active-signal", message: "Codex active execution signal detected." });
+    activityTextCandidates.push(context.runtimeActivityText ?? "Responding");
+    activityToolCandidates.push("terminal");
+  }
+
+  if (context.activeRuntimeProcess) {
+    strongReasons.push({
+      code: "agent-runtime-child-process",
+      message: `${labelRuntime(context.activeRuntimeProcess.runtime)} is still running under the pane shell.`
+    });
+    activityTextCandidates.push(context.runtimeActivityText ?? `${labelRuntime(context.activeRuntimeProcess.runtime)} running`);
+    activityToolCandidates.push("terminal");
+  }
+
   if (looksLikeActiveRuntimeText(context.runtimeActivityText)) {
     strongReasons.push({ code: "runtime-activity-text", message: "Runtime activity text indicates active work." });
     pushMaybe(activityTextCandidates, context.runtimeActivityText);
@@ -123,6 +138,17 @@ function shouldKeepStickyWorking(context: WorkerStatusSignalContext, evidence: W
   }
 
   return hasAnyWorkingEvidence(evidence);
+}
+
+function labelRuntime(runtime: "claude" | "opencode" | "codex"): string {
+  switch (runtime) {
+    case "claude":
+      return "Claude";
+    case "opencode":
+      return "OpenCode";
+    case "codex":
+      return "Codex";
+  }
 }
 
 export { collectWorkingEvidence, shouldKeepStickyWorking };
