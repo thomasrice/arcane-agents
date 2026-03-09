@@ -31,10 +31,11 @@ const tokyoNightTheme = {
 interface TerminalPanelProps {
   workerId?: string;
   workerName?: string;
+  connectionKey?: string;
   focusRequestKey?: number;
 }
 
-export function TerminalPanel({ workerId, workerName, focusRequestKey }: TerminalPanelProps): JSX.Element {
+export function TerminalPanel({ workerId, workerName, connectionKey, focusRequestKey }: TerminalPanelProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -234,7 +235,7 @@ export function TerminalPanel({ workerId, workerName, focusRequestKey }: Termina
         socketRef.current = null;
       }
     };
-  }, [scheduleFit, sendResizeMessage, workerId, workerName]);
+  }, [connectionKey, scheduleFit, sendResizeMessage, workerId, workerName]);
 
   useEffect(() => {
     if (!workerId) {

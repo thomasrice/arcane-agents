@@ -78,6 +78,10 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps): JSX.El
             <span>Rename selected agent</span>
           </div>
           <div className="shortcut-row">
+            <kbd>P</kbd>
+            <span>Open respawn confirm for selected or highlighted agent</span>
+          </div>
+          <div className="shortcut-row">
             <kbd>M</kbd>
             <span>Toggle mode on selected agent</span>
           </div>

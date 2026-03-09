@@ -627,17 +627,17 @@ kbd {
   flex-direction: column;
 }
 
-.kill-confirm-dialog {
+.confirm-dialog {
   width: min(520px, calc(100vw - 34px));
 }
 
-.kill-confirm-copy {
+.confirm-copy {
   color: rgba(231, 238, 217, 0.85);
   font-size: 14px;
   line-height: 1.4;
 }
 
-.kill-confirm-hint {
+.confirm-hint {
   margin-top: 8px;
   color: rgba(214, 224, 192, 0.76);
   font-size: 12px;

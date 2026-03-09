@@ -55,6 +55,12 @@ export function stopWorker(workerId: string): Promise<{ ok: true; workerId: stri
   });
 }
 
+export function restartWorker(workerId: string): Promise<Worker> {
+  return requestJson<Worker>(`/api/workers/${workerId}/restart`, {
+    method: "POST"
+  });
+}
+
 export function updateWorkerPosition(workerId: string, x: number, y: number): Promise<Worker> {
   return requestJson<Worker>(`/api/workers/${workerId}/position`, {
     method: "PATCH",

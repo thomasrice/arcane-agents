@@ -36,6 +36,7 @@ function shouldBypassHotkeyRoutingForTerminalInput(event: KeyboardEvent, context
   }
 
   if (
+    context.restartConfirmWorkerIds.length > 0 ||
     context.killConfirmWorkerIds.length > 0 ||
     context.renameModalOpen ||
     context.batchSpawnDialogOpen ||

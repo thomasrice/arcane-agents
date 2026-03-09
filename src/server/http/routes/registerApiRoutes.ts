@@ -92,6 +92,16 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
     }
   });
 
+  app.post("/api/workers/:workerId/restart", async (req, res) => {
+    try {
+      const worker = await orchestrator.restart(req.params.workerId);
+      hub.broadcast({ type: "worker-updated", worker });
+      res.json(worker);
+    } catch (error) {
+      handleRequestError(res, error);
+    }
+  });
+
   app.patch("/api/workers/:workerId/position", (req, res) => {
     try {
       const x = Number(req.body?.x);

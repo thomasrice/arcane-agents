@@ -8,8 +8,10 @@ export interface AppHotkeyContext {
   applySelection: (workerIds: string[], options?: { center?: boolean; focusTerminal?: boolean }) => void;
   clampNumber: (value: number, min: number, max: number) => number;
   closeKillConfirm: () => void;
+  closeRestartConfirm: () => void;
   closeRenameModal: () => void;
   confirmKillSelection: () => void;
+  confirmRestartSelection: () => void;
   controlGroupByDigitRef: MutableRefObject<ControlGroupMap>;
   cycleIdleSelection: (direction: 1 | -1) => void;
   cycleSelectedGroupFocus: (direction: 1 | -1) => void;
@@ -24,11 +26,14 @@ export interface AppHotkeyContext {
   isTerminalEscapeShortcut: (event: KeyboardEvent) => boolean;
   isTerminalTarget: (target: EventTarget | null) => boolean;
   killConfirmWorkerIds: string[];
+  restartConfirmWorkerIds: string[];
   mapColumnRatioStep: number;
   nudgeMapColumnRatio: (delta: number) => void;
   onActivateRosterIndex: (index: number) => void;
   onKillRosterActive: () => void;
   onKillSelected: () => void;
+  onRestartRosterActive: () => void;
+  onRestartSelected: () => void;
   onScatterSelected: () => void | Promise<void>;
   onToggleMovementModeSelected: () => void | Promise<void>;
   openRenameForWorkers: (workersToRename: Worker[]) => void;

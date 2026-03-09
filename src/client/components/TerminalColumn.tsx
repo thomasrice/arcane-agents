@@ -180,6 +180,7 @@ export function TerminalColumn({
         <TerminalPanel
           workerId={terminalWorker.id}
           workerName={terminalWorker.displayName ?? terminalWorker.name}
+          connectionKey={terminalWorker.tmuxRef.pane}
           focusRequestKey={terminalFocusToken}
         />
       ) : (

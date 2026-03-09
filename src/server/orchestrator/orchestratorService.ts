@@ -140,6 +140,38 @@ export class OrchestratorService {
     };
   }
 
+  async restart(workerId: string): Promise<Worker> {
+    const worker = this.requireWorker(workerId);
+
+    try {
+      await this.tmux.stop(worker.tmuxRef);
+      const tmuxRef = await this.tmux.spawnWorker({
+        workerId: worker.id,
+        windowName: worker.name,
+        projectPath: worker.projectPath,
+        command: worker.command,
+        projectId: worker.projectId,
+        runtimeId: worker.runtimeId,
+        runtimeLabel: worker.runtimeLabel
+      });
+
+      const restarted: Worker = {
+        ...worker,
+        status: "idle",
+        activityText: undefined,
+        activityTool: undefined,
+        activityPath: undefined,
+        tmuxRef,
+        updatedAt: new Date().toISOString()
+      };
+
+      this.workers.saveWorker(restarted);
+      return restarted;
+    } catch {
+      throw conflictError(`Failed to restart agent '${workerId}'.`, "worker_restart_failed");
+    }
+  }
+
   updatePosition(workerId: string, position: WorkerPosition): Worker {
     const updated = this.workers.updatePosition(workerId, position);
     if (!updated) {

@@ -2,6 +2,18 @@ import type { ControlGroupMap } from "../app/types";
 import type { AppHotkeyContext } from "./hotkeyContext";
 
 export function handleSystemHotkeys(event: KeyboardEvent, context: AppHotkeyContext): boolean {
+  if (context.restartConfirmWorkerIds.length > 0) {
+    if (isUnmodifiedEnter(event)) {
+      event.preventDefault();
+      context.confirmRestartSelection();
+      return true;
+    }
+
+    event.preventDefault();
+    context.closeRestartConfirm();
+    return true;
+  }
+
   if (context.killConfirmWorkerIds.length > 0) {
     if (isUnmodifiedEnter(event)) {
       event.preventDefault();
@@ -273,6 +285,18 @@ export function handleActionHotkeys(event: KeyboardEvent, context: AppHotkeyCont
     return true;
   }
 
+  if (
+    keyLower === "p" &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    context.selectedWorkerIds.length > 0
+  ) {
+    event.preventDefault();
+    context.onRestartSelected();
+    return true;
+  }
+
   if (context.selectedWorkers.length > 1 && !context.isTerminalTarget(event.target)) {
     if (context.inSelectedGroupView && keyLower === "c" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
       const focused = context.focusRallyCommandInput();
@@ -311,6 +335,12 @@ export function handleActionHotkeys(event: KeyboardEvent, context: AppHotkeyCont
   }
 
   if (context.selectedWorkerIds.length === 0 && context.rosterEntries.length > 0 && !context.isTerminalTarget(event.target)) {
+    if (keyLower === "p" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+      event.preventDefault();
+      context.onRestartRosterActive();
+      return true;
+    }
+
     if (keyLower === "k" && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
       context.onKillRosterActive();

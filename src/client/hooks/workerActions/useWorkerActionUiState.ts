@@ -8,6 +8,8 @@ interface UseWorkerActionUiStateParams {
   setRenameModalOpen: Dispatch<SetStateAction<boolean>>;
   renameTargetWorkerIds: string[];
   setRenameTargetWorkerIds: Dispatch<SetStateAction<string[]>>;
+  restartConfirmWorkerIds: string[];
+  setRestartConfirmWorkerIds: Dispatch<SetStateAction<string[]>>;
   killConfirmWorkerIds: string[];
   setKillConfirmWorkerIds: Dispatch<SetStateAction<string[]>>;
   setRenameDraft: Dispatch<SetStateAction<string>>;
@@ -15,8 +17,10 @@ interface UseWorkerActionUiStateParams {
 
 interface UseWorkerActionUiStateResult {
   renameTargetWorkers: Worker[];
+  restartConfirmWorkers: Worker[];
   killConfirmWorkers: Worker[];
   closeRenameModal: () => void;
+  closeRestartConfirm: () => void;
   closeKillConfirm: () => void;
   openRenameForWorkers: (workersToRename: Worker[]) => void;
 }
@@ -28,6 +32,8 @@ export function useWorkerActionUiState({
   setRenameModalOpen,
   renameTargetWorkerIds,
   setRenameTargetWorkerIds,
+  restartConfirmWorkerIds,
+  setRestartConfirmWorkerIds,
   killConfirmWorkerIds,
   setKillConfirmWorkerIds,
   setRenameDraft
@@ -54,6 +60,17 @@ export function useWorkerActionUiState({
       .filter((worker): worker is Worker => Boolean(worker));
   }, [killConfirmWorkerIds, workers]);
 
+  const restartConfirmWorkers = useMemo(() => {
+    if (restartConfirmWorkerIds.length === 0) {
+      return [];
+    }
+
+    const workerById = new Map(workers.map((worker) => [worker.id, worker]));
+    return restartConfirmWorkerIds
+      .map((workerId) => workerById.get(workerId))
+      .filter((worker): worker is Worker => Boolean(worker));
+  }, [restartConfirmWorkerIds, workers]);
+
   const closeRenameModal = useCallback(() => {
     setRenameModalOpen(false);
     setRenameTargetWorkerIds([]);
@@ -62,6 +79,10 @@ export function useWorkerActionUiState({
   const closeKillConfirm = useCallback(() => {
     setKillConfirmWorkerIds([]);
   }, [setKillConfirmWorkerIds]);
+
+  const closeRestartConfirm = useCallback(() => {
+    setRestartConfirmWorkerIds([]);
+  }, [setRestartConfirmWorkerIds]);
 
   const openRenameForWorkers = useCallback(
     (workersToRename: Worker[]) => {
@@ -88,6 +109,17 @@ export function useWorkerActionUiState({
   }, [activeWorkers, closeRenameModal, renameModalOpen, renameTargetWorkerIds]);
 
   useEffect(() => {
+    if (restartConfirmWorkerIds.length === 0) {
+      return;
+    }
+
+    const activeIds = new Set(activeWorkers.map((worker) => worker.id));
+    if (!restartConfirmWorkerIds.some((workerId) => activeIds.has(workerId))) {
+      closeRestartConfirm();
+    }
+  }, [activeWorkers, closeRestartConfirm, restartConfirmWorkerIds]);
+
+  useEffect(() => {
     if (killConfirmWorkerIds.length === 0) {
       return;
     }
@@ -100,8 +132,10 @@ export function useWorkerActionUiState({
 
   return {
     renameTargetWorkers,
+    restartConfirmWorkers,
     killConfirmWorkers,
     closeRenameModal,
+    closeRestartConfirm,
     closeKillConfirm,
     openRenameForWorkers
   };

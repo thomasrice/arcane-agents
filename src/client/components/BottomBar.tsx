@@ -8,6 +8,7 @@ interface BottomBarProps {
   onOpenSpawnDialog: () => void;
   onOpenPalette: () => void;
   onDeselect: () => void;
+  onRestartSelected: () => void;
   onKillSelected: () => void;
   onRenameSelected: () => void;
   onToggleMovementMode: () => void;
@@ -22,6 +23,7 @@ export function BottomBar({
   onOpenSpawnDialog,
   onOpenPalette,
   onDeselect,
+  onRestartSelected,
   onKillSelected,
   onRenameSelected,
   onToggleMovementMode,
@@ -65,6 +67,9 @@ export function BottomBar({
         ) : null}
         <button className="bar-btn" onClick={onRenameSelected}>
           Rename
+        </button>
+        <button className="bar-btn" onClick={onRestartSelected} disabled={stopped}>
+          Respawn
         </button>
         <button className="bar-btn danger" onClick={onKillSelected} disabled={stopped}>
           Kill

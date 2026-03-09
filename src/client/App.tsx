@@ -20,6 +20,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { KillConfirmDialog } from "./components/KillConfirmDialog";
 import { MapCanvas } from "./components/MapCanvas";
 import { RenameDialog } from "./components/RenameDialog";
+import { RestartConfirmDialog } from "./components/RestartConfirmDialog";
 import { ShortcutsDialog } from "./components/ShortcutsDialog";
 import { SpawnDialog } from "./components/SpawnDialog";
 import { TerminalColumn } from "./components/TerminalColumn";
@@ -40,7 +41,9 @@ export default function App(): JSX.Element {
   const [batchSpawnDialogOpen, setBatchSpawnDialogOpen] = useState(false);
   const [shortcutsOverlayOpen, setShortcutsOverlayOpen] = useState(false);
   const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [restartConfirmWorkerIds, setRestartConfirmWorkerIds] = useState<string[]>([]);
   const [killConfirmWorkerIds, setKillConfirmWorkerIds] = useState<string[]>([]);
+  const [respawningWorkerIds, setRespawningWorkerIds] = useState<string[]>([]);
   const [renameDraft, setRenameDraft] = useState("");
   const [renameTargetWorkerIds, setRenameTargetWorkerIds] = useState<string[]>([]);
   const [rallyCommandDraft, setRallyCommandDraft] = useState("");
@@ -54,7 +57,16 @@ export default function App(): JSX.Element {
   const { config, workers, setWorkers, workersHydrated } = useArcaneAgentsData(setErrorText);
   const { fadingWorkers, queueWorkerFade, removeWorkerFade } = useWorkerFade(killFadeDurationMs);
 
-  const activeWorkers = useMemo(() => workers.filter((worker) => worker.status !== "stopped"), [workers]);
+  const activeWorkers = useMemo(
+    () => workers.filter((worker) => worker.status !== "stopped" && !respawningWorkerIds.includes(worker.id)),
+    [respawningWorkerIds, workers]
+  );
+  const voiceLineWorkers = useMemo(() => workers.filter((worker) => worker.status !== "stopped"), [workers]);
+
+  useEffect(() => {
+    const workerIdSet = new Set(workers.map((worker) => worker.id));
+    setRespawningWorkerIds((current) => current.filter((workerId) => workerIdSet.has(workerId)));
+  }, [workers]);
 
   const {
     controlGroups,
@@ -138,9 +150,9 @@ export default function App(): JSX.Element {
     reviewedWorkerId: terminalWorkerId
   });
 
-  const { playMoveVoiceLine } = useWorkerVoiceLines({
+  const { playArrivalVoiceLine, playMoveVoiceLine } = useWorkerVoiceLines({
     config,
-    workers: activeWorkers,
+    workers: voiceLineWorkers,
     workersHydrated,
     selectedWorkerIds
   });
@@ -223,13 +235,18 @@ export default function App(): JSX.Element {
 
   const {
     renameTargetWorkers,
+    restartConfirmWorkers,
     killConfirmWorkers,
     runSpawn,
     runBatchSpawn,
     closeRenameModal,
+    closeRestartConfirm,
     closeKillConfirm,
     openRenameForWorkers,
     submitRename,
+    onRestartSelected,
+    onRestartRosterActive,
+    confirmRestartSelection,
     onKillSelected,
     onKillRosterActive,
     confirmKillSelection,
@@ -260,6 +277,8 @@ export default function App(): JSX.Element {
     renameTargetWorkerIds,
     setRenameTargetWorkerIds,
     setRenameDraft,
+    restartConfirmWorkerIds,
+    setRestartConfirmWorkerIds,
     killConfirmWorkerIds,
     setKillConfirmWorkerIds,
     rallyCommandDraft,
@@ -268,8 +287,11 @@ export default function App(): JSX.Element {
     setRallyCommandSending,
     rallyCommandResultText,
     setRallyCommandResultText,
+    respawningWorkerIds,
+    setRespawningWorkerIds,
     queueWorkerFade,
     removeWorkerFade,
+    playArrivalVoiceLine,
     setErrorText
   });
 
@@ -279,8 +301,10 @@ export default function App(): JSX.Element {
     batchSpawnDialogOpen,
     clampNumber,
     closeKillConfirm,
+    closeRestartConfirm,
     closeRenameModal,
     confirmKillSelection,
+    confirmRestartSelection,
     controlGroupByDigitRef,
     cycleIdleSelection,
     cycleSelectedGroupFocus,
@@ -295,11 +319,14 @@ export default function App(): JSX.Element {
     isTerminalEscapeShortcut,
     isTerminalTarget,
     killConfirmWorkerIds,
+    restartConfirmWorkerIds,
     mapColumnRatioStep,
     nudgeMapColumnRatio,
     onActivateRosterIndex,
     onKillRosterActive,
     onKillSelected,
+    onRestartRosterActive,
+    onRestartSelected,
     onScatterSelected,
     onToggleMovementModeSelected,
     openRenameForWorkers,
@@ -373,6 +400,9 @@ export default function App(): JSX.Element {
             setSpawnDialogOpen(false);
           }}
           onDeselect={() => onSelectWorker(undefined)}
+          onRestartSelected={() => {
+            onRestartSelected();
+          }}
           onKillSelected={() => {
             onKillSelected();
           }}
@@ -504,6 +534,13 @@ export default function App(): JSX.Element {
         onClose={() => {
           setShortcutsOverlayOpen(false);
         }}
+      />
+
+      <RestartConfirmDialog
+        workerIds={restartConfirmWorkerIds}
+        workers={restartConfirmWorkers}
+        onClose={closeRestartConfirm}
+        onConfirm={confirmRestartSelection}
       />
 
       <KillConfirmDialog

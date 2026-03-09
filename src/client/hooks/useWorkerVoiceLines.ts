@@ -18,6 +18,7 @@ interface UseWorkerVoiceLinesInput {
 }
 
 interface UseWorkerVoiceLinesResult {
+  playArrivalVoiceLine: (worker: Worker) => void;
   playMoveVoiceLine: (workerId: string) => void;
 }
 
@@ -338,6 +339,14 @@ export function useWorkerVoiceLines({ config, workers, workersHydrated, selected
     [playMoveVoiceLineWithVariants]
   );
 
+  const playArrivalVoiceLine = useCallback(
+    (worker: Worker) => {
+      playVoiceLine(worker, "arrive");
+      suppressSelectionUntilByWorkerIdRef.current.set(worker.id, performance.now() + arrivalSelectionSuppressMs);
+    },
+    [playVoiceLine]
+  );
+
   useEffect(() => {
     return () => {
       const activeAudio = activeAudioRef.current;
@@ -352,6 +361,7 @@ export function useWorkerVoiceLines({ config, workers, workersHydrated, selected
   }, []);
 
   return {
+    playArrivalVoiceLine,
     playMoveVoiceLine
   };
 }

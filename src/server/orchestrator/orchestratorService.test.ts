@@ -127,3 +127,69 @@ describe("OrchestratorService.stop", () => {
     expect((workers.deleteWorker as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 });
+
+describe("OrchestratorService.restart", () => {
+  it("restarts tmux in place and preserves the worker record", async () => {
+    const worker = createWorker();
+    const workers = {
+      getWorker: vi.fn(() => worker),
+      saveWorker: vi.fn()
+    } as unknown as WorkerRepository;
+
+    const nextTmuxRef = { session: "arcane-agents", window: "worker-1", pane: "%7" };
+    const tmux = {
+      stop: vi.fn(async () => undefined),
+      spawnWorker: vi.fn(async () => nextTmuxRef)
+    } as unknown as TmuxAdapter;
+
+    const service = new OrchestratorService(createConfig(), workers, tmux);
+    const result = await service.restart(worker.id);
+
+    expect((tmux.stop as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(worker.tmuxRef);
+    expect((tmux.spawnWorker as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith({
+      workerId: worker.id,
+      windowName: worker.name,
+      projectPath: worker.projectPath,
+      command: worker.command,
+      projectId: worker.projectId,
+      runtimeId: worker.runtimeId,
+      runtimeLabel: worker.runtimeLabel
+    });
+    expect(result).toMatchObject({
+      ...worker,
+      status: "idle",
+      tmuxRef: nextTmuxRef,
+      activityText: undefined,
+      activityTool: undefined,
+      activityPath: undefined,
+      updatedAt: expect.any(String)
+    });
+    expect((workers.saveWorker as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(result);
+
+    const stopCallOrder = (tmux.stop as unknown as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0] ?? 0;
+    const spawnCallOrder = (tmux.spawnWorker as unknown as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0] ?? 0;
+    expect(stopCallOrder).toBeLessThan(spawnCallOrder);
+  });
+
+  it("surfaces a conflict when restart fails", async () => {
+    const worker = createWorker();
+    const workers = {
+      getWorker: vi.fn(() => worker),
+      saveWorker: vi.fn()
+    } as unknown as WorkerRepository;
+    const tmux = {
+      stop: vi.fn(async () => {
+        throw new Error("tmux failure");
+      }),
+      spawnWorker: vi.fn()
+    } as unknown as TmuxAdapter;
+
+    const service = new OrchestratorService(createConfig(), workers, tmux);
+
+    await expect(service.restart(worker.id)).rejects.toMatchObject({
+      status: 409,
+      code: "worker_restart_failed"
+    });
+    expect((workers.saveWorker as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+});

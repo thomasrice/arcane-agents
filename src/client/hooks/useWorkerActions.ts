@@ -5,6 +5,7 @@ import { useWorkerActionUiState } from "./workerActions/useWorkerActionUiState";
 import { useWorkerKillActions } from "./workerActions/useWorkerKillActions";
 import { useWorkerMutationActions, type BatchSpawnItem } from "./workerActions/useWorkerMutationActions";
 import { useWorkerRallyActions } from "./workerActions/useWorkerRallyActions";
+import { useWorkerRestartActions } from "./workerActions/useWorkerRestartActions";
 
 interface UseWorkerActionsParams {
   workers: Worker[];
@@ -26,6 +27,8 @@ interface UseWorkerActionsParams {
   renameTargetWorkerIds: string[];
   setRenameTargetWorkerIds: Dispatch<SetStateAction<string[]>>;
   setRenameDraft: Dispatch<SetStateAction<string>>;
+  restartConfirmWorkerIds: string[];
+  setRestartConfirmWorkerIds: Dispatch<SetStateAction<string[]>>;
   killConfirmWorkerIds: string[];
   setKillConfirmWorkerIds: Dispatch<SetStateAction<string[]>>;
   rallyCommandDraft: string;
@@ -34,20 +37,28 @@ interface UseWorkerActionsParams {
   setRallyCommandSending: Dispatch<SetStateAction<boolean>>;
   rallyCommandResultText: string | undefined;
   setRallyCommandResultText: Dispatch<SetStateAction<string | undefined>>;
+  respawningWorkerIds: string[];
+  setRespawningWorkerIds: Dispatch<SetStateAction<string[]>>;
   queueWorkerFade: (worker: Worker) => void;
   removeWorkerFade: (workerId: string) => void;
+  playArrivalVoiceLine: (worker: Worker) => void;
   setErrorText: Dispatch<SetStateAction<string | undefined>>;
 }
 
 interface UseWorkerActionsResult {
   renameTargetWorkers: Worker[];
+  restartConfirmWorkers: Worker[];
   killConfirmWorkers: Worker[];
   runSpawn: (input: WorkerSpawnInput) => Promise<void>;
   runBatchSpawn: (items: BatchSpawnItem[], onProgress: (done: number, total: number) => void) => Promise<void>;
   closeRenameModal: () => void;
+  closeRestartConfirm: () => void;
   closeKillConfirm: () => void;
   openRenameForWorkers: (workersToRename: Worker[]) => void;
   submitRename: (draft: string) => Promise<void>;
+  onRestartSelected: () => void;
+  onRestartRosterActive: () => void;
+  confirmRestartSelection: () => void;
   onKillSelected: () => void;
   onKillRosterActive: () => void;
   confirmKillSelection: () => void;
@@ -80,6 +91,8 @@ export function useWorkerActions({
   renameTargetWorkerIds,
   setRenameTargetWorkerIds,
   setRenameDraft,
+  restartConfirmWorkerIds,
+  setRestartConfirmWorkerIds,
   killConfirmWorkerIds,
   setKillConfirmWorkerIds,
   rallyCommandDraft,
@@ -88,8 +101,11 @@ export function useWorkerActions({
   setRallyCommandSending,
   rallyCommandResultText,
   setRallyCommandResultText,
+  respawningWorkerIds,
+  setRespawningWorkerIds,
   queueWorkerFade,
   removeWorkerFade,
+  playArrivalVoiceLine,
   setErrorText
 }: UseWorkerActionsParams): UseWorkerActionsResult {
   const showError = useCallback(
@@ -99,7 +115,15 @@ export function useWorkerActions({
     [setErrorText]
   );
 
-  const { renameTargetWorkers, killConfirmWorkers, closeRenameModal, closeKillConfirm, openRenameForWorkers } =
+  const {
+    renameTargetWorkers,
+    restartConfirmWorkers,
+    killConfirmWorkers,
+    closeRenameModal,
+    closeRestartConfirm,
+    closeKillConfirm,
+    openRenameForWorkers
+  } =
     useWorkerActionUiState({
       workers,
       activeWorkers,
@@ -107,6 +131,8 @@ export function useWorkerActions({
       setRenameModalOpen,
       renameTargetWorkerIds,
       setRenameTargetWorkerIds,
+      restartConfirmWorkerIds,
+      setRestartConfirmWorkerIds,
       killConfirmWorkerIds,
       setKillConfirmWorkerIds,
       setRenameDraft
@@ -124,6 +150,23 @@ export function useWorkerActions({
       closeRenameModal,
       showError
     });
+
+  const { onRestartSelected, onRestartRosterActive, confirmRestartSelection } = useWorkerRestartActions({
+    workers,
+    selectedWorkerIds,
+    rosterEntries,
+    rosterActiveIndex,
+    applySelection,
+    setRestartConfirmWorkerIds,
+    closeRestartConfirm,
+    restartConfirmWorkerIds,
+    setRespawningWorkerIds,
+    queueWorkerFade,
+    removeWorkerFade,
+    setWorkers,
+    playArrivalVoiceLine,
+    showError
+  });
 
   const { onKillSelected, onKillRosterActive, confirmKillSelection } = useWorkerKillActions({
     workers,
@@ -182,13 +225,18 @@ export function useWorkerActions({
 
   return {
     renameTargetWorkers,
+    restartConfirmWorkers,
     killConfirmWorkers,
     runSpawn,
     runBatchSpawn,
     closeRenameModal,
+    closeRestartConfirm,
     closeKillConfirm,
     openRenameForWorkers,
     submitRename,
+    onRestartSelected,
+    onRestartRosterActive,
+    confirmRestartSelection,
     onKillSelected,
     onKillRosterActive,
     confirmKillSelection,
