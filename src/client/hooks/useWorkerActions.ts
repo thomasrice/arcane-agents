@@ -37,7 +37,6 @@ interface UseWorkerActionsParams {
   setRallyCommandSending: Dispatch<SetStateAction<boolean>>;
   rallyCommandResultText: string | undefined;
   setRallyCommandResultText: Dispatch<SetStateAction<string | undefined>>;
-  respawningWorkerIds: string[];
   setRespawningWorkerIds: Dispatch<SetStateAction<string[]>>;
   queueWorkerFade: (worker: Worker) => void;
   removeWorkerFade: (workerId: string) => void;
@@ -101,7 +100,6 @@ export function useWorkerActions({
   setRallyCommandSending,
   rallyCommandResultText,
   setRallyCommandResultText,
-  respawningWorkerIds,
   setRespawningWorkerIds,
   queueWorkerFade,
   removeWorkerFade,

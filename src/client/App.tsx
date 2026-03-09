@@ -287,7 +287,6 @@ export default function App(): JSX.Element {
     setRallyCommandSending,
     rallyCommandResultText,
     setRallyCommandResultText,
-    respawningWorkerIds,
     setRespawningWorkerIds,
     queueWorkerFade,
     removeWorkerFade,
