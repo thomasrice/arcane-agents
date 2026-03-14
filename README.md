@@ -151,6 +151,25 @@ Or edit `~/.config/arcane-agents/config.yaml` directly.
 npm run dev
 ```
 
+To expose dev mode to other computers on your LAN:
+
+```bash
+npm run dev -- --host
+```
+
+If you want to open the app through a named host such as a Tailscale MagicDNS
+name, allow that host explicitly:
+
+```bash
+npm run dev -- --host --allow-host waystone
+```
+
+You can also bind to a specific interface:
+
+```bash
+npm run dev -- --host 192.168.1.42
+```
+
 Default URLs:
 
 - App (Vite): `http://127.0.0.1:7600`

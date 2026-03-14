@@ -16,10 +16,11 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "npm run dev:clean && concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev": "node ./dev.mjs",
     "dev:clean": "node ./kill-dev-ports.mjs 7600 7601",
+    "dev:stack": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "ARCANE_AGENTS_API_PORT=7601 tsx watch src/server/index.ts",
-    "dev:client": "vite --host 127.0.0.1 --port 7600",
+    "dev:client": "vite --port 7600",
     "build": "vite build && tsc -p tsconfig.server.json",
     "start": "node dist/server/server/cli.js start",
     "cli": "tsx src/server/cli.ts",
