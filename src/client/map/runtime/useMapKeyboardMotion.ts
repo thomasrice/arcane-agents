@@ -157,6 +157,8 @@ export function useMapKeyboardMotion({
         event.preventDefault();
 
         if (multiSelectedWorkerIdsRef.current.size === 0) {
+          pressedPanKeysRef.current.add(direction);
+          startPanLoop();
           return;
         }
 
