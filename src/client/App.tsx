@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   killFadeDurationMs,
   mapColumnRatioStep,
@@ -354,14 +354,18 @@ export default function App(): JSX.Element {
     spawnDialogOpen
   });
 
+  const appShellStyle = useMemo(
+    () =>
+      ({
+        "--map-column-width": `${mapColumnRatio.toFixed(3)}fr`,
+        "--terminal-column-width": `${(1 - mapColumnRatio).toFixed(3)}fr`,
+        "--layout-divider-width": `${splitPaneDividerWidthPx}px`
+      }) as CSSProperties,
+    [mapColumnRatio]
+  );
+
   return (
-    <div
-      ref={appShellRef}
-      className="app-shell"
-      style={{
-        gridTemplateColumns: `minmax(0px, ${mapColumnRatio.toFixed(3)}fr) ${splitPaneDividerWidthPx}px minmax(0px, ${(1 - mapColumnRatio).toFixed(3)}fr)`
-      }}
-    >
+    <div ref={appShellRef} className="app-shell" style={appShellStyle}>
       <div className="map-column">
         <MapCanvas
           workers={activeWorkers}
