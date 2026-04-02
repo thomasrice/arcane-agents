@@ -327,23 +327,6 @@ export class TmuxAdapter {
     await this.runTmux(["send-keys", "-t", target, "C-c"]).catch(() => undefined);
     await delay(220);
 
-    const paneInfo = await this.runTmux([
-      "list-panes",
-      "-t",
-      target,
-      "-F",
-      "#{pane_pid}\t#{pane_current_command}\t#{pane_dead}"
-    ]).catch(() => "");
-    const [panePidText = "", paneCommand = "", paneDeadFlag = "1"] = firstLine(paneInfo).split("\t");
-    const panePid = Number.parseInt(panePidText, 10);
-    const currentCommand = paneCommand.trim().toLowerCase();
-    const paneDead = paneDeadFlag === "1";
-
-    if (!paneDead && Number.isFinite(panePid) && panePid > 1 && currentCommand !== "bash" && currentCommand !== "zsh") {
-      await terminateProcessGroup(panePid).catch(() => undefined);
-      await delay(90);
-    }
-
     await this.runTmux(["kill-window", "-t", target]).catch(() => undefined);
   }
 }
@@ -417,18 +400,4 @@ async function commandExists(binary: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-async function terminateProcessGroup(panePid: number): Promise<void> {
-  const { stdout } = await execFileAsync("ps", ["-o", "pgid=", "-p", String(panePid)], {
-    maxBuffer: 1024 * 64
-  });
-  const pgid = Number.parseInt(stdout.trim(), 10);
-  if (!Number.isFinite(pgid) || pgid <= 1) {
-    return;
-  }
-
-  await execFileAsync("kill", ["-TERM", `-${pgid}`], { maxBuffer: 1024 * 64 }).catch(() => undefined);
-  await delay(120);
-  await execFileAsync("kill", ["-KILL", `-${pgid}`], { maxBuffer: 1024 * 64 }).catch(() => undefined);
 }
