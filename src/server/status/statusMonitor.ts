@@ -399,8 +399,9 @@ export class StatusMonitor {
       return;
     }
 
+    const timestamp = new Date().toLocaleTimeString("en-AU", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
     console.log(
-      `[arcane-agents][status] poll workers=${timing.workerCount} duration=${Math.round(timing.durationMs)}ms ` +
+      `[arcane-agents][status] ${timestamp} poll workers=${timing.workerCount} duration=${Math.round(timing.durationMs)}ms ` +
         `avgWorker=${Math.round(timing.averageWorkerDurationMs)}ms maxWorker=${Math.round(timing.maxWorkerDurationMs)}ms ` +
         `outcomes={updated:${timing.outcomeCounts.updated},unchanged:${timing.outcomeCounts.unchanged},removed:${timing.outcomeCounts.removed},failed:${timing.outcomeCounts.failed}}`
     );
@@ -439,8 +440,9 @@ export class StatusMonitor {
       `codex=${evaluation.facts.isCodexSession ? 1 : 0} ` +
       `runtimeProc=${evaluation.facts.hasActiveRuntimeProcess ? 1 : 0}`;
 
+    const timestamp = new Date().toLocaleTimeString("en-AU", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
     console.log(
-      `[arcane-agents][status] ${worker.displayName ?? worker.name} ${fromTo} (${Math.round(evaluation.confidence * 100)}%)${activityText} reasons=[${reasonText}] ${traceFacts}`
+      `[arcane-agents][status] ${timestamp} ${worker.displayName ?? worker.name} ${fromTo} (${Math.round(evaluation.confidence * 100)}%)${activityText} reasons=[${reasonText}] ${traceFacts}`
     );
   }
 

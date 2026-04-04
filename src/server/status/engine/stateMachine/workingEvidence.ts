@@ -8,7 +8,8 @@ import {
   isShellCommand,
   looksLikeActiveRuntimeText,
   pushMaybe,
-  shouldSuppressShellHistorySignals
+  shouldSuppressShellHistorySignals,
+  statusFreshnessWindowMs
 } from "./helpers";
 import type { WorkingEvidence } from "./types";
 
@@ -116,6 +117,24 @@ function collectWorkingEvidence(context: WorkerStatusSignalContext, hasRecoverab
     pushMaybe(activityTextCandidates, context.runtimeActivityText ?? context.parsed.activity.text);
     activityToolCandidates.push(context.parsed.activity.tool);
     pushMaybe(activityPathCandidates, context.parsed.activity.filePath);
+  }
+
+  if (
+    context.worker.status === "working" &&
+    !isShellCommand(context.commandLower) &&
+    !isInteractiveCommand(context) &&
+    context.outputQuietForMs <= statusFreshnessWindowMs(context) &&
+    strongReasons.length === 0 &&
+    weakReasons.length === 0
+  ) {
+    weakReasons.push({
+      code: "output-still-fresh",
+      message: "Output is still within the freshness window; maintaining working status.",
+      detail: `${Math.round(context.outputQuietForMs)}ms quiet (window: ${statusFreshnessWindowMs(context)}ms)`
+    });
+    pushMaybe(activityTextCandidates, context.runtimeActivityText ?? context.worker.activityText);
+    activityToolCandidates.push(context.worker.activityTool ?? "terminal");
+    pushMaybe(activityPathCandidates, context.worker.activityPath);
   }
 
   return {
