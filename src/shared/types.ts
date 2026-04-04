@@ -27,6 +27,7 @@ export interface ProjectConfig {
 export interface RuntimeConfig {
   command: string[];
   label: string;
+  freshnessWindowMs?: number;
 }
 
 export interface ShortcutConfig {

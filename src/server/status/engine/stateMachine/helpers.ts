@@ -59,6 +59,10 @@ function looksLikeActiveRuntimeText(activityText: string | undefined): boolean {
 }
 
 function statusFreshnessWindowMs(context: WorkerStatusSignalContext): number {
+  if (context.runtimeFreshnessWindowMs !== undefined) {
+    return context.runtimeFreshnessWindowMs;
+  }
+
   if (context.isClaudeSession) {
     return claudeWorkingFreshWindowMs;
   }

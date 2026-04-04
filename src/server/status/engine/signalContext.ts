@@ -24,6 +24,7 @@ interface BuildWorkerStatusSignalContextInput {
   runtimeProcess: AgentRuntimeProcess | undefined;
   nowMs: number;
   interactiveCommands: ReadonlySet<string>;
+  runtimeFreshnessWindowMs: number | undefined;
 }
 
 export function buildWorkerStatusSignalContext({
@@ -34,7 +35,8 @@ export function buildWorkerStatusSignalContext({
   transcriptSnapshot,
   runtimeProcess,
   nowMs,
-  interactiveCommands
+  interactiveCommands,
+  runtimeFreshnessWindowMs
 }: BuildWorkerStatusSignalContextInput): WorkerStatusSignalContext {
   const parsed = parseActivity(currentCommand, output);
   const commandLower = currentCommand.toLowerCase();
@@ -84,6 +86,7 @@ export function buildWorkerStatusSignalContext({
     outputQuietForMs,
     commandQuietForMs,
     workerAgeMs,
-    interactiveCommands
+    interactiveCommands,
+    runtimeFreshnessWindowMs
   };
 }

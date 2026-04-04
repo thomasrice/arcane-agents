@@ -14,6 +14,7 @@ interface EvaluateWorkerStatusInput {
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
   runtimeProcess: AgentRuntimeProcess | undefined;
   interactiveCommands: ReadonlySet<string>;
+  runtimeFreshnessWindowMs: number | undefined;
 }
 
 export interface EvaluatedWorkerStatus {
@@ -33,7 +34,8 @@ export function evaluateWorkerStatus({
   observation,
   transcriptSnapshot,
   runtimeProcess,
-  interactiveCommands
+  interactiveCommands,
+  runtimeFreshnessWindowMs
 }: EvaluateWorkerStatusInput): EvaluatedWorkerStatus {
   const context = buildWorkerStatusSignalContext({
     worker,
@@ -43,7 +45,8 @@ export function evaluateWorkerStatus({
     transcriptSnapshot,
     runtimeProcess,
     nowMs: Date.now(),
-    interactiveCommands
+    interactiveCommands,
+    runtimeFreshnessWindowMs
   });
 
   return deriveWorkerStatusDecision(context);

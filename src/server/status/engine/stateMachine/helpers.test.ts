@@ -75,6 +75,7 @@ function createContext(overrides: Partial<WorkerStatusSignalContext> = {}): Work
     commandQuietForMs: 300,
     workerAgeMs: 10_000,
     interactiveCommands: new Set<string>(),
+    runtimeFreshnessWindowMs: undefined,
     ...overrides
   };
 }
@@ -110,7 +111,9 @@ describe("state machine helpers", () => {
     expect(statusFreshnessWindowMs(createContext({ isClaudeSession: true }))).toBe(10_000);
     expect(statusFreshnessWindowMs(createContext({ isOpenCodeSession: true }))).toBe(12_000);
     expect(statusFreshnessWindowMs(createContext({ isCodexSession: true }))).toBe(10_000);
-    expect(statusFreshnessWindowMs(createContext())).toBe(12_000);
+    expect(statusFreshnessWindowMs(createContext())).toBe(20_000);
+    expect(statusFreshnessWindowMs(createContext({ runtimeFreshnessWindowMs: 45_000 }))).toBe(45_000);
+    expect(statusFreshnessWindowMs(createContext({ isClaudeSession: true, runtimeFreshnessWindowMs: 30_000 }))).toBe(30_000);
   });
 
   it("handles helper utility behavior", () => {

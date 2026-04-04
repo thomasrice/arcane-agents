@@ -25,7 +25,7 @@ interface TestRepository {
   deleteWorker: ReturnType<typeof vi.fn>;
 }
 
-const testConfig = { status: { interactiveCommands: [] } } as unknown as ResolvedConfig;
+const testConfig = { status: { interactiveCommands: [] }, runtimes: {} } as unknown as ResolvedConfig;
 
 const defaultFacts: WorkerStatusEvaluation["facts"] = {
   command: "claude",
@@ -120,7 +120,8 @@ function createSignals(): WorkerStatusSignals {
     } as PaneObservation,
     transcriptSnapshot: undefined,
     runtimeProcess: undefined,
-    interactiveCommands: new Set<string>()
+    interactiveCommands: new Set<string>(),
+    runtimeFreshnessWindowMs: undefined
   };
 }
 

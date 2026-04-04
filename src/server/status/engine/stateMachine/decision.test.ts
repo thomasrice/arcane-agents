@@ -66,6 +66,7 @@ function createContext(overrides: Partial<WorkerStatusSignalContext> = {}): Work
     commandQuietForMs: 5_000,
     workerAgeMs: 30_000,
     interactiveCommands: new Set<string>(),
+    runtimeFreshnessWindowMs: undefined,
     ...overrides
   };
 }

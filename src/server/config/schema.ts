@@ -22,7 +22,8 @@ const projectSchema = z.object({
 
 const runtimeSchema = z.object({
   command: z.array(z.string().min(1)).min(1),
-  label: z.string().min(1)
+  label: z.string().min(1),
+  freshnessWindowMs: z.number().int().min(1_000).optional()
 });
 
 const shortcutSchema = z.object({

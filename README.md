@@ -327,6 +327,15 @@ Required fields per runtime:
 - `command`: command to execute (string array)
 - `label`: UI label
 
+Optional fields per runtime:
+
+- `freshnessWindowMs`: override the idle-detection freshness window (in
+  milliseconds) for this runtime. When output has been quiet for longer than this
+  window, the worker is considered idle. Defaults to 20 seconds for generic
+  runtimes; known agent runtimes (Claude, OpenCode, Codex) use their own
+  built-in windows. Useful for long-running programs that may go quiet for
+  extended periods between bursts of output.
+
 Example:
 
 ```yaml
@@ -337,6 +346,10 @@ runtimes:
   shell:
     command: ["bash"]
     label: Shell
+  my-pipeline:
+    command: ["bin/run-pipeline"]
+    label: Pipeline
+    freshnessWindowMs: 60000  # allow up to 60s of quiet before marking idle
 ```
 
 ### `shortcuts`

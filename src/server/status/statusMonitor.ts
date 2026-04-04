@@ -110,6 +110,7 @@ export class StatusMonitor {
   private readonly traceMode: StatusTraceMode = resolveStatusTraceMode();
   private readonly workerPollConcurrency = resolveStatusPollConcurrency();
   private readonly interactiveCommands: ReadonlySet<string>;
+  private readonly runtimeFreshnessOverrides: ReadonlyMap<string, number>;
 
   constructor(
     private readonly workers: WorkerRepository,
@@ -120,6 +121,14 @@ export class StatusMonitor {
     config: ResolvedConfig
   ) {
     this.interactiveCommands = new Set(config.status.interactiveCommands.map((cmd) => cmd.toLowerCase()));
+
+    const freshnessOverrides = new Map<string, number>();
+    for (const [id, runtime] of Object.entries(config.runtimes)) {
+      if (runtime.freshnessWindowMs !== undefined) {
+        freshnessOverrides.set(id, runtime.freshnessWindowMs);
+      }
+    }
+    this.runtimeFreshnessOverrides = freshnessOverrides;
   }
 
   start(): void {
@@ -263,7 +272,8 @@ export class StatusMonitor {
         tmux: this.tmux,
         paneObservation: this.paneObservation,
         claudeTranscript: this.claudeTranscript,
-        interactiveCommands: this.interactiveCommands
+        interactiveCommands: this.interactiveCommands,
+        runtimeFreshnessWindowMs: this.runtimeFreshnessOverrides.get(worker.runtimeId)
       });
 
       if (!signals) {
