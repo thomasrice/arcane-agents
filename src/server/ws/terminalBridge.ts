@@ -1,6 +1,8 @@
 import * as pty from "node-pty";
+import type { ResolvedConfig } from "../../shared/types";
 import type { RawData, WebSocket } from "ws";
 import { WorkerRepository } from "../persistence/workerRepository";
+import { buildTmuxAttachArgs } from "../tmux/tmuxClient";
 
 interface TerminalBridgeOptions {
   onSubmittedInput?: (workerId: string) => void;
@@ -18,6 +20,7 @@ export class TerminalBridge {
 
   constructor(
     private readonly workers: WorkerRepository,
+    private readonly tmuxConfig: ResolvedConfig["backend"]["tmux"],
     private readonly options: TerminalBridgeOptions = {}
   ) {}
 
@@ -48,7 +51,7 @@ export class TerminalBridge {
 
         if (!terminal) {
           try {
-            terminal = pty.spawn("tmux", ["attach-session", "-t", tmuxTarget], {
+            terminal = pty.spawn("tmux", buildTmuxAttachArgs(tmuxTarget, this.tmuxConfig), {
               name: "xterm-256color",
               cols,
               rows,

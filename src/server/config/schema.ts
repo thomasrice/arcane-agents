@@ -46,6 +46,7 @@ const discoveryRuleSchema = z.object({
 
 const backendSchema = z.object({
   tmux: z.object({
+    socketName: z.string().min(1),
     sessionName: z.string().min(1),
     pollIntervalMs: z.number().int().min(250)
   })
@@ -83,6 +84,7 @@ export const partialConfigSchema = z
       .object({
         tmux: z
           .object({
+            socketName: z.string().min(1).optional(),
             sessionName: z.string().min(1).optional(),
             pollIntervalMs: z.number().int().min(250).optional()
           })
@@ -140,6 +142,7 @@ export function createDefaultConfig(): ResolvedConfig {
     },
     backend: {
       tmux: {
+        socketName: "arcane-agents",
         sessionName: "arcane-agents",
         pollIntervalMs: 2500
       }

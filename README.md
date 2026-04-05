@@ -425,6 +425,9 @@ discovery:
 
 ### `backend.tmux`
 
+- `socketName`: tmux socket name Arcane Agents uses for its managed tmux server.
+  This lets the app ship mouse/copy-friendly defaults without mutating your main
+  tmux setup.
 - `sessionName`: tmux session used for managed windows.
 - `pollIntervalMs`: status poll interval in milliseconds (minimum `250`).
 
@@ -433,6 +436,7 @@ Example:
 ```yaml
 backend:
   tmux:
+    socketName: arcane-agents
     sessionName: arcane-agents
     pollIntervalMs: 2500
 ```

@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import type { TmuxRef } from "../../shared/types";
+import type { ResolvedConfig, TmuxRef } from "../../shared/types";
+import { buildFriendlyTmuxDefaults, buildTmuxArgs, buildTmuxCommandPrefix } from "./tmuxClient";
 
 const execFileAsync = promisify(execFile);
 
@@ -45,12 +46,12 @@ export interface ManagedWindow {
 }
 
 export class TmuxAdapter {
-  private sessionClipboardConfigured = false;
+  private managedDefaultsConfigured = false;
 
-  constructor(private readonly sessionName: string) {}
+  constructor(private readonly config: ResolvedConfig["backend"]["tmux"]) {}
 
   async spawnWorker(input: SpawnTmuxInput): Promise<TmuxRef> {
-    const target = `${this.sessionName}:${input.windowName}`;
+    const target = `${this.config.sessionName}:${input.windowName}`;
     const commandLine = input.command.map(shellQuote).join(" ");
     const env = `ARCANE_AGENTS_WORKER_ID=${input.workerId}`;
 
@@ -59,7 +60,7 @@ export class TmuxAdapter {
         "new-window",
         "-d",
         "-t",
-        this.sessionName,
+        this.config.sessionName,
         "-n",
         input.windowName,
         "-c",
@@ -69,11 +70,12 @@ export class TmuxAdapter {
         commandLine
       ]);
     } else {
+      this.managedDefaultsConfigured = false;
       await this.runTmux([
         "new-session",
         "-d",
         "-s",
-        this.sessionName,
+        this.config.sessionName,
         "-n",
         input.windowName,
         "-c",
@@ -84,7 +86,7 @@ export class TmuxAdapter {
       ]);
     }
 
-    await this.ensureSessionClipboardDefaults();
+    await this.ensureManagedDefaults();
 
     await this.setWindowMetadata(target, {
       "@arcane_agents_managed": "1",
@@ -106,7 +108,7 @@ export class TmuxAdapter {
     }
 
     return {
-      session: this.sessionName,
+      session: this.config.sessionName,
       window: input.windowName,
       pane
     };
@@ -121,8 +123,8 @@ export class TmuxAdapter {
     await this.stopGracefully(ref);
   }
 
-  async ensureSessionClipboardDefaults(): Promise<void> {
-    if (this.sessionClipboardConfigured) {
+  async ensureManagedDefaults(): Promise<void> {
+    if (this.managedDefaultsConfigured) {
       return;
     }
 
@@ -131,17 +133,11 @@ export class TmuxAdapter {
     }
 
     const copyCommand = await detectClipboardCopyCommand();
-    if (!copyCommand) {
-      this.sessionClipboardConfigured = true;
-      return;
+    for (const command of buildFriendlyTmuxDefaults({ copyCommand })) {
+      await this.runTmux(command).catch(() => undefined);
     }
 
-    await Promise.all([
-      this.runTmux(["set-option", "-t", this.sessionName, "set-clipboard", "external"]),
-      this.runTmux(["set-option", "-t", this.sessionName, "copy-command", copyCommand])
-    ]).catch(() => undefined);
-
-    this.sessionClipboardConfigured = true;
+    this.managedDefaultsConfigured = true;
   }
 
   async windowExists(ref: TmuxRef): Promise<boolean> {
@@ -222,7 +218,8 @@ export class TmuxAdapter {
     }
 
     await new Promise<void>((resolve, reject) => {
-      const guardCommand = `tmux has-session -t ${shellQuote(externalSession)} >/dev/null 2>&1 || exit 0; exec tmux attach-session -t ${shellQuote(externalSession)}`;
+      const tmuxCommand = buildTmuxCommandPrefix(this.config);
+      const guardCommand = `${tmuxCommand} has-session -t ${shellQuote(externalSession)} >/dev/null 2>&1 || exit 0; exec ${tmuxCommand} attach-session -t ${shellQuote(externalSession)}`;
       const child = spawn(
         "xdg-terminal-exec",
         ["sh", "-lc", guardCommand],
@@ -293,7 +290,7 @@ export class TmuxAdapter {
 
   private async hasSession(): Promise<boolean> {
     try {
-      await this.runTmux(["has-session", "-t", this.sessionName]);
+      await this.runTmux(["has-session", "-t", this.config.sessionName]);
       return true;
     } catch {
       return false;
@@ -305,7 +302,7 @@ export class TmuxAdapter {
   }
 
   private async runTmux(args: string[]): Promise<string> {
-    const { stdout } = await execFileAsync("tmux", args, {
+    const { stdout } = await execFileAsync("tmux", buildTmuxArgs(args, this.config), {
       maxBuffer: 1024 * 1024
     });
     return stdout.trimEnd();

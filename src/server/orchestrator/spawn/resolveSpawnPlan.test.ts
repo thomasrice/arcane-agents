@@ -30,6 +30,7 @@ function createConfig(): ResolvedConfig {
     },
     backend: {
       tmux: {
+        socketName: "arcane-agents",
         sessionName: "arcane-agents",
         pollIntervalMs: 2500
       }

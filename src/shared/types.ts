@@ -64,6 +64,7 @@ export interface ResolvedConfig {
   };
   backend: {
     tmux: {
+      socketName: string;
       sessionName: string;
       pollIntervalMs: number;
     };

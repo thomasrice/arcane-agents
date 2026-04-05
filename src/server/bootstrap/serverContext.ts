@@ -30,7 +30,9 @@ export async function createServerContext(sessionName?: string): Promise<ServerC
 
   if (isNonDefaultSession(sessionName)) {
     const baseTmuxName = baseConfig.backend.tmux.sessionName;
+    const baseSocketName = baseConfig.backend.tmux.socketName;
     baseConfig.backend.tmux.sessionName = `${baseTmuxName}-${sessionName}`;
+    baseConfig.backend.tmux.socketName = `${baseSocketName}-${sessionName}`;
   }
 
   const discoveryService = new DiscoveryService();
@@ -40,8 +42,8 @@ export async function createServerContext(sessionName?: string): Promise<ServerC
   }
 
   const workers = new WorkerRepository(paths.dbPath);
-  const tmux = new TmuxAdapter(baseConfig.backend.tmux.sessionName);
-  await tmux.ensureSessionClipboardDefaults();
+  const tmux = new TmuxAdapter(baseConfig.backend.tmux);
+  await tmux.ensureManagedDefaults();
   const orchestrator = new OrchestratorService(baseConfig, workers, tmux);
   orchestrator.setDiscoveredProjects(initialDiscovery.projects);
 
@@ -68,7 +70,7 @@ export async function createServerContext(sessionName?: string): Promise<ServerC
     baseConfig
   );
 
-  const terminalBridge = new TerminalBridge(workers, {
+  const terminalBridge = new TerminalBridge(workers, baseConfig.backend.tmux, {
     onSubmittedInput: () => {
       statusMonitor.requestPollSoon();
     },
