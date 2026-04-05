@@ -38,41 +38,28 @@ Common setups use Claude Code or OpenCode runtimes, but any terminal-accessible 
 
 ## Install (Non-Developers)
 
-1) Install system dependencies.
-
-Linux (Debian/Ubuntu):
-
-```bash
-sudo apt update
-sudo apt install -y tmux git
-```
-
-macOS (Homebrew):
-
-```bash
-brew install tmux git
-```
-
-Windows:
-
-- Install WSL2 and Ubuntu.
-- Run the Linux setup steps inside WSL.
-
-2) Install Arcane Agents globally.
+1) Install Arcane Agents globally.
 
 ```bash
 npm install -g arcane-agents
 ```
 
-3) Create your user config.
+2) Run guided setup.
 
 ```bash
-arcane-agents init
+arcane-agents setup
 ```
 
-`arcane-agents start` also auto-creates a starter config if it is missing.
+This checks for `tmux`, suggests the right install command for your platform,
+can run it after confirmation, creates `~/.config/arcane-agents/config.yaml`
+if needed, and runs `arcane-agents doctor`.
 
-4) Edit your config.
+Windows:
+
+- Install WSL2 and Ubuntu.
+- Run Arcane Agents and `arcane-agents setup` inside WSL.
+
+3) Edit your config if needed.
 
 ```bash
 arcane-agents config edit
@@ -80,19 +67,27 @@ arcane-agents config edit
 
 This opens `~/.config/arcane-agents/config.yaml` in `$VISUAL` or `$EDITOR`.
 
-5) Run setup checks.
-
-```bash
-arcane-agents doctor
-```
-
-6) Start Arcane Agents.
+4) Start Arcane Agents.
 
 ```bash
 arcane-agents
 ```
 
-7) Open `http://127.0.0.1:7600`.
+5) Open `http://127.0.0.1:7600`.
+
+If you prefer to install prerequisites manually first, common commands are:
+
+Linux (Debian/Ubuntu):
+
+```bash
+sudo apt install -y tmux
+```
+
+macOS (Homebrew):
+
+```bash
+brew install tmux
+```
 
 Optional maintenance commands:
 
@@ -103,27 +98,7 @@ npm uninstall -g arcane-agents       # uninstall
 
 ## Run Locally (Developers)
 
-1) Install system dependencies.
-
-Linux (Debian/Ubuntu):
-
-```bash
-sudo apt update
-sudo apt install -y tmux git
-```
-
-macOS (Homebrew):
-
-```bash
-brew install tmux git
-```
-
-Windows:
-
-- Install WSL2 and Ubuntu.
-- Run the Linux setup steps inside WSL.
-
-2) Clone and install dependencies.
+1) Clone and install dependencies.
 
 ```bash
 git clone https://github.com/thomasrice/arcane-agents.git
@@ -131,13 +106,17 @@ cd arcane-agents
 npm install
 ```
 
-3) Create your user config.
+2) Run guided setup.
 
 ```bash
-npm run cli -- init
+npm run cli -- setup
 ```
 
-4) Edit your config.
+This checks for `tmux`, suggests or runs the install command after confirmation,
+creates a starter config if needed, and runs the same doctor checks used in the
+published CLI.
+
+3) Edit your config if needed.
 
 ```bash
 npm run cli -- config edit
@@ -145,7 +124,7 @@ npm run cli -- config edit
 
 Or edit `~/.config/arcane-agents/config.yaml` directly.
 
-5) Start dev mode (client + server).
+4) Start dev mode (client + server).
 
 ```bash
 npm run dev
@@ -236,6 +215,7 @@ Changes require a server restart.
 arcane-agents config path  # print config and local override paths
 arcane-agents config show  # print config.yaml
 arcane-agents config edit  # open config.yaml in $VISUAL/$EDITOR
+arcane-agents setup        # guided tmux + config + doctor flow
 ```
 
 ### Top-level sections

@@ -7,6 +7,7 @@ import readline from "node:readline";
 import type { ResolvedConfig } from "../shared/types";
 import { bootstrap } from "./bootstrapApp";
 import { getArcaneAgentsPaths, loadResolvedConfig } from "./config/loadConfig";
+import { recommendTmuxInstall } from "./setup/prerequisites";
 import { resolveAppPath, resolveAppRoot, setAppRoot } from "./utils/appRoot";
 import { resolveUserPath } from "./utils/path";
 
@@ -72,6 +73,8 @@ async function runCli(): Promise<number> {
       return runStart(sessionName);
     case "init":
       return runInit(commandArgs);
+    case "setup":
+      return runSetup(commandArgs);
     case "config":
       return runConfig(commandArgs);
     case "doctor":
@@ -146,6 +149,85 @@ function runInit(args: string[]): number {
 
   console.log("[arcane-agents] next: edit it with 'arcane-agents config edit'.");
   return 0;
+}
+
+async function runSetup(args: string[]): Promise<number> {
+  if (hasFlag(args, "--help") || hasFlag(args, "-h")) {
+    printSetupHelp();
+    return 0;
+  }
+
+  if (args.length > 0) {
+    console.error(`[arcane-agents] unknown setup options: ${args.join(", ")}`);
+    printSetupHelp();
+    return 1;
+  }
+
+  console.log("[arcane-agents] setup");
+
+  const tmuxPath = findExecutable("tmux");
+  if (tmuxPath) {
+    console.log(`[arcane-agents] tmux: ${tmuxPath}`);
+  } else {
+    const installRecommendation = recommendTmuxInstall({
+      platform: process.platform,
+      lookupCommand: findExecutable,
+      isRootUser: process.getuid?.() === 0
+    });
+
+    console.log("[arcane-agents] tmux is required but was not found on PATH.");
+
+    if (installRecommendation) {
+      console.log(`[arcane-agents] suggested install (${installRecommendation.packageManager}): ${installRecommendation.command}`);
+      if (installRecommendation.note) {
+        console.log(`[arcane-agents] note: ${installRecommendation.note}`);
+      }
+
+      if (process.stdin.isTTY && process.stdout.isTTY) {
+        const approved = await promptConfirm(`[arcane-agents] run that command now? [y/N] `);
+        if (approved) {
+          const exitCode = runShellCommand(installRecommendation.command);
+          if (exitCode !== 0) {
+            console.error(`[arcane-agents] install command failed with exit code ${exitCode}.`);
+          }
+        } else {
+          console.log("[arcane-agents] skipped tmux install.");
+        }
+      } else {
+        console.log("[arcane-agents] non-interactive terminal detected; not running install command automatically.");
+      }
+    } else {
+      console.log("[arcane-agents] could not determine a package-manager command for tmux on this system.");
+      if (process.platform === "win32") {
+        console.log("[arcane-agents] run Arcane Agents inside WSL2 or another Unix-like environment, then install tmux there.");
+      } else {
+        console.log("[arcane-agents] install tmux manually, then rerun 'arcane-agents setup' or 'arcane-agents doctor'.");
+      }
+    }
+  }
+
+  const paths = getArcaneAgentsPaths();
+  try {
+    const configResult = ensureStarterConfig(paths);
+    if (configResult.created) {
+      console.log(`[arcane-agents] wrote starter config: ${paths.configPath}`);
+    } else {
+      console.log(`[arcane-agents] config: ${paths.configPath}`);
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`[arcane-agents] failed to prepare config: ${detail}`);
+    return 1;
+  }
+
+  const doctorExitCode = runDoctor();
+  if (doctorExitCode === 0) {
+    console.log("[arcane-agents] next: edit your config if needed with 'arcane-agents config edit', then run 'arcane-agents'.");
+  } else {
+    console.log("[arcane-agents] fix the issues above, then rerun 'arcane-agents setup' or 'arcane-agents doctor'.");
+  }
+
+  return doctorExitCode;
 }
 
 function runConfig(args: string[]): number {
@@ -429,7 +511,18 @@ function runDoctor(): number {
   if (tmuxPath) {
     checks.push({ status: "ok", label: "tmux", detail: tmuxPath });
   } else {
-    checks.push({ status: "fail", label: "tmux", detail: "not found on PATH" });
+    const installRecommendation = recommendTmuxInstall({
+      platform: process.platform,
+      lookupCommand: findExecutable,
+      isRootUser: process.getuid?.() === 0
+    });
+    checks.push({
+      status: "fail",
+      label: "tmux",
+      detail: installRecommendation
+        ? `not found on PATH (install with: ${installRecommendation.command})`
+        : "not found on PATH"
+    });
   }
 
   const paths = getArcaneAgentsPaths();
@@ -439,7 +532,7 @@ function runDoctor(): number {
     checks.push({
       status: "warn",
       label: "Config",
-      detail: `missing at ${paths.configPath} (auto-created on 'arcane-agents start'; use 'arcane-agents config edit')`
+      detail: `missing at ${paths.configPath} (auto-created on 'arcane-agents start' or 'arcane-agents setup')`
     });
   }
 
@@ -549,6 +642,7 @@ function printHelp(): void {
 Usage:
   arcane-agents [start] [--session <name>]
   arcane-agents init [--force]
+  arcane-agents setup
   arcane-agents config [path|show|edit]
   arcane-agents sessions [list|delete <name>]
   arcane-agents doctor
@@ -558,6 +652,7 @@ Usage:
 Commands:
   start      Start the Arcane Agents server
   init       Write ~/.config/arcane-agents/config.yaml from config.example.yaml
+  setup      Guided first-run setup for tmux, config, and dependency checks
   config     Print, show, or edit config files
   sessions   List or delete named sessions
   doctor     Check dependencies and runtime command availability
@@ -572,6 +667,21 @@ Options:
 Config paths:
   primary: ${paths.configPath}
   local override: ${paths.localOverridePath}
+`);
+}
+
+function printSetupHelp(): void {
+  console.log(`Arcane Agents setup
+
+Usage:
+  arcane-agents setup
+
+What it does:
+  - checks whether tmux is installed
+  - suggests a platform-specific tmux install command
+  - can run that command after confirmation in an interactive terminal
+  - ensures ~/.config/arcane-agents/config.yaml exists
+  - runs 'arcane-agents doctor'
 `);
 }
 
@@ -649,6 +759,20 @@ function resolvePathToken(token: string): string {
 
 function hasFlag(args: string[], flag: string): boolean {
   return args.includes(flag);
+}
+
+function runShellCommand(command: string): number {
+  const result = spawnSync("sh", ["-lc", command], {
+    stdio: "inherit"
+  });
+
+  if (result.error) {
+    const detail = result.error.message;
+    console.error(`[arcane-agents] failed to launch shell command '${command}': ${detail}`);
+    return 1;
+  }
+
+  return result.status ?? 1;
 }
 
 void runCli()
