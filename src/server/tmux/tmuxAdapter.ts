@@ -360,7 +360,7 @@ function normalizeOption(value: string | undefined): string | undefined {
 }
 
 async function detectClipboardCopyCommand(): Promise<string | undefined> {
-  const candidates = clipboardCandidatesForPlatform(process.platform);
+  const candidates = clipboardCandidatesForEnvironment(process.platform, process.env);
   for (const candidate of candidates) {
     if (await commandExists(candidate.binary)) {
       return candidate.command;
@@ -370,7 +370,10 @@ async function detectClipboardCopyCommand(): Promise<string | undefined> {
   return undefined;
 }
 
-function clipboardCandidatesForPlatform(platform: NodeJS.Platform): ClipboardCommandCandidate[] {
+export function clipboardCandidatesForEnvironment(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv = process.env
+): ClipboardCommandCandidate[] {
   if (platform === "darwin") {
     return [{ binary: "pbcopy", command: "pbcopy" }];
   }
@@ -379,11 +382,17 @@ function clipboardCandidatesForPlatform(platform: NodeJS.Platform): ClipboardCom
     return [{ binary: "clip.exe", command: "clip.exe" }];
   }
 
-  return [
+  const linuxCandidates = [
     { binary: "wl-copy", command: "wl-copy" },
     { binary: "xclip", command: "xclip -selection clipboard -in" },
     { binary: "xsel", command: "xsel --clipboard --input" }
   ];
+
+  if (platform === "linux" && isWslEnvironment(env)) {
+    return [{ binary: "clip.exe", command: "clip.exe" }, ...linuxCandidates];
+  }
+
+  return linuxCandidates;
 }
 
 async function commandExists(binary: string): Promise<boolean> {
@@ -397,4 +406,8 @@ async function commandExists(binary: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function isWslEnvironment(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP || env.WSLENV);
 }
