@@ -55,7 +55,7 @@ export class TmuxAdapter {
     const commandLine = input.command.map(shellQuote).join(" ");
     const env = `ARCANE_AGENTS_WORKER_ID=${input.workerId}`;
 
-    if (await this.hasSession()) {
+    if (await this.hasManagedSession()) {
       await this.runTmux([
         "new-window",
         "-d",
@@ -128,7 +128,7 @@ export class TmuxAdapter {
       return;
     }
 
-    if (!(await this.hasSession())) {
+    if (!(await this.hasManagedSession())) {
       return;
     }
 
@@ -150,7 +150,7 @@ export class TmuxAdapter {
   }
 
   async listManagedWindows(): Promise<ManagedWindow[]> {
-    if (!(await this.hasSession())) {
+    if (!(await this.hasManagedSession())) {
       return [];
     }
 
@@ -288,7 +288,7 @@ export class TmuxAdapter {
     };
   }
 
-  private async hasSession(): Promise<boolean> {
+  async hasManagedSession(): Promise<boolean> {
     try {
       await this.runTmux(["has-session", "-t", this.config.sessionName]);
       return true;

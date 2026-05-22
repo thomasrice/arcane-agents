@@ -194,3 +194,55 @@ describe("OrchestratorService.restart", () => {
     expect((workers.saveWorker as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 });
+
+describe("OrchestratorService.reconcileWithTmux", () => {
+  it("keeps persisted workers when the configured tmux session is unavailable", async () => {
+    const worker = createWorker();
+    const workers = {
+      listWorkers: vi.fn(() => [worker]),
+      deleteWorker: vi.fn()
+    } as unknown as WorkerRepository;
+
+    const tmux = {
+      hasManagedSession: vi.fn(async () => false),
+      listManagedWindows: vi.fn(),
+      windowExists: vi.fn()
+    } as unknown as TmuxAdapter;
+
+    const service = new OrchestratorService(createConfig(), workers, tmux);
+    const result = await service.reconcileWithTmux();
+
+    expect(result).toEqual({
+      updatedWorkers: [],
+      adoptedWorkers: [],
+      removedWorkerIds: []
+    });
+    expect((tmux.listManagedWindows as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect((tmux.windowExists as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect((workers.deleteWorker as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  it("removes stale workers when the tmux session is available but the worker window is gone", async () => {
+    const worker = createWorker();
+    const workers = {
+      listWorkers: vi.fn(() => [worker]),
+      deleteWorker: vi.fn(() => true)
+    } as unknown as WorkerRepository;
+
+    const tmux = {
+      hasManagedSession: vi.fn(async () => true),
+      listManagedWindows: vi.fn(async () => []),
+      windowExists: vi.fn(async () => false)
+    } as unknown as TmuxAdapter;
+
+    const service = new OrchestratorService(createConfig(), workers, tmux);
+    const result = await service.reconcileWithTmux();
+
+    expect(result).toEqual({
+      updatedWorkers: [],
+      adoptedWorkers: [],
+      removedWorkerIds: [worker.id]
+    });
+    expect((workers.deleteWorker as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(worker.id);
+  });
+});

@@ -197,6 +197,10 @@ export class StatusMonitor {
     try {
       const pollStartedAtMs = Date.now();
       const currentWorkers = this.workers.listWorkers();
+      if (currentWorkers.length > 0 && !(await this.tmux.hasManagedSession())) {
+        return;
+      }
+
       const workerTimings = await mapWithConcurrency(currentWorkers, this.workerPollConcurrency, async (worker) =>
         this.evaluateWorkerWithTiming(worker)
       );

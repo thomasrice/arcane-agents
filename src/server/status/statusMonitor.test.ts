@@ -153,6 +153,7 @@ describe("StatusMonitor", () => {
   it("keeps expected status transitions including stopped removal", async () => {
     const repository = createRepository([createWorker("worker-1", "idle")]);
     const tmux = {
+      hasManagedSession: vi.fn(async () => true),
       windowExists: vi.fn(async () => true)
     } as unknown as TmuxAdapter;
     const onWorkerUpdated = vi.fn();
@@ -197,6 +198,7 @@ describe("StatusMonitor", () => {
     let inFlight = 0;
     let maxInFlight = 0;
     const tmux = {
+      hasManagedSession: vi.fn(async () => true),
       windowExists: vi.fn(async () => {
         inFlight += 1;
         maxInFlight = Math.max(maxInFlight, inFlight);
@@ -216,6 +218,7 @@ describe("StatusMonitor", () => {
   it("tracks per-poll and per-worker timing metrics", async () => {
     const repository = createRepository([createWorker("worker-1", "idle"), createWorker("worker-2", "working")]);
     const tmux = {
+      hasManagedSession: vi.fn(async () => true),
       windowExists: vi.fn(async () => true)
     } as unknown as TmuxAdapter;
     const monitor = new StatusMonitor(repository.repo, tmux, 1_000, () => undefined, () => undefined, testConfig);
@@ -239,5 +242,23 @@ describe("StatusMonitor", () => {
     expect(performance.workers).toHaveLength(1);
     expect(performance.workers[0]?.workerId).toBe("worker-1");
     expect(performance.workers[0]?.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("keeps worker records when the configured tmux session is unavailable", async () => {
+    const worker = createWorker("worker-1", "idle");
+    const repository = createRepository([worker]);
+    const tmux = {
+      hasManagedSession: vi.fn(async () => false),
+      windowExists: vi.fn(async () => false)
+    } as unknown as TmuxAdapter;
+    const onWorkerRemoved = vi.fn();
+    const monitor = new StatusMonitor(repository.repo, tmux, 1_000, () => undefined, onWorkerRemoved, testConfig);
+
+    await monitor.pollOnce();
+
+    expect(repository.workers.has(worker.id)).toBe(true);
+    expect((tmux.windowExists as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(repository.deleteWorker).not.toHaveBeenCalled();
+    expect(onWorkerRemoved).not.toHaveBeenCalled();
   });
 });

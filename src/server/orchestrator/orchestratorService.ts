@@ -255,6 +255,14 @@ export class OrchestratorService {
     const adoptedWorkers: Worker[] = [];
     const removedWorkerIds: string[] = [];
 
+    if (!(await this.tmux.hasManagedSession())) {
+      return {
+        updatedWorkers,
+        adoptedWorkers,
+        removedWorkerIds
+      };
+    }
+
     const liveManagedWindows = await this.tmux.listManagedWindows();
     const liveByWorkerId = new Map<string, ManagedWindow>();
     const liveByWindow = new Map<string, ManagedWindow>();
