@@ -69,3 +69,12 @@ export function truncateWithEllipsis(text: string, maxLength: number): string {
 
   return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
+
+export function recentNonEmptyLinesNewestFirst(output: string, limit: number): string[] {
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(-limit)
+    .reverse();
+}

@@ -15,13 +15,17 @@ interface ResolvedTranscriptPathInput {
   state: ClaudeTranscriptState;
   paneCurrentPath: string | undefined;
   nowMs: number;
+  /** Root under which Claude stores per-project transcripts. Defaults to
+   * ~/.claude/projects; overridable so tests can resolve against a temp dir. */
+  projectRoot?: string;
 }
 
 export async function resolveTranscriptPath({
   worker,
   state,
   paneCurrentPath,
-  nowMs
+  nowMs,
+  projectRoot = claudeProjectRoot
 }: ResolvedTranscriptPathInput): Promise<string | undefined> {
   if (state.transcriptPath && (await isPathToFile(state.transcriptPath))) {
     state.nextTranscriptLookupAtMs = 0;
@@ -32,7 +36,7 @@ export async function resolveTranscriptPath({
     return undefined;
   }
 
-  const candidateDirs = buildTranscriptCandidateDirs(worker.projectPath, paneCurrentPath);
+  const candidateDirs = buildTranscriptCandidateDirs(projectRoot, worker.projectPath, paneCurrentPath);
   const sessionId = extractSessionId(worker.command);
 
   for (const transcriptDir of candidateDirs) {
@@ -83,10 +87,10 @@ export async function collectTranscriptInputLines(state: ClaudeTranscriptState):
   return collectLinesFromChunk(state, chunk, false);
 }
 
-function buildTranscriptCandidateDirs(workerProjectPath: string, paneCurrentPath?: string): string[] {
+function buildTranscriptCandidateDirs(projectRoot: string, workerProjectPath: string, paneCurrentPath?: string): string[] {
   const candidates = [paneCurrentPath, workerProjectPath]
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .map((projectPathValue) => path.join(claudeProjectRoot, projectPathValue.replace(/[^a-zA-Z0-9-]/g, "-")));
+    .map((projectPathValue) => path.join(projectRoot, projectPathValue.replace(/[^a-zA-Z0-9-]/g, "-")));
 
   const unique = new Set<string>();
   for (const candidate of candidates) {

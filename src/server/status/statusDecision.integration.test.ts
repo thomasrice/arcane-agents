@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Worker } from "../../shared/types";
 import type { ClaudeStatusSnapshot } from "./claudeTranscriptTracker";
 import type { PaneObservation } from "./paneObservation";
-import type { AgentRuntimeProcess } from "./runtime/runtimeProcess";
-import { evaluateWorkerStatus } from "./statusEvaluator";
+import type { AgentRuntimeProcess } from "./runtimes/runtimeProcess";
+import { evaluateWorkerStatus } from "./decide";
 
 /**
  * End-to-end safety net for the status decision path:
@@ -181,12 +181,13 @@ describe("status decision — Claude runtime", () => {
     expect(reasonCodes(result)).toContain("output-stale-idle");
   });
 
-  it("reports a finished Claude as working while scrollback tool words are still fresh", () => {
-    // pins current behaviour — known false-working case, see plan.md (A6 / Phase 2 line ~109)
-    // Same finished pane as above, but output changed <8s ago (a fresh repaint).
-    // parseActivity lifts "Read src/app.ts" to a strong tool/path signal, so a
-    // *finished, idle* Claude reads as working for the freshness window. With no
-    // transcript snapshot present there is nothing to suppress the scrollback.
+  it("reads a finished Claude as idle even while scrollback tool words are still fresh", () => {
+    // Fixed (plan A6 / Phase 2b): the generic parser no longer promotes scrollback
+    // tool/path words to working evidence for an agent runtime. Same finished pane
+    // as above, but output changed <8s ago (a fresh repaint). With no native active
+    // signal (no transcript, no ✻ progress spinner, no active task), a *finished*
+    // Claude now correctly reads idle instead of false-working on the "Read
+    // src/app.ts" scrollback.
     const output = [
       "● Read src/app.ts",
       "  ⎿ Read 40 lines",
@@ -200,8 +201,9 @@ describe("status decision — Claude runtime", () => {
 
     const result = evaluate({ runtime: "claude", output, outputQuietForMs: 3_000, priorStatus: "idle" });
 
-    expect(result.status).toBe("working");
-    expect(reasonCodes(result)).toContain("parsed-activity-signal");
+    expect(result.status).toBe("idle");
+    expect(result.activityText).toBeUndefined();
+    expect(reasonCodes(result)).toContain("no-active-evidence");
   });
 
   it("reads a permission-required approval dialog as attention", () => {
@@ -365,10 +367,11 @@ describe("status decision — Codex runtime", () => {
     expect(reasonCodes(result)).toContain("output-stale-idle");
   });
 
-  it("reports a finished Codex as working while a scrollback git word is still fresh", () => {
-    // pins current behaviour — known false-working case, see plan.md (A6 / Phase 2 line ~109)
-    // Codex has no transcript guard at all, so scrollback "git" reads as strong
-    // working evidence for up to 8s after the finishing repaint.
+  it("reads a finished Codex as idle even while a scrollback git word is still fresh", () => {
+    // Fixed (plan A6 / Phase 2b): scrollback tool/path words no longer count as
+    // working evidence for an agent runtime. Codex has finished (no "esc to
+    // interrupt" active signal, no child process), so the fresh scrollback "git"
+    // no longer reads as working — it correctly settles to idle.
     const output = [
       "• Ran git status",
       "  └ nothing to commit",
@@ -380,8 +383,9 @@ describe("status decision — Codex runtime", () => {
 
     const result = evaluate({ runtime: "codex", output, outputQuietForMs: 3_000, priorStatus: "idle" });
 
-    expect(result.status).toBe("working");
-    expect(reasonCodes(result)).toContain("parsed-activity-signal");
+    expect(result.status).toBe("idle");
+    expect(result.activityText).toBeUndefined();
+    expect(reasonCodes(result)).toContain("no-active-evidence");
   });
 
   it("holds a just-spawned Codex with no output at idle during the spawn grace window", () => {
@@ -453,16 +457,19 @@ describe("status decision — OpenCode runtime", () => {
     expect(reasonCodes(result)).toContain("opencode-prompt-idle");
   });
 
-  it("reports OpenCode as working from fresh scrollback when the prompt footer is not captured", () => {
-    // pins current behaviour — known false-working case, see plan.md (A6 / Phase 2 line ~109)
-    // No footer hints and no interrupt signal, but scrollback tool/path words are
-    // fresh, so the generic parser promotes them to strong working evidence.
+  it("reads OpenCode as idle from fresh scrollback when there is no active-interrupt signal", () => {
+    // Fixed (plan A6 / Phase 2b): with no footer hints and no "esc interrupt"
+    // active signal, neither the generic parser's scrollback tool/path words nor
+    // the adapter's lingering "Thinking:" activity label count as working evidence
+    // for an agent runtime. A finished OpenCode turn now reads idle instead of
+    // false-working off stale scrollback.
     const output = ["Thinking: reviewing the patch", "Read src/app.ts", "$ git status"].join("\n");
 
     const result = evaluate({ runtime: "opencode", output, outputQuietForMs: 3_000, priorStatus: "idle" });
 
-    expect(result.status).toBe("working");
-    expect(reasonCodes(result)).toContain("parsed-activity-signal");
+    expect(result.status).toBe("idle");
+    expect(result.activityText).toBeUndefined();
+    expect(reasonCodes(result)).toContain("no-active-evidence");
   });
 
   it("holds a just-spawned OpenCode with no output at idle during the spawn grace window", () => {
@@ -597,7 +604,7 @@ describe("status decision — freshness boundaries", () => {
     "❯"
   ].join("\n");
 
-  it("flips working -> idle across the parsed-strong evidence window", () => {
+  it("reads a finished Claude as idle on both sides of the old parsed-strong window", () => {
     const justInside = evaluate({
       runtime: "claude",
       output: finishedClaudeWithScrollbackTool,
@@ -611,10 +618,13 @@ describe("status decision — freshness boundaries", () => {
       priorStatus: "idle"
     });
 
-    // Just inside the window is the known false-working case (see plan.md);
-    // just outside, the scrollback signal expires and it correctly reads idle.
-    expect(justInside.status).toBe("working");
-    expect(reasonCodes(justInside)).toContain("parsed-activity-signal");
+    // Fixed (plan A6 / Phase 2b): the parsed-strong evidence window no longer
+    // produces a flip for an agent runtime. Scrollback tool/path words never count
+    // as working evidence for Claude, so a *finished* Claude reads idle whether the
+    // repaint was fresh (inside the old window) or stale (outside it) — both halves
+    // are now idle, and the 8s window is no longer an observable boundary here.
+    expect(justInside.status).toBe("idle");
+    expect(reasonCodes(justInside)).toContain("no-active-evidence");
     expect(justOutside.status).toBe("idle");
     expect(reasonCodes(justOutside)).toContain("no-active-evidence");
   });

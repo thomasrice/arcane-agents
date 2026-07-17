@@ -3,13 +3,9 @@ import { WorkerRepository } from "../persistence/workerRepository";
 import { TmuxAdapter } from "../tmux/tmuxAdapter";
 import type { PaneObservation } from "./paneObservation";
 import { ClaudeTranscriptTracker } from "./claudeTranscriptTracker";
-import { truncateWithEllipsis } from "./runtime/terminalText";
-import {
-  collectWorkerStatusSignals,
-  evaluateWorkerStatusSignals,
-  normalizeWorkerStatusEvaluation,
-  type WorkerStatusEvaluation
-} from "./statusPipeline";
+import { truncateWithEllipsis } from "./runtimes/terminalText";
+import { collectSignals } from "./collectSignals";
+import { decide, type StatusDecisionFacts, type WorkerStatusDecision } from "./decide";
 
 type StatusTraceMode = "off" | "transitions" | "verbose";
 type WorkerPollOutcome = "unchanged" | "updated" | "removed" | "failed";
@@ -19,7 +15,7 @@ export interface WorkerStatusDebugSnapshot {
   workerName: string;
   previousStatus: Worker["status"];
   evaluatedAt: string;
-  decision: WorkerStatusEvaluation;
+  decision: WorkerStatusDecision;
 }
 
 export interface WorkerStatusTransitionRecord {
@@ -29,8 +25,8 @@ export interface WorkerStatusTransitionRecord {
   toStatus: Worker["status"];
   at: string;
   confidence: number;
-  reasons: WorkerStatusEvaluation["reasons"];
-  facts: WorkerStatusEvaluation["facts"];
+  reasons: WorkerStatusDecision["reasons"];
+  facts: WorkerStatusDecision["facts"];
 }
 
 export interface WorkerStatusTimingSnapshot {
@@ -71,20 +67,15 @@ interface WorkerStatusUpdateOutcome {
   nextStatus: Worker["status"] | "stopped";
 }
 
-const defaultDecisionFacts = {
+const defaultDecisionFacts: StatusDecisionFacts = {
   command: "",
   commandQuietForMs: 0,
   outputQuietForMs: 0,
   workerAgeMs: 0,
-  isClaudeSession: false,
-  isOpenCodeSession: false,
-  isCodexSession: false,
-  hasClaudePromptSignal: false,
-  hasOpenCodePromptSignal: false,
-  hasOpenCodeActiveSignal: false,
-  hasCodexPromptSignal: false,
-  hasCodexActiveSignal: false,
-  hasClaudeProgressSignal: false,
+  runtime: "generic",
+  transcript: "absent",
+  runtimePromptSignal: false,
+  runtimeActiveSignal: false,
   hasActiveClaudeTask: false,
   hasActiveRuntimeProcess: false,
   hasRuntimeActivityText: false,
@@ -259,7 +250,7 @@ export class StatusMonitor {
       };
     }
 
-    let evaluation: WorkerStatusEvaluation = {
+    let evaluation: WorkerStatusDecision = {
       status: worker.status,
       activityText: worker.activityText,
       activityTool: worker.activityTool,
@@ -272,7 +263,7 @@ export class StatusMonitor {
     };
 
     try {
-      const signals = await collectWorkerStatusSignals({
+      const signals = await collectSignals({
         worker,
         tmux: this.tmux,
         paneObservation: this.paneObservation,
@@ -289,7 +280,7 @@ export class StatusMonitor {
         };
       }
 
-      evaluation = normalizeWorkerStatusEvaluation(evaluateWorkerStatusSignals(worker, signals));
+      evaluation = decide(worker, signals, Date.now());
     } catch {
       evaluation = {
         status: "error",
@@ -404,7 +395,7 @@ export class StatusMonitor {
     );
   }
 
-  private recordStatusDebug(worker: Worker, evaluation: WorkerStatusEvaluation): void {
+  private recordStatusDebug(worker: Worker, evaluation: WorkerStatusDecision): void {
     this.statusDebugByWorker.set(worker.id, {
       workerId: worker.id,
       workerName: worker.displayName ?? worker.name,
@@ -414,7 +405,7 @@ export class StatusMonitor {
     });
   }
 
-  private traceStatusEvaluation(worker: Worker, evaluation: WorkerStatusEvaluation): void {
+  private traceStatusEvaluation(worker: Worker, evaluation: WorkerStatusDecision): void {
     if (this.traceMode === "off") {
       return;
     }
@@ -432,9 +423,10 @@ export class StatusMonitor {
       `cmd=${JSON.stringify(commandText)} ` +
       `outQuiet=${Math.round(evaluation.facts.outputQuietForMs)}ms ` +
       `cmdQuiet=${Math.round(evaluation.facts.commandQuietForMs)}ms ` +
-      `claude=${evaluation.facts.isClaudeSession ? 1 : 0} ` +
-      `opencode=${evaluation.facts.isOpenCodeSession ? 1 : 0} ` +
-      `codex=${evaluation.facts.isCodexSession ? 1 : 0} ` +
+      `runtime=${evaluation.facts.runtime} ` +
+      `transcript=${evaluation.facts.transcript} ` +
+      `prompt=${evaluation.facts.runtimePromptSignal ? 1 : 0} ` +
+      `active=${evaluation.facts.runtimeActiveSignal ? 1 : 0} ` +
       `runtimeProc=${evaluation.facts.hasActiveRuntimeProcess ? 1 : 0}`;
 
     const timestamp = new Date().toLocaleTimeString("en-AU", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -443,7 +435,7 @@ export class StatusMonitor {
     );
   }
 
-  private recordStatusTransition(worker: Worker, evaluation: WorkerStatusEvaluation): void {
+  private recordStatusTransition(worker: Worker, evaluation: WorkerStatusDecision): void {
     if (evaluation.status === worker.status) {
       return;
     }

@@ -3,18 +3,19 @@ import type { ResolvedConfig, Worker } from "../../shared/types";
 import type { WorkerRepository } from "../persistence/workerRepository";
 import type { TmuxAdapter } from "../tmux/tmuxAdapter";
 import type { PaneObservation } from "./paneObservation";
-import type { WorkerStatusEvaluation, WorkerStatusSignals } from "./statusPipeline";
+import type { WorkerSignals } from "./collectSignals";
+import type { WorkerStatusDecision } from "./decide";
 import { StatusMonitor } from "./statusMonitor";
-import {
-  collectWorkerStatusSignals,
-  evaluateWorkerStatusSignals,
-  normalizeWorkerStatusEvaluation
-} from "./statusPipeline";
+import { collectSignals } from "./collectSignals";
+import { decide } from "./decide";
+import { genericAdapter } from "./runtimes/adapter";
 
-vi.mock("./statusPipeline", () => ({
-  collectWorkerStatusSignals: vi.fn(),
-  evaluateWorkerStatusSignals: vi.fn(),
-  normalizeWorkerStatusEvaluation: vi.fn((evaluation: WorkerStatusEvaluation) => evaluation)
+vi.mock("./collectSignals", () => ({
+  collectSignals: vi.fn()
+}));
+
+vi.mock("./decide", () => ({
+  decide: vi.fn()
 }));
 
 interface TestRepository {
@@ -27,20 +28,15 @@ interface TestRepository {
 
 const testConfig = { status: { interactiveCommands: [] }, runtimes: {} } as unknown as ResolvedConfig;
 
-const defaultFacts: WorkerStatusEvaluation["facts"] = {
+const defaultFacts: WorkerStatusDecision["facts"] = {
   command: "claude",
   commandQuietForMs: 0,
   outputQuietForMs: 0,
   workerAgeMs: 0,
-  isClaudeSession: true,
-  isOpenCodeSession: false,
-  isCodexSession: false,
-  hasClaudePromptSignal: false,
-  hasOpenCodePromptSignal: false,
-  hasOpenCodeActiveSignal: false,
-  hasCodexPromptSignal: false,
-  hasCodexActiveSignal: false,
-  hasClaudeProgressSignal: false,
+  runtime: "claude",
+  transcript: "ok",
+  runtimePromptSignal: false,
+  runtimeActiveSignal: false,
   hasActiveClaudeTask: false,
   hasActiveRuntimeProcess: false,
   hasRuntimeActivityText: false,
@@ -75,7 +71,7 @@ function createWorker(workerId: string, status: Worker["status"] = "idle"): Work
 function createRepository(initialWorkers: Worker[]): TestRepository {
   const workers = new Map(initialWorkers.map((worker) => [worker.id, { ...worker }]));
   const listWorkers = vi.fn(() => [...workers.values()].map((worker) => ({ ...worker })));
-  const updateStatus = vi.fn((workerId: string, update: Pick<WorkerStatusEvaluation, "status" | "activityText" | "activityTool" | "activityPath">) => {
+  const updateStatus = vi.fn((workerId: string, update: Pick<WorkerStatusDecision, "status" | "activityText" | "activityTool" | "activityPath">) => {
     const existing = workers.get(workerId);
     if (!existing) {
       return undefined;
@@ -108,9 +104,10 @@ function createRepository(initialWorkers: Worker[]): TestRepository {
   };
 }
 
-function createSignals(): WorkerStatusSignals {
+function createSignals(): WorkerSignals {
   return {
     currentCommand: "claude",
+    commandLower: "claude",
     output: "",
     observation: {
       lastCommand: "claude",
@@ -119,13 +116,25 @@ function createSignals(): WorkerStatusSignals {
       lastOutputChangeAtMs: Date.now()
     } as PaneObservation,
     transcriptSnapshot: undefined,
-    runtimeProcess: undefined,
+    parsed: {
+      activity: {
+        text: undefined,
+        tool: undefined,
+        filePath: undefined,
+        needsInput: false,
+        hasError: false
+      }
+    },
+    runtime: genericAdapter,
+    runtimeSignals: { prompt: false, active: false, activityText: undefined, activeTask: undefined },
+    activeRuntimeProcess: undefined,
+    transcriptHealth: "absent",
     interactiveCommands: new Set<string>(),
     runtimeFreshnessWindowMs: undefined
   };
 }
 
-function createEvaluation(status: Worker["status"]): WorkerStatusEvaluation {
+function createEvaluation(status: Worker["status"]): WorkerStatusDecision {
   return {
     status,
     activityText: status === "idle" || status === "stopped" ? undefined : `status-${status}`,
@@ -138,15 +147,13 @@ function createEvaluation(status: Worker["status"]): WorkerStatusEvaluation {
 }
 
 describe("StatusMonitor", () => {
-  const collectMock = vi.mocked(collectWorkerStatusSignals);
-  const evaluateMock = vi.mocked(evaluateWorkerStatusSignals);
-  const normalizeMock = vi.mocked(normalizeWorkerStatusEvaluation);
+  const collectMock = vi.mocked(collectSignals);
+  const decideMock = vi.mocked(decide);
 
   beforeEach(() => {
     vi.clearAllMocks();
     collectMock.mockResolvedValue(createSignals());
-    evaluateMock.mockImplementation((worker) => createEvaluation(worker.status));
-    normalizeMock.mockImplementation((evaluation) => evaluation);
+    decideMock.mockImplementation((worker) => createEvaluation(worker.status));
     delete process.env.ARCANE_AGENTS_STATUS_POLL_CONCURRENCY;
   });
 
@@ -188,7 +195,7 @@ describe("StatusMonitor", () => {
       hasManagedSession: vi.fn(async () => true),
       windowExists: vi.fn(async () => true)
     } as unknown as TmuxAdapter;
-    evaluateMock.mockImplementation(() => createEvaluation("working"));
+    decideMock.mockImplementation(() => createEvaluation("working"));
     const onWorkerUpdated = vi.fn();
     const monitor = new StatusMonitor(repository.repo, tmux, 1_000, onWorkerUpdated, () => undefined, testConfig);
 

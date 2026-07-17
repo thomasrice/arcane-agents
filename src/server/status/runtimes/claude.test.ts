@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { detectClaudeSignals, extractClaudeActiveTask } from "./claudeSignals";
+import { claudeAdapter } from "./claude";
 
-describe("claudeSignals", () => {
+describe("claudeAdapter.detect", () => {
   it("stops treating progress lines as active once the Claude prompt returns", () => {
     const output = [
       "• Reviewing the final patch",
@@ -11,15 +11,17 @@ describe("claudeSignals", () => {
       "  -- INSERT -- ⏵⏵ bypass permissions on (shift+tab to cycle)"
     ].join("\n");
 
-    expect(detectClaudeSignals(output).prompt).toBe(true);
-    expect(detectClaudeSignals(output).active).toBe(false);
-    expect(extractClaudeActiveTask(output)).toBeUndefined();
+    const signals = claudeAdapter.detect(output);
+    expect(signals.prompt).toBe(true);
+    expect(signals.active).toBe(false);
+    expect(signals.activeTask).toBeUndefined();
   });
 
   it("keeps reporting live progress when Claude is still actively working", () => {
     const output = ["✻ Churned for 12s", "", "Thinking through the next change"].join("\n");
 
-    expect(detectClaudeSignals(output).prompt).toBe(false);
-    expect(detectClaudeSignals(output).active).toBe(true);
+    const signals = claudeAdapter.detect(output);
+    expect(signals.prompt).toBe(false);
+    expect(signals.active).toBe(true);
   });
 });

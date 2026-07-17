@@ -76,8 +76,8 @@ function subagentUserProgress(parentToolUseID: string, toolUseIds: string[]): st
   });
 }
 
-function apply(state: ClaudeTranscriptState, lines: string[]): void {
-  applyParsedTranscriptRecords(state, extractTranscriptRecords(lines));
+function apply(state: ClaudeTranscriptState, lines: string[], nowMs: number = Date.now()): void {
+  applyParsedTranscriptRecords(state, extractTranscriptRecords(lines), nowMs);
 }
 
 describe("extractTranscriptRecords", () => {

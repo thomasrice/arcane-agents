@@ -152,12 +152,11 @@ describe("buildSnapshot", () => {
     });
 
     it("drops even the freshest-possible tool once the transcript is quiet beyond the stale window", () => {
-      // pins current behaviour — see plan.md
-      // The per-tool filter in listFreshActiveTools (nowMs - entry.lastProgressAtMs)
-      // is effectively redundant: a tool's lastProgressAtMs can never exceed
-      // lastEventAtMs, so once transcript-quiet > stale, every tool is quiet > stale
-      // too and all are dropped. This pins that outcome using the freshest reachable
-      // state (a tool whose progress equals the last transcript event).
+      // Contract (now explicit in listFreshActiveTools): once the transcript has
+      // been quiet beyond the stale window, ALL active tools are dropped — no tool
+      // can be fresher than the last transcript event, so a single transcript-quiet
+      // check is sufficient. This exercises it with the freshest reachable state (a
+      // tool whose progress equals the last event); it still reads idle.
       const state = seenState();
       const lastEvent = NOW;
       state.lastEventAtMs = lastEvent;

@@ -87,10 +87,17 @@ function listFreshActiveTools(state: ClaudeTranscriptState, nowMs: number): Acti
     return entries;
   }
 
+  // An active tool is only ever "touched" by a transcript event, so no tool can be
+  // fresher than the last transcript event (entry.lastProgressAtMs <= lastEventAtMs).
+  // Once the transcript itself has been quiet beyond the stale window, every active
+  // tool is therefore stale too — so drop them all. (This replaces a per-tool
+  // `nowMs - entry.lastProgressAtMs` filter that was provably dead: it was only ever
+  // reached in this same transcript-quiet-beyond-stale case, where it filtered out
+  // every entry anyway.)
   const transcriptQuietForMs = nowMs - state.lastEventAtMs;
-  if (transcriptQuietForMs <= activeToolStaleAfterMs) {
-    return entries;
+  if (transcriptQuietForMs > activeToolStaleAfterMs) {
+    return [];
   }
 
-  return entries.filter((entry) => nowMs - entry.lastProgressAtMs <= activeToolStaleAfterMs);
+  return entries;
 }

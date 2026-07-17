@@ -75,7 +75,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/server/status/runtime/activityTextExtractors.ts"],
+    files: ["src/server/status/runtimes/openCode.ts"],
     rules: {
       "no-control-regex": "off",
     },

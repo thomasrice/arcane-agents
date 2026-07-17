@@ -10,6 +10,7 @@ import type { ActiveToolEntry, ClaudeTranscriptState, ParsedTranscriptRecord } f
 
 export function createTranscriptState(): ClaudeTranscriptState {
   return {
+    sessionStartLookup: { status: "pending", nextRetryAtMs: 0 },
     nextTranscriptLookupAtMs: 0,
     fileOffset: 0,
     lineBuffer: "",
@@ -41,10 +42,12 @@ export function resetTranscriptState(state: ClaudeTranscriptState): void {
   state.activeSubagentTools.clear();
 }
 
-export function applyParsedTranscriptRecords(state: ClaudeTranscriptState, records: ParsedTranscriptRecord[]): void {
+export function applyParsedTranscriptRecords(
+  state: ClaudeTranscriptState,
+  records: ParsedTranscriptRecord[],
+  nowMs: number
+): void {
   for (const parsedRecord of records) {
-    const nowMs = Date.now();
-
     switch (parsedRecord.type) {
       case "assistant": {
         processAssistantRecord(state, parsedRecord.record, nowMs);
