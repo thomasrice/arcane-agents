@@ -254,7 +254,7 @@ export function handleNavigationHotkeys(event: KeyboardEvent, context: AppHotkey
     }
 
     event.preventDefault();
-    context.applySelection(existingWorkerIds, { center: existingWorkerIds.length === 1 });
+    context.applySelection(existingWorkerIds, { center: true });
   }
 
   return true;

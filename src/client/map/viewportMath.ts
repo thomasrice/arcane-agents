@@ -17,6 +17,34 @@ export function worldToScreen(worldX: number, worldY: number, viewport: Viewport
   };
 }
 
+export function getBoundingCenter(points: readonly { x: number; y: number }[]): { x: number; y: number } | undefined {
+  const first = points[0];
+  if (!first) {
+    return undefined;
+  }
+
+  let minX = first.x;
+  let maxX = first.x;
+  let minY = first.y;
+  let maxY = first.y;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const point = points[index];
+    if (!point) {
+      continue;
+    }
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  return {
+    x: (minX + maxX) / 2,
+    y: (minY + maxY) / 2
+  };
+}
+
 export function isInsideViewport(
   screenPoint: { x: number; y: number },
   viewportWidth: number,

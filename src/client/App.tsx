@@ -121,7 +121,7 @@ export default function App(): JSX.Element {
     selectedWorkerId,
     selectedWorkers,
     mapCenterToken,
-    mapCenterWorkerId,
+    mapCenterWorkerIds,
     terminalFocusToken,
     rosterActiveIndex,
     setRosterActiveIndex,
@@ -396,7 +396,7 @@ export default function App(): JSX.Element {
           onPositionCommit={onPositionCommit}
           externalMoveOrders={scatterMoveOrders}
           externalMoveOrderToken={scatterMoveToken}
-          centerOnWorkerId={mapCenterWorkerId}
+          centerOnWorkerIds={mapCenterWorkerIds}
           centerRequestKey={mapCenterToken}
         />
         <BottomBar

@@ -30,6 +30,7 @@ import { drawScene, type CommandFeedback } from "../map/renderScene";
 import { findWorkersInSelectionBox, normalizeSelectionBox, type SelectionBox } from "../map/selection";
 import { type SpriteDirection, useCharacterSpriteLibrary } from "../sprites/spriteLoader";
 import {
+  getBoundingCenter,
   clamp,
   isInsideViewport,
   screenToWorld,
@@ -62,7 +63,7 @@ interface MapCanvasProps {
   onPositionCommit: (workerId: string, position: WorkerPosition) => void;
   externalMoveOrders?: Array<{ workerId: string; target: WorkerPosition }>;
   externalMoveOrderToken?: number;
-  centerOnWorkerId?: string;
+  centerOnWorkerIds?: string[];
   centerRequestKey?: number;
 }
 
@@ -132,7 +133,7 @@ export function MapCanvas({
   onPositionCommit,
   externalMoveOrders,
   externalMoveOrderToken,
-  centerOnWorkerId,
+  centerOnWorkerIds,
   centerRequestKey
 }: MapCanvasProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -614,7 +615,7 @@ export function MapCanvas({
   }, [canvasSize.height, canvasSize.width, hasCenteredOnMap, mapData, setConstrainedViewport]);
 
   useEffect(() => {
-    if (!centerOnWorkerId || centerRequestKey === undefined) {
+    if (!centerOnWorkerIds || centerOnWorkerIds.length === 0 || centerRequestKey === undefined) {
       return;
     }
 
@@ -622,32 +623,34 @@ export function MapCanvas({
       return;
     }
 
-    const worker = workers.find((item) => item.id === centerOnWorkerId);
-    if (!worker) {
+    const centeredWorkerIdSet = new Set(centerOnWorkerIds);
+    const positions = workers
+      .filter((worker) => centeredWorkerIdSet.has(worker.id))
+      .map((worker) => animatedPositions[worker.id] ?? worker.position);
+    const center = getBoundingCenter(positions);
+    if (!center) {
       return;
     }
 
     lastCenterRequestRef.current = centerRequestKey;
-    const position = animatedPositions[worker.id] ?? worker.position;
-
-    const workerScreenPosition = worldToScreen(position.x, position.y, viewport);
-    if (
+    const allWorkersVisible = positions.every((position) =>
       isInsideViewport(
-        workerScreenPosition,
+        worldToScreen(position.x, position.y, viewport),
         canvasSize.width,
         canvasSize.height,
         recenterVisibilityPaddingPx
       )
-    ) {
+    );
+    if (allWorkersVisible) {
       return;
     }
 
     setConstrainedViewport((current) => ({
       ...current,
-      offsetX: canvasSize.width / 2 - position.x * current.scale,
-      offsetY: canvasSize.height / 2 - position.y * current.scale
+      offsetX: canvasSize.width / 2 - center.x * current.scale,
+      offsetY: canvasSize.height / 2 - center.y * current.scale
     }));
-  }, [animatedPositions, canvasSize.height, canvasSize.width, centerOnWorkerId, centerRequestKey, setConstrainedViewport, viewport, workers]);
+  }, [animatedPositions, canvasSize.height, canvasSize.width, centerOnWorkerIds, centerRequestKey, setConstrainedViewport, viewport, workers]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

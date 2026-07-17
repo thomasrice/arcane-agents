@@ -9,7 +9,7 @@ interface UseSelectionModelResult {
   selectedWorkerId: string | undefined;
   selectedWorkers: Worker[];
   mapCenterToken: number;
-  mapCenterWorkerId: string | undefined;
+  mapCenterWorkerIds: string[];
   terminalFocusToken: number | undefined;
   rosterActiveIndex: number;
   setRosterActiveIndex: Dispatch<SetStateAction<number>>;
@@ -34,7 +34,7 @@ export function useSelectionModel(
 ): UseSelectionModelResult {
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
   const [mapCenterToken, setMapCenterToken] = useState(0);
-  const [mapCenterWorkerId, setMapCenterWorkerId] = useState<string | undefined>(undefined);
+  const [mapCenterWorkerIds, setMapCenterWorkerIds] = useState<string[]>([]);
   const [terminalFocusToken, setTerminalFocusToken] = useState<number | undefined>(undefined);
   const [rosterActiveIndex, setRosterActiveIndex] = useState(0);
   const [selectedGroupActiveIndex, setSelectedGroupActiveIndex] = useState(0);
@@ -54,8 +54,8 @@ export function useSelectionModel(
     setFocusedSelectedWorkerId(undefined);
 
     const primaryWorkerId = deduped.length === 1 ? deduped[0] : undefined;
-    if (options?.center && primaryWorkerId) {
-      setMapCenterWorkerId(primaryWorkerId);
+    if (options?.center && deduped.length > 0) {
+      setMapCenterWorkerIds(deduped);
       setMapCenterToken((current) => current + 1);
     }
 
@@ -200,7 +200,7 @@ export function useSelectionModel(
     selectedWorkerId,
     selectedWorkers,
     mapCenterToken,
-    mapCenterWorkerId,
+    mapCenterWorkerIds,
     terminalFocusToken,
     rosterActiveIndex,
     setRosterActiveIndex,
