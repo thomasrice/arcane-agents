@@ -18,21 +18,30 @@ export function buildShortcutHotkeyBindings(shortcuts: ShortcutConfig[]): Shortc
   const bindings: ShortcutHotkeyBinding[] = [];
 
   shortcuts.forEach((shortcut, shortcutIndex) => {
-    for (const hotkeyText of shortcut.hotkeys ?? []) {
-      const parsed = parseShortcutHotkey(hotkeyText);
-      if (!parsed) {
-        continue;
-      }
-
+    for (const hotkey of parseHotkeys(shortcut.hotkeys ?? [])) {
       bindings.push({
         shortcutIndex,
-        hotkey: parsed
+        hotkey
       });
     }
   });
 
   return bindings;
 }
+
+export function parseHotkeys(hotkeyTexts: string[]): ParsedShortcutHotkey[] {
+  const hotkeys: ParsedShortcutHotkey[] = [];
+
+  for (const hotkeyText of hotkeyTexts) {
+    const parsed = parseShortcutHotkey(hotkeyText);
+    if (parsed) {
+      hotkeys.push(parsed);
+    }
+  }
+
+  return hotkeys;
+}
+
 
 export function findMatchingShortcutIndexes(bindings: ShortcutHotkeyBinding[], event: KeyboardEvent): number[] {
   const matchedShortcutIndexes: number[] = [];
@@ -54,7 +63,7 @@ export function findMatchingShortcutIndexes(bindings: ShortcutHotkeyBinding[], e
   return matchedShortcutIndexes;
 }
 
-function matchesShortcutHotkey(hotkey: ParsedShortcutHotkey, event: KeyboardEvent): boolean {
+export function matchesShortcutHotkey(hotkey: ParsedShortcutHotkey, event: KeyboardEvent): boolean {
   if (event.ctrlKey !== hotkey.ctrl || event.metaKey !== hotkey.meta || event.altKey !== hotkey.alt || event.shiftKey !== hotkey.shift) {
     return false;
   }

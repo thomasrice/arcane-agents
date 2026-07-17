@@ -240,11 +240,3 @@ export function parseControlGroupDigit(event: KeyboardEvent): number | undefined
 
   return undefined;
 }
-
-export function isTerminalEscapeShortcut(event: KeyboardEvent): boolean {
-  if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
-    return false;
-  }
-
-  return event.key === "]" || event.code === "BracketRight" || event.key.toLowerCase() === "d" || event.code === "KeyD";
-}

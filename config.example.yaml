@@ -67,6 +67,10 @@ shortcuts:
 #     type: worktrees
 #     path: ~/code/my-app
 
+# Application keybindings. Set one or more chords used to leave terminal focus.
+keybindings:
+  leaveTerminalFocus: ["Ctrl+Alt+]"]
+
 # Status detection settings.
 #
 # interactiveCommands: programs where terminal output changes are user-driven

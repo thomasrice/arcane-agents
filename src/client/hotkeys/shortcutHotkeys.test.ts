@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ShortcutConfig } from "../../shared/types";
-import { buildShortcutHotkeyBindings, findMatchingShortcutIndexes } from "./shortcutHotkeys";
+import {
+  buildShortcutHotkeyBindings,
+  findMatchingShortcutIndexes,
+  matchesShortcutHotkey,
+  parseHotkeys
+} from "./shortcutHotkeys";
 
 function keyboardEvent(init: Partial<KeyboardEvent>): KeyboardEvent {
   return {
@@ -93,5 +98,28 @@ describe("shortcut hotkey parsing and matching", () => {
     );
 
     expect(matched).toEqual([]);
+  });
+
+  it("matches a configurable terminal escape chord exactly", () => {
+    const hotkeys = parseHotkeys(["Ctrl+Alt+]"]);
+
+    expect(
+      hotkeys.some((hotkey) =>
+        matchesShortcutHotkey(
+          hotkey,
+          keyboardEvent({ key: "]", code: "BracketRight", ctrlKey: true, altKey: true })
+        )
+      )
+    ).toBe(true);
+    expect(
+      hotkeys.some((hotkey) =>
+        matchesShortcutHotkey(hotkey, keyboardEvent({ key: "]", code: "BracketRight", ctrlKey: true }))
+      )
+    ).toBe(false);
+    expect(
+      hotkeys.some((hotkey) =>
+        matchesShortcutHotkey(hotkey, keyboardEvent({ key: "d", code: "KeyD", ctrlKey: true }))
+      )
+    ).toBe(false);
   });
 });

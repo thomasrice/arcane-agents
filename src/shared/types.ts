@@ -53,6 +53,9 @@ export interface ResolvedConfig {
   runtimes: Record<string, RuntimeConfig>;
   shortcuts: ShortcutConfig[];
   discovery: DiscoveryRule[];
+  keybindings: {
+    leaveTerminalFocus: string[];
+  };
   avatars: {
     disabled: AvatarType[];
   };

@@ -1,9 +1,14 @@
 interface ShortcutsDialogProps {
   open: boolean;
+  leaveTerminalFocusHotkeys: string[];
   onClose: () => void;
 }
 
-export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps): JSX.Element | null {
+export function ShortcutsDialog({
+  open,
+  leaveTerminalFocusHotkeys,
+  onClose
+}: ShortcutsDialogProps): JSX.Element | null {
   if (!open) {
     return null;
   }
@@ -70,7 +75,7 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps): JSX.El
             <span>Activate highlighted item or focus terminal</span>
           </div>
           <div className="shortcut-row">
-            <kbd>Ctrl+] / Ctrl+D</kbd>
+            <kbd>{leaveTerminalFocusHotkeys.join(" / ") || "Not configured"}</kbd>
             <span>Leave terminal focus; in selected group view, return to group list</span>
           </div>
           <div className="shortcut-row">

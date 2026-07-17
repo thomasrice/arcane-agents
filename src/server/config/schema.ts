@@ -35,6 +35,10 @@ const shortcutSchema = z.object({
   hotkeys: z.array(z.string().min(1)).optional()
 });
 
+const keybindingsSchema = z.object({
+  leaveTerminalFocus: z.array(z.string().min(1)).min(1)
+});
+
 const discoveryRuleSchema = z.object({
   name: z.string().min(1),
   type: z.enum(["worktrees", "directories", "glob"]),
@@ -74,6 +78,7 @@ export const partialConfigSchema = z
     projects: z.record(projectSchema).optional(),
     runtimes: z.record(runtimeSchema).optional(),
     shortcuts: z.array(shortcutSchema).optional(),
+    keybindings: keybindingsSchema.partial().optional(),
     discovery: z.array(discoveryRuleSchema).optional(),
     avatars: avatarsSchema.partial().optional(),
     status: statusSchema.partial().extend({
@@ -100,6 +105,7 @@ export const resolvedConfigSchema = z.object({
   runtimes: z.record(runtimeSchema),
   shortcuts: z.array(shortcutSchema),
   discovery: z.array(discoveryRuleSchema),
+  keybindings: keybindingsSchema,
   avatars: avatarsSchema,
   status: statusSchema,
   audio: audioSchema,
@@ -131,6 +137,9 @@ export function createDefaultConfig(): ResolvedConfig {
       }
     ],
     discovery: [],
+    keybindings: {
+      leaveTerminalFocus: ["Ctrl+Alt+]"]
+    },
     avatars: {
       disabled: []
     },

@@ -10,7 +10,6 @@ import type { RosterEntry } from "./app/types";
 import {
   clampNumber,
   isEditableTarget,
-  isTerminalEscapeShortcut,
   isTerminalTarget,
   parseControlGroupDigit
 } from "./app/utils";
@@ -33,7 +32,12 @@ import { useWorkerCompletionNotifications } from "./hooks/useWorkerCompletionNot
 import { useWorkerFade } from "./hooks/useWorkerFade";
 import { useWorkerVoiceLines } from "./hooks/useWorkerVoiceLines";
 import { useWorkerActions } from "./hooks/useWorkerActions";
-import { buildShortcutHotkeyBindings, findMatchingShortcutIndexes } from "./hotkeys/shortcutHotkeys";
+import {
+  buildShortcutHotkeyBindings,
+  findMatchingShortcutIndexes,
+  matchesShortcutHotkey,
+  parseHotkeys
+} from "./hotkeys/shortcutHotkeys";
 
 export default function App(): JSX.Element {
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
@@ -84,6 +88,14 @@ export default function App(): JSX.Element {
 
   const summonShortcuts = useMemo(() => config?.shortcuts ?? [], [config]);
   const shortcutHotkeyBindings = useMemo(() => buildShortcutHotkeyBindings(summonShortcuts), [summonShortcuts]);
+  const terminalEscapeHotkeys = useMemo(
+    () => parseHotkeys(config?.keybindings.leaveTerminalFocus ?? []),
+    [config?.keybindings.leaveTerminalFocus]
+  );
+  const isTerminalEscapeShortcut = useCallback(
+    (event: KeyboardEvent) => terminalEscapeHotkeys.some((hotkey) => matchesShortcutHotkey(hotkey, event)),
+    [terminalEscapeHotkeys]
+  );
 
   const rosterEntries = useMemo<RosterEntry[]>(
     () => [
@@ -534,6 +546,7 @@ export default function App(): JSX.Element {
 
       <ShortcutsDialog
         open={shortcutsOverlayOpen}
+        leaveTerminalFocusHotkeys={config?.keybindings.leaveTerminalFocus ?? []}
         onClose={() => {
           setShortcutsOverlayOpen(false);
         }}

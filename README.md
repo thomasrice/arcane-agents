@@ -170,8 +170,8 @@ Default URLs:
 - `Terminal` focus: keys go directly to the attached terminal.
 - `Enter` on a selected agent focuses its terminal.
 - With no selection, `Enter` activates the highlighted roster item; press `Enter` again to focus terminal input.
-- `Ctrl+D` or `Ctrl+]` exits terminal focus back to selection focus.
-- Press `Ctrl+D` or `Ctrl+]` again in selection focus to clear selection.
+- `Ctrl+Alt+]` exits terminal focus back to selection focus.
+- Press `Ctrl+Alt+]` again in selection focus to clear selection.
 
 ### Common shortcuts
 
@@ -223,6 +223,7 @@ arcane-agents setup        # guided tmux + config + doctor flow
 - `projects`: named working directories (`cwd`) agents can launch into.
 - `runtimes`: command presets to run in a project directory.
 - `shortcuts`: saved `project + runtime` combinations; can also include hotkeys.
+- `keybindings`: configurable application controls, including leaving terminal focus.
 - `discovery`: optional auto-discovery rules for additional projects.
 - `avatars`: avatar selection settings (for example disabling specific avatar types from random allocation).
 - `status`: status detection settings (for example interactive command filtering).
@@ -363,6 +364,24 @@ shortcuts:
     runtime: shell
     command: ["npm", "test", "--", "--watch"]
     avatar: elder-wizard
+```
+
+### `keybindings`
+
+`keybindings.leaveTerminalFocus` is an array of key chords that leave terminal focus and return keyboard control to the Arcane Agents selection view. It defaults to `["Ctrl+Alt+]"]`; replace the array to use one or more alternative chords.
+
+This replaces the previous hard-coded `Ctrl+]` and `Ctrl+D` bindings. Unless you add them to `leaveTerminalFocus`, those chords now pass through to the attached terminal; in particular, `Ctrl+D` resumes its usual terminal EOF/logout behaviour.
+
+```yaml
+keybindings:
+  leaveTerminalFocus: ["Ctrl+Alt+]"]
+```
+
+To restore both previous bindings:
+
+```yaml
+keybindings:
+  leaveTerminalFocus: ["Ctrl+]", "Ctrl+D"]
 ```
 
 ### `discovery`

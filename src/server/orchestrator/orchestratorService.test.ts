@@ -14,6 +14,9 @@ function createConfig(): ResolvedConfig {
     },
     shortcuts: [],
     discovery: [],
+    keybindings: {
+      leaveTerminalFocus: ["Ctrl+Alt+]"]
+    },
     avatars: {
       disabled: []
     },
