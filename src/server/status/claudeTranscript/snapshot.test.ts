@@ -1,0 +1,172 @@
+import { describe, expect, it } from "vitest";
+import type { ActivityTool } from "../../../shared/types";
+import { createTranscriptState } from "./accumulator";
+import { activeToolStaleAfterMs, permissionIdleDelayMs } from "./constants";
+import { buildSnapshot } from "./snapshot";
+import type { ActiveToolEntry, ClaudeTranscriptState } from "./types";
+
+// Golden safety-net for snapshot derivation: working vs idle vs attention, plus
+// the busyUntil / permission / staleness time windows. Windows are probed
+// relative to the exported threshold constants and to state values set directly,
+// so the tests stay valid if those thresholds are re-tuned by the refactor.
+
+const NOW = 1_000_000_000;
+
+function seenState(): ClaudeTranscriptState {
+  const state = createTranscriptState();
+  state.seenTranscriptRecord = true;
+  return state;
+}
+
+function activeTool(
+  toolName: string,
+  lastProgressAtMs: number,
+  opts: { activityTool?: ActivityTool; activityPath?: string } = {}
+): ActiveToolEntry {
+  return {
+    toolName,
+    statusText: "busy",
+    activityTool: opts.activityTool,
+    activityPath: opts.activityPath,
+    lastProgressAtMs
+  };
+}
+
+describe("buildSnapshot", () => {
+  it("returns undefined until at least one transcript record has been seen", () => {
+    expect(buildSnapshot(createTranscriptState(), NOW)).toBeUndefined();
+  });
+
+  it("returns an idle snapshot once a record was seen but nothing is active", () => {
+    const state = seenState();
+    state.lastEventAtMs = NOW;
+    state.busyUntilMs = 0;
+
+    const snapshot = buildSnapshot(state, NOW);
+    expect(snapshot).toBeDefined();
+    expect(snapshot?.status).toBe("idle");
+  });
+
+  it("reports working while a fresh non-exempt tool is active", () => {
+    const state = seenState();
+    state.lastEventAtMs = NOW;
+    state.activeTools.set("b1", activeTool("Bash", NOW, { activityTool: "bash" }));
+
+    const snapshot = buildSnapshot(state, NOW);
+    expect(snapshot?.status).toBe("working");
+    expect(snapshot?.activityTool).toBe("bash");
+  });
+
+  it("counts subagent tools as active work", () => {
+    const state = seenState();
+    state.lastEventAtMs = NOW;
+    const subagentTools = new Map<string, ActiveToolEntry>();
+    subagentTools.set("s1", activeTool("Read", NOW, { activityTool: "read" }));
+    state.activeSubagentTools.set("task1", subagentTools);
+
+    expect(buildSnapshot(state, NOW)?.status).toBe("working");
+  });
+
+  it("uses the most recently active tool to describe the current activity", () => {
+    const state = seenState();
+    state.lastEventAtMs = NOW;
+    state.activeTools.set("older", activeTool("Read", NOW, { activityTool: "read", activityPath: "/old.ts" }));
+    state.activeTools.set("newer", activeTool("Edit", NOW + 10, { activityTool: "edit", activityPath: "/new.ts" }));
+
+    const snapshot = buildSnapshot(state, NOW + 20);
+    expect(snapshot?.activityTool).toBe("edit");
+    expect(snapshot?.activityPath).toBe("/new.ts");
+  });
+
+  describe("busy window (no active tools)", () => {
+    it("is working within the window and idle just past it", () => {
+      const state = seenState();
+      state.lastEventAtMs = NOW;
+      state.busyUntilMs = NOW + 5_000;
+
+      // Boundary is inclusive (nowMs <= busyUntilMs).
+      expect(buildSnapshot(state, NOW + 5_000)?.status).toBe("working");
+      expect(buildSnapshot(state, NOW + 5_001)?.status).toBe("idle");
+    });
+
+    it("is suppressed to idle when the waiting (turn-end) flag is set, even inside the window", () => {
+      const state = seenState();
+      state.lastEventAtMs = NOW;
+      state.busyUntilMs = NOW + 10_000;
+      state.waiting = true;
+
+      // The waiting flag is the finished signal; it wins over an open busy window.
+      expect(buildSnapshot(state, NOW)?.status).toBe("idle");
+    });
+  });
+
+  describe("permission-wait detection", () => {
+    it("flips a lingering non-exempt tool from working to attention at the permission delay", () => {
+      const state = seenState();
+      state.lastEventAtMs = NOW;
+      state.activeTools.set("b1", activeTool("Bash", NOW, { activityTool: "bash" }));
+
+      // Just inside the delay -> still working.
+      expect(buildSnapshot(state, NOW + permissionIdleDelayMs - 1)?.status).toBe("working");
+
+      // At the delay boundary (inclusive) -> attention / waiting for approval.
+      const waiting = buildSnapshot(state, NOW + permissionIdleDelayMs);
+      expect(waiting?.status).toBe("attention");
+      expect(waiting?.activityTool).toBe("bash");
+    });
+
+    it("does not treat exempt tools (Task) as permission waits even past the delay", () => {
+      const state = seenState();
+      state.lastEventAtMs = NOW;
+      state.activeTools.set("task1", activeTool("Task", NOW, { activityTool: "task" }));
+
+      // Well past the permission delay but still within the staleness window.
+      const snapshot = buildSnapshot(state, NOW + permissionIdleDelayMs + 5_000);
+      expect(snapshot?.status).toBe("working");
+    });
+
+    it("reports attention immediately when an AskUserQuestion tool is active", () => {
+      const state = seenState();
+      state.lastEventAtMs = NOW;
+      state.activeTools.set("q1", activeTool("AskUserQuestion", NOW));
+
+      const snapshot = buildSnapshot(state, NOW);
+      expect(snapshot?.status).toBe("attention");
+      expect(snapshot?.activityTool).toBe("terminal");
+    });
+  });
+
+  describe("staleness filtering", () => {
+    it("drops an exempt tool once the transcript has been quiet beyond the stale window -> idle", () => {
+      // Task is exempt so it does not trip permission-wait, isolating the staleness path.
+      const state = seenState();
+      state.lastEventAtMs = NOW;
+      state.busyUntilMs = 0;
+      state.activeTools.set("task1", activeTool("Task", NOW, { activityTool: "task" }));
+
+      // At the stale boundary (inclusive) the tool is still counted -> working.
+      expect(buildSnapshot(state, NOW + activeToolStaleAfterMs)?.status).toBe("working");
+
+      // Just past it, the stale tool is dropped and there is no busy window -> idle.
+      expect(buildSnapshot(state, NOW + activeToolStaleAfterMs + 1)?.status).toBe("idle");
+    });
+
+    it("drops even the freshest-possible tool once the transcript is quiet beyond the stale window", () => {
+      // pins current behaviour — see plan.md
+      // The per-tool filter in listFreshActiveTools (nowMs - entry.lastProgressAtMs)
+      // is effectively redundant: a tool's lastProgressAtMs can never exceed
+      // lastEventAtMs, so once transcript-quiet > stale, every tool is quiet > stale
+      // too and all are dropped. This pins that outcome using the freshest reachable
+      // state (a tool whose progress equals the last transcript event).
+      const state = seenState();
+      const lastEvent = NOW;
+      state.lastEventAtMs = lastEvent;
+      state.busyUntilMs = 0;
+      state.activeTools.set("stale", activeTool("Task", lastEvent - 10_000, { activityTool: "task" }));
+      state.activeTools.set("freshest", activeTool("Task", lastEvent, { activityTool: "task" }));
+
+      const evalAt = lastEvent + activeToolStaleAfterMs + 1;
+      expect(buildSnapshot(state, evalAt)?.status).toBe("idle");
+    });
+  });
+});
