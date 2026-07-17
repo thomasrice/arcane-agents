@@ -513,6 +513,14 @@ server:
   port: 7600
 ```
 
+At startup, `ARCANE_AGENTS_API_HOST` and `ARCANE_AGENTS_API_PORT` override the YAML values. To listen on every network interface so another device can connect:
+
+```bash
+ARCANE_AGENTS_API_HOST=0.0.0.0 npm run start
+```
+
+> **Danger:** Binding to `0.0.0.0` exposes the Arcane Agents UI, API, and terminal WebSocket on every available network interface. Arcane Agents does not provide built-in authentication, so anyone who can reach the port can view and control attached terminal sessions. Use this only on a trusted LAN or behind a firewall or authenticated VPN; do not expose the port directly to the public internet.
+
 ## Named Sessions
 
 Named sessions let you run independent instances of Arcane Agents, each with its
