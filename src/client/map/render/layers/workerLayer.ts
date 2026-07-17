@@ -1,8 +1,12 @@
-import type { Worker } from "../../../../shared/types";
-import type { ActivityOverlayRenderState } from "../../workerVisualState";
+import type { Worker, WorkerPosition } from "../../../../shared/types";
+import type { ActivityOverlayRenderState, WorkerMotion } from "../../workerVisualState";
+import { getSpriteFrame, type CharacterSpriteSet } from "../../../sprites/spriteLoader";
+import { clamp, worldToScreen, type ViewportState } from "../../viewportMath";
 import { spriteBoundsAtGround, type SpriteBounds } from "../../hitTesting";
+import { drawDespawnEffect, drawSummonEffect } from "./effectsLayer";
 
 const activityOverlayShimmerBandChars = 3.4;
+const activityOverlayMaxBadgeWidth = 320;
 const summonWorkerDurationMs = 520;
 
 export interface SelectedWorkerOutline {
@@ -19,6 +23,43 @@ export interface WorkerNameplate {
   label: string;
   completionKey?: string;
   attentionKey?: string;
+}
+
+/**
+ * Per-frame shared state threaded through `drawWorker`. The z-order orchestrator
+ * (renderScene) builds this once, then calls `drawWorker` for each worker in the
+ * appropriate pass; `selectedOutlines` and `pendingNameplates` are output collectors
+ * drained after all sprites are painted so nameplates and outlines sit on top.
+ */
+export interface WorkerSceneContext {
+  context: CanvasRenderingContext2D;
+  viewport: ViewportState;
+  displayedPositions: Record<string, WorkerPosition>;
+  workerMotion: Record<string, WorkerMotion>;
+  spriteLibrary: Partial<Record<string, CharacterSpriteSet>>;
+  controlGroupsByWorker: Map<string, string[]>;
+  activityOverlayStateByWorker: Record<string, ActivityOverlayRenderState | undefined>;
+  completionPendingWorkerIds: Set<string> | undefined;
+  selectedWorkerIdSet: Set<string>;
+  animationTick: number;
+  walkAnimationTick: number;
+  workerRadius: number;
+  spriteBaseSize: number;
+  nowMs: number;
+  createdAtMsByWorker: Map<string, number>;
+  selectedOutlines: SelectedWorkerOutline[];
+  pendingNameplates: WorkerNameplate[];
+}
+
+export interface DrawWorkerOptions {
+  /** Queue this worker's nameplate for the post-pass. Independent of `drawUi`. */
+  queueNameplate?: boolean;
+  /** Draw the activity badge and control-group indicator. */
+  drawUi?: boolean;
+  /** Multiplies sprite alpha for occluded ghosts; when set, the ground shadow and summon/despawn effects are skipped. */
+  ghostAlpha?: number;
+  /** 0→1 despawn progress. Present → fading mode: idle pose, despawn ring, alpha ramp, no summon. */
+  fadeProgress?: number;
 }
 
 const completionShimmerBandWidth = 16;
@@ -82,6 +123,111 @@ const attentionPlaquePalette: AttentionPlaquePalette = {
 };
 
 export type SelectedOutlineState = "selected" | "terminal-focused" | "group-focused" | "group-focused-terminal";
+
+/**
+ * The canonical worker painter. One function draws every worker in every pass —
+ * normal, occluded ghost (`ghostAlpha`), and despawning (`fadeProgress`) — so there
+ * is a single source of truth for sprite selection, summon/despawn effects, the
+ * activity badge, control-group indicator, selection outline, and nameplate.
+ */
+export function drawWorker(scene: WorkerSceneContext, worker: Worker, options: DrawWorkerOptions = {}): void {
+  const { context, viewport } = scene;
+  const queueNameplate = options.queueNameplate ?? true;
+  const drawUi = options.drawUi ?? true;
+  const ghostAlpha = options.ghostAlpha;
+  const isFading = options.fadeProgress !== undefined;
+  const fadeAlpha = isFading ? clamp(1 - (options.fadeProgress ?? 0), 0, 1) : 1;
+
+  const worldPosition = scene.displayedPositions[worker.id] ?? worker.position;
+  const screen = worldToScreen(worldPosition.x, worldPosition.y, viewport);
+  const motion = scene.workerMotion[worker.id] ?? { moving: false, facing: "south" as const };
+  const displayLabel = worker.displayName ?? worker.name;
+  const controlKeys = scene.controlGroupsByWorker.get(worker.id) ?? [];
+  // A despawning worker has left the active set, so it freezes to an idle pose and
+  // never re-triggers its summon animation while it fades out.
+  const summonProgress = isFading ? undefined : getWorkerSummonProgress(resolveCreatedAtMs(scene, worker), scene.nowMs);
+  const renderScale = summonProgress === undefined ? viewport.scale : viewport.scale * (0.86 + summonProgress * 0.14);
+  const renderAlpha = summonProgress === undefined ? 1 : 0.2 + summonProgress * 0.8;
+  const radius = scene.workerRadius * renderScale;
+
+  const spriteSet = scene.spriteLibrary[worker.avatarType];
+  const spriteState = isFading ? "idle" : motion.moving ? "walking" : worker.status === "working" ? "working" : "idle";
+  const spriteFrame = getSpriteFrame(spriteSet, {
+    direction: motion.facing,
+    state: spriteState,
+    frameIndex: spriteState === "walking" ? scene.walkAnimationTick : scene.animationTick
+  });
+
+  if (ghostAlpha === undefined) {
+    drawCharacterGroundShadow(context, screen.x, screen.y, renderScale);
+    if (isFading) {
+      drawDespawnEffect(context, screen.x, screen.y, viewport.scale, options.fadeProgress ?? 0, fadeAlpha);
+    } else if (summonProgress !== undefined) {
+      drawSummonEffect(context, screen.x, screen.y, viewport.scale, summonProgress);
+    }
+  }
+
+  let spriteBounds: SpriteBounds | undefined;
+  context.save();
+  context.globalAlpha = renderAlpha * (ghostAlpha ?? 1) * fadeAlpha;
+  if (spriteFrame) {
+    spriteBounds = drawSpriteCharacter(context, spriteFrame, screen.x, screen.y, renderScale, scene.spriteBaseSize);
+  } else {
+    drawFallbackWorker(context, worker, screen.x, screen.y, radius, renderScale);
+  }
+  context.restore();
+
+  if (scene.selectedWorkerIdSet.has(worker.id)) {
+    scene.selectedOutlines.push({
+      workerId: worker.id,
+      screenX: screen.x,
+      screenY: screen.y,
+      radius,
+      spriteBounds
+    });
+  }
+
+  if (drawUi) {
+    const activityOverlay = scene.activityOverlayStateByWorker[worker.id];
+    if (activityOverlay?.text) {
+      const badgeY = spriteBounds ? spriteBounds.y - 14 * viewport.scale : screen.y - radius - 22 * viewport.scale;
+      drawActivityBadge(context, activityOverlay, screen.x, badgeY);
+    }
+
+    if (controlKeys.length > 0) {
+      const indicatorAnchorX = spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x;
+      let indicatorY = spriteBounds ? spriteBounds.y - 12 * viewport.scale : screen.y - radius - 18 * viewport.scale;
+      if (activityOverlay?.text) {
+        indicatorY -= 18 * viewport.scale;
+      }
+
+      drawControlGroupIndicator(context, indicatorAnchorX, indicatorY, controlKeys, viewport.scale);
+    }
+  }
+
+  if (queueNameplate) {
+    const completionPending = scene.completionPendingWorkerIds?.has(worker.id) && worker.status === "idle";
+    const attentionPending = worker.status === "attention";
+    scene.pendingNameplates.push({
+      anchorX: spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x,
+      topY: (spriteBounds ? spriteBounds.y + spriteBounds.height : screen.y + radius) + 4 * viewport.scale,
+      label: displayLabel,
+      completionKey: completionPending ? worker.id : undefined,
+      attentionKey: attentionPending ? worker.id : undefined
+    });
+  }
+}
+
+function resolveCreatedAtMs(scene: WorkerSceneContext, worker: Worker): number {
+  const cached = scene.createdAtMsByWorker.get(worker.id);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const parsed = Date.parse(worker.createdAt);
+  scene.createdAtMsByWorker.set(worker.id, parsed);
+  return parsed;
+}
 
 export function drawSpriteCharacter(
   context: CanvasRenderingContext2D,
@@ -190,7 +336,32 @@ export function drawControlGroupIndicator(
   context.textBaseline = "alphabetic";
 }
 
-export function drawActivityOverlayLabel(
+/**
+ * Draws the whole activity badge — box, label, and shimmer — as one unit. The font is
+ * chosen once here and used for both the box-width measurement and the label render,
+ * so there is no implicit shared-font contract with the caller.
+ */
+function drawActivityBadge(
+  context: CanvasRenderingContext2D,
+  overlay: ActivityOverlayRenderState,
+  centerX: number,
+  badgeTopY: number
+): void {
+  context.font = "10px 'Trebuchet MS', sans-serif";
+  const badgeTextWidth = Math.ceil(context.measureText(overlay.text).width);
+  const badgeWidth = Math.max(44, Math.min(activityOverlayMaxBadgeWidth, badgeTextWidth + 16));
+  const badgeHeight = 16;
+
+  context.fillStyle = "rgba(14, 21, 18, 0.85)";
+  context.fillRect(centerX - badgeWidth / 2, badgeTopY, badgeWidth, badgeHeight);
+  context.strokeStyle = "rgba(237, 244, 210, 0.5)";
+  context.lineWidth = 1;
+  context.strokeRect(centerX - badgeWidth / 2, badgeTopY, badgeWidth, badgeHeight);
+
+  drawActivityOverlayLabel(context, overlay, centerX, badgeTopY + 11);
+}
+
+function drawActivityOverlayLabel(
   context: CanvasRenderingContext2D,
   overlay: ActivityOverlayRenderState,
   centerX: number,
@@ -403,13 +574,12 @@ export function groupControlKeysByWorker(controlGroups: Partial<Record<number, s
   return grouped;
 }
 
-export function getWorkerSummonProgress(createdAtIso: string, nowMs: number): number | undefined {
-  const createdMs = Date.parse(createdAtIso);
-  if (!Number.isFinite(createdMs)) {
+function getWorkerSummonProgress(createdAtMs: number, nowMs: number): number | undefined {
+  if (!Number.isFinite(createdAtMs)) {
     return undefined;
   }
 
-  const elapsed = nowMs - createdMs;
+  const elapsed = nowMs - createdAtMs;
   if (elapsed < 0 || elapsed > summonWorkerDurationMs) {
     return undefined;
   }

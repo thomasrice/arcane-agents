@@ -17,6 +17,15 @@ interface SpriteFrameOptions {
   frameIndex: number;
 }
 
+/** Mirror of the server's `CharacterSpriteManifest` (see server/assets/characterManifest.ts). */
+interface CharacterSpriteManifest {
+  rotations: SpriteDirection[];
+  animations: {
+    walk: Partial<Record<SpriteDirection, number>>;
+    working: number;
+  };
+}
+
 const directions: SpriteDirection[] = ["south", "east", "north", "west"];
 const imageLoadCache = new Map<string, Promise<HTMLImageElement | null>>();
 const targetWalkCycleFrames = 8;
@@ -82,9 +91,15 @@ export function getSpriteFrame(spriteSet: CharacterSpriteSet | undefined, option
 
 async function loadCharacterSpriteSet(characterType: string): Promise<CharacterSpriteSet> {
   const baseUrl = `/api/assets/characters/${encodeURIComponent(characterType)}`;
+  const manifest = await fetchCharacterManifest(baseUrl);
+  if (!manifest) {
+    // A missing or failed manifest is treated exactly like absent character assets:
+    // an empty sprite set, so the map falls back to the coloured-circle avatar.
+    return emptySpriteSet();
+  }
 
   const rotationEntries = await Promise.all(
-    directions.map(async (direction) => {
+    manifest.rotations.map(async (direction) => {
       const image = await loadImage(`${baseUrl}/rotations/${direction}.png`);
       return [direction, image] as const;
     })
@@ -92,12 +107,12 @@ async function loadCharacterSpriteSet(characterType: string): Promise<CharacterS
 
   const walkEntries = await Promise.all(
     directions.map(async (direction) => {
-      const frames = await loadAnimationFrames(`${baseUrl}/animations/walk/${direction}`);
+      const frames = await loadAnimationFrames(`${baseUrl}/animations/walk/${direction}`, manifest.animations.walk[direction] ?? 0);
       return [direction, frames] as const;
     })
   );
 
-  const working = await loadAnimationFrames(`${baseUrl}/animations/working`, 16);
+  const working = await loadAnimationFrames(`${baseUrl}/animations/working`, manifest.animations.working);
 
   const rotations = Object.fromEntries(rotationEntries.filter(([, image]) => Boolean(image))) as Partial<
     Record<SpriteDirection, HTMLImageElement>
@@ -122,11 +137,45 @@ async function loadCharacterSpriteSet(characterType: string): Promise<CharacterS
   };
 }
 
-async function loadAnimationFrames(baseUrl: string, maxFrames = 48): Promise<HTMLImageElement[]> {
-  const frames: HTMLImageElement[] = [];
+async function fetchCharacterManifest(baseUrl: string): Promise<CharacterSpriteManifest | null> {
+  try {
+    const response = await fetch(`${baseUrl}/manifest`);
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as CharacterSpriteManifest;
+  } catch {
+    return null;
+  }
+}
 
-  for (let index = 0; index < maxFrames; index += 1) {
-    const image = await loadImage(`${baseUrl}/${index}.png`);
+function emptySpriteSet(): CharacterSpriteSet {
+  return {
+    rotations: {},
+    animations: {
+      walk: {},
+      working: []
+    },
+    hasSprites: false
+  };
+}
+
+/**
+ * Loads exactly `frameCount` frames (`0.png … frameCount-1.png`) in parallel. Frames
+ * are kept as a contiguous prefix so a transient load failure truncates rather than
+ * shifting frame indices, matching the previous serial-probe semantics.
+ */
+async function loadAnimationFrames(baseUrl: string, frameCount: number): Promise<HTMLImageElement[]> {
+  if (frameCount <= 0) {
+    return [];
+  }
+
+  const images = await Promise.all(
+    Array.from({ length: frameCount }, (_unused, index) => loadImage(`${baseUrl}/${index}.png`))
+  );
+
+  const frames: HTMLImageElement[] = [];
+  for (const image of images) {
     if (!image) {
       break;
     }

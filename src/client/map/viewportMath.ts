@@ -1,3 +1,5 @@
+import type { LoadedOutpostMap } from "./tileMapLoader";
+
 export interface ViewportState {
   scale: number;
   offsetX: number;
@@ -93,5 +95,57 @@ export function isWasdKey(key: string): boolean {
 
   const normalized = key.toLowerCase();
   return normalized === "w" || normalized === "a" || normalized === "s" || normalized === "d";
+}
+
+/**
+ * Clamp a viewport so the map stays contained: scale never drops below a
+ * contain-fit, and the offset keeps the map within the canvas (centring it on any
+ * axis where the scaled map is smaller than the canvas).
+ */
+export function constrainViewportToContainMap(
+  viewport: ViewportState,
+  canvasSize: { width: number; height: number },
+  mapData: LoadedOutpostMap | undefined,
+  maxZoomScale: number
+): ViewportState {
+  if (!mapData) {
+    return viewport;
+  }
+
+  const worldWidth = mapData.width * mapData.tileSize;
+  const worldHeight = mapData.height * mapData.tileSize;
+  if (worldWidth <= 0 || worldHeight <= 0 || canvasSize.width <= 0 || canvasSize.height <= 0) {
+    return viewport;
+  }
+
+  const containScale = Math.min(canvasSize.width / worldWidth, canvasSize.height / worldHeight);
+  if (!Number.isFinite(containScale) || containScale <= 0) {
+    return viewport;
+  }
+
+  const minScale = containScale;
+  const boundedScale = clamp(viewport.scale, minScale, Math.max(minScale, maxZoomScale));
+
+  const scaledMapWidth = worldWidth * boundedScale;
+  const scaledMapHeight = worldHeight * boundedScale;
+
+  const offsetX =
+    scaledMapWidth <= canvasSize.width
+      ? (canvasSize.width - scaledMapWidth) / 2
+      : clamp(viewport.offsetX, canvasSize.width - scaledMapWidth, 0);
+  const offsetY =
+    scaledMapHeight <= canvasSize.height
+      ? (canvasSize.height - scaledMapHeight) / 2
+      : clamp(viewport.offsetY, canvasSize.height - scaledMapHeight, 0);
+
+  if (boundedScale === viewport.scale && offsetX === viewport.offsetX && offsetY === viewport.offsetY) {
+    return viewport;
+  }
+
+  return {
+    scale: boundedScale,
+    offsetX,
+    offsetY
+  };
 }
 

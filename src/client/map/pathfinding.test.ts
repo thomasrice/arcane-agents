@@ -19,7 +19,7 @@ function createMap(width = 5, height = 5, collisionTileKeys: string[] = []): Loa
     backgroundImageUrl: "/map.png",
     collisionTileKeys: new Set(collisionTileKeys),
     occlusionRects: [],
-    ambientFlameRects: []
+    flameClusters: []
   };
 }
 

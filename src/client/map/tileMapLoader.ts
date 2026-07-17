@@ -1,6 +1,21 @@
 import { useEffect, useState } from "react";
 import { clamp } from "./viewportMath";
 
+export interface FlameClusterBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface FlameCluster {
+  id: number;
+  centerX: number;
+  centerY: number;
+  radius: number;
+  bounds: FlameClusterBounds;
+}
+
 export interface LoadedOutpostMap {
   name: string;
   width: number;
@@ -15,20 +30,7 @@ export interface LoadedOutpostMap {
     height: number;
     mode: "soft" | "hard";
   }>;
-  ambientFlameRects: Array<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    clusterId: number;
-    clusterCenterX: number;
-    clusterCenterY: number;
-    clusterRadius: number;
-    clusterBoundsX: number;
-    clusterBoundsY: number;
-    clusterBoundsWidth: number;
-    clusterBoundsHeight: number;
-  }>;
+  flameClusters: FlameCluster[];
 }
 
 interface LogicGridSpec {
@@ -101,7 +103,7 @@ async function loadOutpostMap(): Promise<LoadedOutpostMap> {
   const logicGridSpec = deriveLogicGridSpec(rawMapLogic, rawMap.width, rawMap.height, rawMap.tileSize);
   const collisionTileKeys = parseLogicTileKeySet(rawMapLogic.collisionTiles, logicGridSpec, rawMap.width, rawMap.height);
   const occlusionRects = parseLogicOcclusionRects(rawMapLogic, logicGridSpec, rawMap.width, rawMap.height, rawMap.tileSize);
-  const ambientFlameRects = parseLogicAmbientFlameRects(rawMapLogic, logicGridSpec, rawMap.width, rawMap.height, rawMap.tileSize);
+  const flameClusters = parseLogicFlameClusters(rawMapLogic, logicGridSpec, rawMap.width, rawMap.height, rawMap.tileSize);
   const backgroundImageUrl =
     typeof rawMapLogic.backgroundImage === "string" && rawMapLogic.backgroundImage.trim().length > 0
       ? rawMapLogic.backgroundImage.trim()
@@ -119,7 +121,7 @@ async function loadOutpostMap(): Promise<LoadedOutpostMap> {
     backgroundImageUrl,
     collisionTileKeys,
     occlusionRects,
-    ambientFlameRects
+    flameClusters
   };
 }
 
@@ -346,13 +348,13 @@ function parseLogicOcclusionRectsForMode(
   return rects;
 }
 
-function parseLogicAmbientFlameRects(
+function parseLogicFlameClusters(
   rawMapLogic: RawMapLogicData | undefined,
   logicGrid: LogicGridSpec,
   mapWidth: number,
   mapHeight: number,
   tileSize: number
-): LoadedOutpostMap["ambientFlameRects"] {
+): FlameCluster[] {
   const mapWorldWidth = mapWidth * tileSize;
   const mapWorldHeight = mapHeight * tileSize;
   const logicWorldWidth = Math.max(1, logicGrid.worldWidth);
@@ -440,12 +442,15 @@ function parseLogicAmbientFlameRects(
     clusters.push(cluster);
   }
 
-  // Convert clusters to flame cells, each carrying shared cluster metadata.
-  // Keeping per-cell rects preserves fine-grained flicker at all zoom levels.
-  const rects: LoadedOutpostMap["ambientFlameRects"] = [];
+  // Emit one record per cluster. The flame layer draws each cluster as a single
+  // masked region plus a centre glow, so it needs only the centre of mass, a radius,
+  // and the enclosing bounds — the per-cell rects that used to be duplicated onto
+  // every cell are not read by the renderer.
+  const flameClusters: FlameCluster[] = [];
 
   for (let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex += 1) {
     const cluster = clusters[clusterIndex];
+
     // Compute center of mass
     let centerX = 0, centerY = 0, totalArea = 0;
     for (const cell of cluster) {
@@ -479,26 +484,21 @@ function parseLogicAmbientFlameRects(
       maxY = Math.max(maxY, clusterCell.y + clusterCell.height);
     }
 
-    for (const cell of cluster) {
-
-      rects.push({
-        x: cell.x,
-        y: cell.y,
-        width: cell.width,
-        height: cell.height,
-        clusterId: clusterIndex,
-        clusterCenterX: centerX,
-        clusterCenterY: centerY,
-        clusterRadius: maxDist,
-        clusterBoundsX: minX,
-        clusterBoundsY: minY,
-        clusterBoundsWidth: maxX - minX,
-        clusterBoundsHeight: maxY - minY
-      });
-    }
+    flameClusters.push({
+      id: clusterIndex,
+      centerX,
+      centerY,
+      radius: maxDist,
+      bounds: {
+        x: minX,
+        y: minY,
+        width: maxX - minX,
+        height: maxY - minY
+      }
+    });
   }
 
-  return rects;
+  return flameClusters;
 }
 
 function clampLogicInt(value: unknown, min: number, max: number, fallback: number): number {

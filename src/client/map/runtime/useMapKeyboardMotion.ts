@@ -1,39 +1,44 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { SpriteDirection } from "../../sprites/spriteLoader";
 import { isEditableTarget, isElementInTerminalPanel } from "../../app/utils";
 import { isWasdKey, toPanDirection, type PanDirection, type ViewportState } from "../viewportMath";
 
 interface UseMapKeyboardMotionInput {
-  pressedPanKeysRef: MutableRefObject<Set<PanDirection>>;
-  panRafRef: MutableRefObject<number | null>;
-  lastPanFrameRef: MutableRefObject<number | null>;
-  pressedMoveKeysRef: MutableRefObject<Set<PanDirection>>;
-  moveRafRef: MutableRefObject<number | null>;
-  lastMoveFrameRef: MutableRefObject<number | null>;
+  /** Shared facing record; a nudged worker turns to face its movement direction immediately. */
   workerFacingRef: MutableRefObject<Record<string, SpriteDirection>>;
-  multiSelectedWorkerIdsRef: MutableRefObject<Set<string>>;
+  /** Current map selection (the one allowed selection mirror). */
+  selectedWorkerIdsRef: MutableRefObject<Set<string>>;
   setViewport: Dispatch<SetStateAction<ViewportState>>;
+  /** Zoom the viewport around the canvas centre by a scale factor. */
+  zoomViewportByFactor: (factor: number) => void;
   nudgeSelectedWorkers: (deltaX: number, deltaY: number) => boolean;
   flushPendingKeyboardMoveCommits: () => void;
   keyboardPanSpeedPerSecond: number;
   keyboardMoveUnitsPerSecond: number;
 }
 
+/**
+ * Owns all map keyboard input as a single window keydown/keyup listener: WASD/arrow
+ * panning, selected-worker nudging, and +/- zoom, behind one editable-target guard.
+ * The rAF pan/move loop bookkeeping refs are internal to this hook.
+ */
 export function useMapKeyboardMotion({
-  pressedPanKeysRef,
-  panRafRef,
-  lastPanFrameRef,
-  pressedMoveKeysRef,
-  moveRafRef,
-  lastMoveFrameRef,
   workerFacingRef,
-  multiSelectedWorkerIdsRef,
+  selectedWorkerIdsRef,
   setViewport,
+  zoomViewportByFactor,
   nudgeSelectedWorkers,
   flushPendingKeyboardMoveCommits,
   keyboardPanSpeedPerSecond,
   keyboardMoveUnitsPerSecond
 }: UseMapKeyboardMotionInput): void {
+  const pressedPanKeysRef = useRef<Set<PanDirection>>(new Set());
+  const panRafRef = useRef<number | null>(null);
+  const lastPanFrameRef = useRef<number | null>(null);
+  const pressedMoveKeysRef = useRef<Set<PanDirection>>(new Set());
+  const moveRafRef = useRef<number | null>(null);
+  const lastMoveFrameRef = useRef<number | null>(null);
+
   useEffect(() => {
     const stopPanLoop = () => {
       if (panRafRef.current !== null) {
@@ -138,8 +143,32 @@ export function useMapKeyboardMotion({
       moveRafRef.current = requestAnimationFrame(moveStep);
     };
 
+    const tryHandleZoom = (event: KeyboardEvent): boolean => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+        return false;
+      }
+
+      const zoomIn = event.key === "+" || (event.code === "Equal" && event.shiftKey) || event.code === "NumpadAdd";
+      const zoomOut = event.key === "-" || (event.code === "Minus" && !event.shiftKey) || event.code === "NumpadSubtract";
+      if (!zoomIn && !zoomOut) {
+        return false;
+      }
+
+      if (isElementInTerminalPanel(event.target)) {
+        return true;
+      }
+
+      event.preventDefault();
+      zoomViewportByFactor(zoomIn ? 1.1 : 0.9);
+      return true;
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (tryHandleZoom(event)) {
         return;
       }
 
@@ -156,14 +185,14 @@ export function useMapKeyboardMotion({
 
         event.preventDefault();
 
-        if (multiSelectedWorkerIdsRef.current.size === 0) {
+        if (selectedWorkerIdsRef.current.size === 0) {
           pressedPanKeysRef.current.add(direction);
           startPanLoop();
           return;
         }
 
         const facingDirection = panDirectionToFacing(direction);
-        for (const workerId of multiSelectedWorkerIdsRef.current) {
+        for (const workerId of selectedWorkerIdsRef.current) {
           workerFacingRef.current[workerId] = facingDirection;
         }
 
@@ -241,16 +270,11 @@ export function useMapKeyboardMotion({
     flushPendingKeyboardMoveCommits,
     keyboardMoveUnitsPerSecond,
     keyboardPanSpeedPerSecond,
-    lastMoveFrameRef,
-    lastPanFrameRef,
-    moveRafRef,
-    multiSelectedWorkerIdsRef,
     nudgeSelectedWorkers,
-    panRafRef,
-    pressedMoveKeysRef,
-    pressedPanKeysRef,
+    selectedWorkerIdsRef,
     setViewport,
-    workerFacingRef
+    workerFacingRef,
+    zoomViewportByFactor
   ]);
 }
 

@@ -2,7 +2,6 @@ import type { LoadedOutpostMap } from "../../tileMapLoader";
 import { clamp, worldToScreen, type ViewportState } from "../../viewportMath";
 
 const occlusionOverlayAlpha = 0.98;
-const flameMaskVersion = "v4";
 const flameRegionMaskCache = new Map<string, { canvas: HTMLCanvasElement; heatCoverage: number }>();
 
 export function drawOutpostPreviewBackgroundLayer(
@@ -72,7 +71,7 @@ export function drawAmbientFlameEffectsLayer(
   backgroundImage: HTMLImageElement,
   nowMs: number
 ): void {
-  if (mapData.ambientFlameRects.length === 0) {
+  if (mapData.flameClusters.length === 0) {
     return;
   }
 
@@ -82,45 +81,11 @@ export function drawAmbientFlameEffectsLayer(
   const sourceScaleY = backgroundImage.naturalHeight / worldHeight;
   const timeSeconds = nowMs / 1000;
 
-  type FlameCluster = {
-    id: number;
-    phase: number;
-    centerX: number;
-    centerY: number;
-    radius: number;
-    boundsX: number;
-    boundsY: number;
-    boundsWidth: number;
-    boundsHeight: number;
-    cells: LoadedOutpostMap["ambientFlameRects"];
-  };
-
-  const clusters = new Map<number, FlameCluster>();
-  for (const rect of mapData.ambientFlameRects) {
-    let cluster = clusters.get(rect.clusterId);
-    if (!cluster) {
-      cluster = {
-        id: rect.clusterId,
-        phase: rect.clusterId * 1.37,
-        centerX: rect.clusterCenterX,
-        centerY: rect.clusterCenterY,
-        radius: rect.clusterRadius,
-        boundsX: rect.clusterBoundsX,
-        boundsY: rect.clusterBoundsY,
-        boundsWidth: rect.clusterBoundsWidth,
-        boundsHeight: rect.clusterBoundsHeight,
-        cells: []
-      };
-      clusters.set(rect.clusterId, cluster);
-    }
-    cluster.cells.push(rect);
-  }
-
-  for (const cluster of clusters.values()) {
-    const phase = cluster.phase;
-    const boundsScreen = worldToScreen(cluster.boundsX, cluster.boundsY, viewport);
-    const drawWidth = cluster.boundsWidth * viewport.scale;
-    const drawHeight = cluster.boundsHeight * viewport.scale;
+  for (const cluster of mapData.flameClusters) {
+    const phase = cluster.id * 1.37;
+    const boundsScreen = worldToScreen(cluster.bounds.x, cluster.bounds.y, viewport);
+    const drawWidth = cluster.bounds.width * viewport.scale;
+    const drawHeight = cluster.bounds.height * viewport.scale;
     const cullPadding = Math.max(6, Math.max(drawWidth, drawHeight) * 0.35);
 
     if (
@@ -144,10 +109,10 @@ export function drawAmbientFlameEffectsLayer(
     const scaledHeight = drawHeight * heightScale;
     const drawX = boundsScreen.x + lateralDrift - (scaledWidth - drawWidth) * 0.5;
     const drawY = boundsScreen.y + jitterY - (scaledHeight - drawHeight);
-    const sourceX = cluster.boundsX * sourceScaleX;
-    const sourceY = cluster.boundsY * sourceScaleY;
-    const sourceWidth = Math.max(1, cluster.boundsWidth * sourceScaleX);
-    const sourceHeight = Math.max(1, cluster.boundsHeight * sourceScaleY);
+    const sourceX = cluster.bounds.x * sourceScaleX;
+    const sourceY = cluster.bounds.y * sourceScaleY;
+    const sourceWidth = Math.max(1, cluster.bounds.width * sourceScaleX);
+    const sourceHeight = Math.max(1, cluster.bounds.height * sourceScaleY);
     const flameMask = getOrCreateFlameRegionMask(backgroundImage, sourceX, sourceY, sourceWidth, sourceHeight, cluster.id);
     if (flameMask.heatCoverage <= 0.004) {
       continue;
@@ -171,8 +136,8 @@ export function drawAmbientFlameEffectsLayer(
     context.restore();
   }
 
-  for (const cluster of clusters.values()) {
-    const phase = cluster.phase;
+  for (const cluster of mapData.flameClusters) {
+    const phase = cluster.id * 1.37;
     const pulse = 0.88 + Math.sin(timeSeconds * 3.4 + phase * 0.7) * 0.12;
     const clusterScreenX = (cluster.centerX + viewport.offsetX) * viewport.scale;
     const clusterScreenY = (cluster.centerY + viewport.offsetY) * viewport.scale;
@@ -215,7 +180,6 @@ function getOrCreateFlameRegionMask(
   const normalizedWidth = Math.max(1, Math.ceil(sourceWidth));
   const normalizedHeight = Math.max(1, Math.ceil(sourceHeight));
   const cacheKey = [
-    flameMaskVersion,
     backgroundImage.currentSrc || backgroundImage.src,
     clusterId,
     normalizedX,

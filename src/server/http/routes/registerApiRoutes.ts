@@ -1,9 +1,10 @@
 import type express from "express";
+import { getCharacterManifest } from "../../assets/characterManifest";
 import { listAvatarVoiceLineFiles } from "../../assets/voiceLineCatalog";
 import { RealtimeHub } from "../../ws/realtimeHub";
 import { OrchestratorService } from "../../orchestrator/orchestratorService";
 import type { StatusMonitor } from "../../status/statusMonitor";
-import { validationError } from "../appError";
+import { notFoundError, validationError } from "../appError";
 import { handleRequestError } from "../errorResponse";
 import { parseBroadcastInput, parseSpawnInput } from "../requestParsers";
 
@@ -23,6 +24,19 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
 
   app.get("/api/config", (_req, res) => {
     res.json(orchestrator.getConfig());
+  });
+
+  app.get("/api/assets/characters/:characterType/manifest", (req, res) => {
+    const manifest = getCharacterManifest(req.params.characterType);
+    if (!manifest) {
+      handleRequestError(
+        res,
+        notFoundError(`No sprite manifest for character '${req.params.characterType}'.`, "character_not_found")
+      );
+      return;
+    }
+
+    res.json(manifest);
   });
 
   app.get("/api/avatars/:avatarType/voice-lines", (req, res) => {

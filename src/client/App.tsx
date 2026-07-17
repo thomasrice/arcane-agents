@@ -389,7 +389,6 @@ export default function App(): JSX.Element {
           terminalFocusedWorkerId={terminalFocused ? terminalWorkerId : undefined}
           controlGroups={controlGroups}
           completionPendingWorkerIds={pendingCompletionWorkerIds}
-          onSelect={onSelectWorker}
           onSelectionChange={onSelectionChange}
           onActivateWorker={onActivateWorker}
           onMoveOrderIssued={playMoveVoiceLine}

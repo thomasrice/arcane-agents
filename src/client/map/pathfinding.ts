@@ -57,13 +57,14 @@ export function createCardinalWaypoints(from: WorkerPosition, to: WorkerPosition
 export function randomWanderTarget(
   anchor: WorkerPosition,
   tileSize: number,
-  mapData: LoadedOutpostMap | undefined
+  mapData: LoadedOutpostMap | undefined,
+  rng: () => number = Math.random
 ): WorkerPosition {
   let fallback: WorkerPosition | undefined;
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    const angle = randomRange(0, Math.PI * 2);
-    const radius = tileSize * randomRange(2.5, 4);
+    const angle = randomRange(0, Math.PI * 2, rng);
+    const radius = tileSize * randomRange(2.5, 4, rng);
     const candidate = clampWorldPosition(
       {
         x: anchor.x + Math.cos(angle) * radius,
@@ -329,6 +330,6 @@ function manhattanDistance(a: TileCoord, b: TileCoord): number {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-export function randomRange(min: number, max: number): number {
-  return min + Math.random() * (max - min);
+export function randomRange(min: number, max: number, rng: () => number = Math.random): number {
+  return min + rng() * (max - min);
 }
