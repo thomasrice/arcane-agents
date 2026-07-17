@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildFriendlyTmuxDefaults, buildTmuxArgs, buildTmuxAttachArgs, buildTmuxCommandPrefix } from "./tmuxClient";
-import { clipboardCandidatesForEnvironment } from "./tmuxAdapter";
+import {
+  buildFriendlyTmuxDefaults,
+  buildTmuxArgs,
+  buildTmuxAttachArgs,
+  buildTmuxCommandPrefix
+} from "./tmuxAdapter";
 
-describe("tmuxClient", () => {
+describe("tmux argv builders", () => {
   it("prefixes tmux commands with the managed socket name", () => {
     expect(buildTmuxArgs(["list-sessions"], { socketName: "arcane-agents" })).toEqual([
       "-L",
@@ -24,7 +28,9 @@ describe("tmuxClient", () => {
   it("builds a shell-safe tmux command prefix", () => {
     expect(buildTmuxCommandPrefix({ socketName: "arcane-agents-demo" })).toBe("tmux -L 'arcane-agents-demo'");
   });
+});
 
+describe("buildFriendlyTmuxDefaults", () => {
   it("bridges the system clipboard and pipes copies when a copy command is available", () => {
     const commands = buildFriendlyTmuxDefaults({ copyCommand: "wl-copy" });
 
@@ -40,19 +46,5 @@ describe("tmuxClient", () => {
     expect(commands.some((command) => command.includes("copy-command"))).toBe(false);
     expect(commands.some((command) => command.includes("set-clipboard"))).toBe(false);
     expect(commands).toContainEqual(["bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection-and-cancel"]);
-  });
-
-  it("prefers the Windows clipboard bridge when running inside WSL", () => {
-    expect(clipboardCandidatesForEnvironment("linux", { WSL_DISTRO_NAME: "Ubuntu" })[0]).toEqual({
-      binary: "clip.exe",
-      command: "clip.exe"
-    });
-  });
-
-  it("keeps native Linux clipboard commands first outside WSL", () => {
-    expect(clipboardCandidatesForEnvironment("linux", {})[0]).toEqual({
-      binary: "wl-copy",
-      command: "wl-copy"
-    });
   });
 });

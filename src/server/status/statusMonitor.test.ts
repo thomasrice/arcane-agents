@@ -181,7 +181,14 @@ describe("StatusMonitor", () => {
       })
     } as unknown as TmuxAdapter;
 
-    const monitor = new StatusMonitor(repository.repo, tmux, 1_000, () => undefined, () => undefined, testConfig);
+    const monitor = new StatusMonitor({
+      workers: repository.repo,
+      tmux,
+      pollIntervalMs: 1_000,
+      onWorkerUpdated: () => undefined,
+      onWorkerRemoved: () => undefined,
+      config: testConfig
+    });
     await monitor.pollOnce();
 
     expect(maxInFlight).toBeLessThanOrEqual(2);
@@ -197,7 +204,14 @@ describe("StatusMonitor", () => {
     } as unknown as TmuxAdapter;
     decideMock.mockImplementation(() => createEvaluation("working"));
     const onWorkerUpdated = vi.fn();
-    const monitor = new StatusMonitor(repository.repo, tmux, 1_000, onWorkerUpdated, () => undefined, testConfig);
+    const monitor = new StatusMonitor({
+      workers: repository.repo,
+      tmux,
+      pollIntervalMs: 1_000,
+      onWorkerUpdated,
+      onWorkerRemoved: () => undefined,
+      config: testConfig
+    });
 
     await monitor.pollOnce();
 
@@ -221,7 +235,14 @@ describe("StatusMonitor", () => {
       windowExists: vi.fn(async () => false)
     } as unknown as TmuxAdapter;
     const onWorkerRemoved = vi.fn();
-    const monitor = new StatusMonitor(repository.repo, tmux, 1_000, () => undefined, onWorkerRemoved, testConfig);
+    const monitor = new StatusMonitor({
+      workers: repository.repo,
+      tmux,
+      pollIntervalMs: 1_000,
+      onWorkerUpdated: () => undefined,
+      onWorkerRemoved,
+      config: testConfig
+    });
 
     await monitor.pollOnce();
 

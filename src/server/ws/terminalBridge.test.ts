@@ -6,7 +6,7 @@ import type { WebSocket } from "ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResolvedConfig, Worker } from "../../shared/types";
 import { WorkerRepository } from "../persistence/workerRepository";
-import { buildTmuxAttachArgs } from "../tmux/tmuxClient";
+import { buildTmuxAttachArgs } from "../tmux/tmuxAdapter";
 import { TerminalBridge } from "./terminalBridge";
 
 // The only external boundary this bridge touches is node-pty (which spawns the
@@ -258,11 +258,10 @@ describe("TerminalBridge unknown worker", () => {
     const payload = socket.send.mock.calls[0]?.[0];
     expect(JSON.parse(String(payload))).toMatchObject({ type: "error" });
 
-    // pins current behaviour — see plan.md: unknown worker closes with NO
-    // explicit close code (bare socket.close()), unlike the 1011 spawn-failure
-    // path. Worth reconciling to a policy code (e.g. 1008).
+    // Unknown worker is a protocol violation: close with 1008 (policy
+    // violation), consistent with websocketUpgrade's "Invalid agent id" path.
     expect(socket.close).toHaveBeenCalledTimes(1);
-    expect(socket.close.mock.calls[0]).toHaveLength(0);
+    expect(socket.close.mock.calls[0]?.[0]).toBe(1008);
   });
 });
 
@@ -279,7 +278,7 @@ describe("TerminalBridge spawn failure", () => {
     expect(socket.close.mock.calls[0]?.[0]).toBe(1011);
   });
 
-  it("retries the spawn on a later resize after a failure", () => {
+  it("does not re-attempt the spawn on a later resize after a failure", () => {
     const { socket } = connect();
 
     spawnMock.mockImplementationOnce(() => {
@@ -288,13 +287,13 @@ describe("TerminalBridge spawn failure", () => {
     const term = new FakePty();
     spawnMock.mockReturnValue(term as unknown as pty.IPty);
 
-    socket.emit("message", resizeFrame(80, 24)); // throws + close(1011)
-    socket.emit("message", resizeFrame(80, 24)); // no terminal set -> tries again
+    socket.emit("message", resizeFrame(80, 24)); // throws + close(1011) + teardown
+    socket.emit("message", resizeFrame(80, 24)); // message handler detached -> ignored
 
-    // pins current behaviour — see plan.md: a spawn failure does not tear down
-    // the message handler, so a subsequent resize re-attempts pty.spawn even
-    // though the socket was already closed. Potential orphaned tmux attach.
-    expect(spawnMock).toHaveBeenCalledTimes(2);
+    // A failed spawn tears down the message handler, so a subsequent resize can
+    // no longer re-attempt pty.spawn against the already-closed socket (no
+    // orphaned `tmux attach`).
+    expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -394,10 +393,9 @@ describe("TerminalBridge lifecycle symmetry", () => {
       socket.emit("error", new Error("post-close error"));
     }).not.toThrow();
 
-    // pins current behaviour — see plan.md: cleanup is not guarded, so kill()
-    // is invoked once per close/error event (here twice). node-pty kill on an
-    // already-dead pty is a latent double-kill; harmless with the mock.
-    expect(term.kill).toHaveBeenCalledTimes(2);
+    // Teardown is run-once guarded, so kill() fires exactly once even when both
+    // close and error fire — no node-pty double-kill on an already-dead pty.
+    expect(term.kill).toHaveBeenCalledTimes(1);
   });
 
   it("does not throw when the socket closes before any pty was spawned", () => {

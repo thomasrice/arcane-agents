@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import type { Worker, WorkerPosition } from "../../../shared/types";
+import { fallbackSpawnCenter, type RawOutpostMap } from "../../../shared/mapSpec";
 import { resolveAppPath } from "../../utils/appRoot";
 import type { OutpostMapSpec } from "./types";
 
@@ -19,7 +20,7 @@ export function loadOutpostSpawnSpec(mapPath = resolveAppPath("assets", "maps", 
 
   try {
     const raw = fs.readFileSync(mapPath, "utf8");
-    const parsed = JSON.parse(raw) as Partial<OutpostMapSpec>;
+    const parsed = JSON.parse(raw) as Partial<RawOutpostMap>;
     if (typeof parsed.tileSize !== "number") {
       return undefined;
     }
@@ -85,8 +86,8 @@ export function nextSpawnPosition({ activeWorkers, spec, spawnSeparationDistance
     const adjustedRadius = radius + attempt * 36;
     const adjustedAngle = angle + attempt * 0.32;
     const candidate = {
-      x: 520 + Math.cos(adjustedAngle) * adjustedRadius,
-      y: 310 + Math.sin(adjustedAngle) * adjustedRadius
+      x: fallbackSpawnCenter.x + Math.cos(adjustedAngle) * adjustedRadius,
+      y: fallbackSpawnCenter.y + Math.sin(adjustedAngle) * adjustedRadius
     };
 
     if (isSpawnPositionFree(candidate, activeWorkers, separation)) {
@@ -95,8 +96,8 @@ export function nextSpawnPosition({ activeWorkers, spec, spawnSeparationDistance
   }
 
   return {
-    x: 520 + Math.cos(angle) * radius,
-    y: 310 + Math.sin(angle) * radius
+    x: fallbackSpawnCenter.x + Math.cos(angle) * radius,
+    y: fallbackSpawnCenter.y + Math.sin(angle) * radius
   };
 }
 
@@ -141,7 +142,7 @@ function nextSpawnPositionNearAnchors(
 
 function averagePosition(positions: WorkerPosition[]): WorkerPosition {
   if (positions.length === 0) {
-    return { x: 520, y: 310 };
+    return { x: fallbackSpawnCenter.x, y: fallbackSpawnCenter.y };
   }
 
   let xSum = 0;

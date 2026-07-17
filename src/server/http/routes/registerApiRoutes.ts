@@ -1,17 +1,31 @@
 import type express from "express";
+import type { Response } from "express";
 import { getCharacterManifest } from "../../assets/characterManifest";
 import { listAvatarVoiceLineFiles } from "../../assets/voiceLineCatalog";
 import { RealtimeHub } from "../../ws/realtimeHub";
 import { OrchestratorService } from "../../orchestrator/orchestratorService";
 import type { StatusMonitor } from "../../status/statusMonitor";
-import { notFoundError, validationError } from "../appError";
-import { handleRequestError } from "../errorResponse";
-import { parseBroadcastInput, parseSpawnInput } from "../requestParsers";
+import type { Worker } from "../../../shared/types";
+import { notFoundError } from "../appError";
+import { asyncRoute } from "../asyncRoute";
+import {
+  broadcastInputSchema,
+  movementModeSchema,
+  parseOrThrow,
+  positionSchema,
+  renameSchema,
+  spawnSchema
+} from "../schemas";
 
 interface RegisterApiRoutesDeps {
   orchestrator: OrchestratorService;
   hub: RealtimeHub;
   statusMonitor: StatusMonitor;
+}
+
+function respondWorker(res: Response, hub: RealtimeHub, worker: Worker): void {
+  hub.broadcast({ type: "worker-updated", worker });
+  res.json(worker);
 }
 
 export function registerApiRoutes(app: express.Express, { orchestrator, hub, statusMonitor }: RegisterApiRoutesDeps): void {
@@ -26,18 +40,14 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
     res.json(orchestrator.getConfig());
   });
 
-  app.get("/api/assets/characters/:characterType/manifest", (req, res) => {
+  app.get("/api/assets/characters/:characterType/manifest", asyncRoute((req, res) => {
     const manifest = getCharacterManifest(req.params.characterType);
     if (!manifest) {
-      handleRequestError(
-        res,
-        notFoundError(`No sprite manifest for character '${req.params.characterType}'.`, "character_not_found")
-      );
-      return;
+      throw notFoundError(`No sprite manifest for character '${req.params.characterType}'.`, "character_not_found");
     }
 
     res.json(manifest);
-  });
+  }));
 
   app.get("/api/avatars/:avatarType/voice-lines", (req, res) => {
     const avatarType = req.params.avatarType;
@@ -83,108 +93,59 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
     });
   });
 
-  app.post("/api/workers/spawn", async (req, res) => {
-    try {
-      const spawnInput = parseSpawnInput(req.body);
-      const worker = await orchestrator.spawn(spawnInput);
-      hub.broadcast({ type: "worker-created", worker });
-      res.status(201).json(worker);
-    } catch (error) {
-      handleRequestError(res, error);
+  app.post("/api/workers/spawn", asyncRoute(async (req, res) => {
+    const spawnInput = parseOrThrow(spawnSchema, req.body, "spawn_invalid_payload");
+    const worker = await orchestrator.spawn(spawnInput);
+    hub.broadcast({ type: "worker-created", worker });
+    res.status(201).json(worker);
+  }));
+
+  app.post("/api/workers/:workerId/stop", asyncRoute(async (req, res) => {
+    const result = await orchestrator.stop(req.params.workerId);
+    if (result.removed) {
+      hub.broadcast({ type: "worker-removed", workerId: result.workerId });
     }
-  });
+    res.json({ ok: true, ...result });
+  }));
 
-  app.post("/api/workers/:workerId/stop", async (req, res) => {
-    try {
-      const result = await orchestrator.stop(req.params.workerId);
-      if (result.removed) {
-        hub.broadcast({ type: "worker-removed", workerId: result.workerId });
-      }
-      res.json({ ok: true, ...result });
-    } catch (error) {
-      handleRequestError(res, error);
+  app.post("/api/workers/:workerId/restart", asyncRoute(async (req, res) => {
+    const worker = await orchestrator.restart(req.params.workerId);
+    respondWorker(res, hub, worker);
+  }));
+
+  app.patch("/api/workers/:workerId/position", asyncRoute((req, res) => {
+    const { x, y } = parseOrThrow(positionSchema, req.body, "position_invalid_payload");
+    const worker = orchestrator.updatePosition(req.params.workerId, { x, y });
+    respondWorker(res, hub, worker);
+  }));
+
+  app.patch("/api/workers/:workerId/rename", asyncRoute((req, res) => {
+    const { displayName } = parseOrThrow(renameSchema, req.body, "rename_invalid_payload");
+    const worker = orchestrator.rename(req.params.workerId, displayName);
+    respondWorker(res, hub, worker);
+  }));
+
+  app.patch("/api/workers/:workerId/movement-mode", asyncRoute((req, res) => {
+    const { movementMode } = parseOrThrow(movementModeSchema, req.body, "movement_mode_invalid_payload");
+    const worker = orchestrator.setMovementMode(req.params.workerId, movementMode);
+    respondWorker(res, hub, worker);
+  }));
+
+  app.post("/api/workers/:workerId/open-terminal", asyncRoute(async (req, res) => {
+    await orchestrator.openInExternalTerminal(req.params.workerId);
+    res.json({ ok: true });
+  }));
+
+  app.post("/api/workers/broadcast-input", asyncRoute(async (req, res) => {
+    const input = parseOrThrow(broadcastInputSchema, req.body, "broadcast_invalid_payload");
+    const result = await orchestrator.broadcastInput(input.workerIds, input.text, {
+      submit: input.submit
+    });
+
+    if (result.deliveredWorkerIds.length > 0) {
+      statusMonitor.requestPollSoon();
     }
-  });
 
-  app.post("/api/workers/:workerId/restart", async (req, res) => {
-    try {
-      const worker = await orchestrator.restart(req.params.workerId);
-      hub.broadcast({ type: "worker-updated", worker });
-      res.json(worker);
-    } catch (error) {
-      handleRequestError(res, error);
-    }
-  });
-
-  app.patch("/api/workers/:workerId/position", (req, res) => {
-    try {
-      const x = Number(req.body?.x);
-      const y = Number(req.body?.y);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        throw validationError("Position requires numeric x and y values.", "position_invalid_payload");
-      }
-
-      const worker = orchestrator.updatePosition(req.params.workerId, { x, y });
-      hub.broadcast({ type: "worker-updated", worker });
-      res.json(worker);
-    } catch (error) {
-      handleRequestError(res, error);
-    }
-  });
-
-  app.patch("/api/workers/:workerId/rename", (req, res) => {
-    try {
-      const displayName = req.body?.displayName;
-      if (typeof displayName !== "string") {
-        throw validationError("Rename request requires a string displayName.", "rename_invalid_payload");
-      }
-
-      const worker = orchestrator.rename(req.params.workerId, displayName);
-      hub.broadcast({ type: "worker-updated", worker });
-      res.json(worker);
-    } catch (error) {
-      handleRequestError(res, error);
-    }
-  });
-
-  app.patch("/api/workers/:workerId/movement-mode", (req, res) => {
-    try {
-      const movementMode = req.body?.movementMode;
-      if (movementMode !== "hold" && movementMode !== "wander") {
-        throw validationError("movementMode must be 'hold' or 'wander'.", "movement_mode_invalid_payload");
-      }
-
-      const worker = orchestrator.setMovementMode(req.params.workerId, movementMode);
-      hub.broadcast({ type: "worker-updated", worker });
-      res.json(worker);
-    } catch (error) {
-      handleRequestError(res, error);
-    }
-  });
-
-  app.post("/api/workers/:workerId/open-terminal", async (req, res) => {
-    try {
-      await orchestrator.openInExternalTerminal(req.params.workerId);
-      res.json({ ok: true });
-    } catch (error) {
-      handleRequestError(res, error);
-    }
-  });
-
-  app.post("/api/workers/broadcast-input", async (req, res) => {
-    try {
-      const input = parseBroadcastInput(req.body);
-      const result = await orchestrator.broadcastInput(input.workerIds, input.text, {
-        submit: input.submit
-      });
-
-      if (result.deliveredWorkerIds.length > 0) {
-        statusMonitor.requestPollSoon();
-      }
-
-      res.json(result);
-    } catch (error) {
-      handleRequestError(res, error);
-    }
-  });
+    res.json(result);
+  }));
 }

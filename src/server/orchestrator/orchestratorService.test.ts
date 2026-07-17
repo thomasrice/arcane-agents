@@ -401,9 +401,10 @@ describe("OrchestratorService.reconcileWithTmux", () => {
     // Persisted under the generated id.
     expect(store.get(adopted.id)).toEqual(adopted);
 
-    // pins current behaviour — see plan.md
-    // Resolving the project id for an unknown path MUTATES config: a synthetic
-    // "discovered" project is registered as a side effect of the lookup.
+    // The pure planner EMITS a synthetic "discovered" project for an unknown
+    // path (no longer a hidden mutation inside the id lookup); the service then
+    // applies it to config. The observable config outcome is identical: after
+    // reconcile the discovered project is registered.
     expect(service.getConfig().projects["cool-project"]).toEqual({
       path: "/home/thomas/code/cool-project",
       shortName: "cool-pro",

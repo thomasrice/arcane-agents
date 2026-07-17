@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { RawOutpostMap } from "../../shared/mapSpec";
 import { clamp } from "./viewportMath";
 
 export interface FlameClusterBounds {
@@ -39,13 +40,6 @@ interface LogicGridSpec {
   tileSize: number;
   worldWidth: number;
   worldHeight: number;
-}
-
-interface RawMapData {
-  name: string;
-  width: number;
-  height: number;
-  tileSize: number;
 }
 
 interface RawMapLogicData {
@@ -98,7 +92,7 @@ export function useOutpostMap(): {
 }
 
 async function loadOutpostMap(): Promise<LoadedOutpostMap> {
-  const rawMap = await fetchJson<RawMapData>("/api/assets/maps/outpost.json");
+  const rawMap = await fetchJson<RawOutpostMap>("/api/assets/maps/outpost.json");
   const rawMapLogic = await fetchJson<RawMapLogicData>("/api/assets/maps/outpost.logic.json");
   const logicGridSpec = deriveLogicGridSpec(rawMapLogic, rawMap.width, rawMap.height, rawMap.tileSize);
   const collisionTileKeys = parseLogicTileKeySet(rawMapLogic.collisionTiles, logicGridSpec, rawMap.width, rawMap.height);

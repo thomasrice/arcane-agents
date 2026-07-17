@@ -1,5 +1,4 @@
 import { nanoid } from "nanoid";
-import path from "node:path";
 import type {
   AvatarType,
   MovementMode,
@@ -12,11 +11,11 @@ import type {
 import { conflictError, notFoundError } from "../http/appError";
 import { listAvailableAvatarTypes } from "../assets/avatarCatalog";
 import { WorkerRepository } from "../persistence/workerRepository";
-import { isSameWorkerRecord } from "./reconcile/isSameWorkerRecord";
+import { buildLiveWindowLookups, findLiveMatch, planReconciliation } from "./reconcile/planReconciliation";
 import { withClaudeSessionId } from "./spawn/command";
 import { resolveSpawnPlan } from "./spawn/resolveSpawnPlan";
 import { selectNextAvatar } from "./spawn/avatarAllocator";
-import { makeWindowName as buildWindowName, slugify } from "./spawn/windowName";
+import { makeWindowName as buildWindowName } from "./spawn/windowName";
 import { loadOutpostSpawnSpec, nextSpawnPosition as computeNextSpawnPosition } from "./spawn/spawnPosition";
 import { TmuxAdapter, type ManagedWindow } from "../tmux/tmuxAdapter";
 
@@ -250,132 +249,76 @@ export class OrchestratorService {
   }
 
   async reconcileWithTmux(): Promise<{ updatedWorkers: Worker[]; adoptedWorkers: Worker[]; removedWorkerIds: string[] }> {
-    const currentWorkers = this.workers.listWorkers();
-    const updatedWorkers: Worker[] = [];
-    const adoptedWorkers: Worker[] = [];
-    const removedWorkerIds: string[] = [];
+    const persistedWorkers = this.workers.listWorkers();
 
     if (!(await this.tmux.hasManagedSession())) {
       return {
-        updatedWorkers,
-        adoptedWorkers,
-        removedWorkerIds
+        updatedWorkers: [],
+        adoptedWorkers: [],
+        removedWorkerIds: []
       };
     }
 
-    const liveManagedWindows = await this.tmux.listManagedWindows();
-    const liveByWorkerId = new Map<string, ManagedWindow>();
-    const liveByWindow = new Map<string, ManagedWindow>();
-    const consumedWindows = new Set<string>();
+    const liveWindows = await this.tmux.listManagedWindows();
+    const directLiveWorkerIds = await this.resolveDirectlyLiveWorkerIds(persistedWorkers, liveWindows);
 
-    for (const liveWindow of liveManagedWindows) {
-      liveByWindow.set(liveWindow.window, liveWindow);
-      if (liveWindow.workerId) {
-        liveByWorkerId.set(liveWindow.workerId, liveWindow);
+    const plan = planReconciliation({
+      persistedWorkers,
+      liveWindows,
+      directLiveWorkerIds,
+      configProjects: this.config.projects,
+      configRuntimes: this.config.runtimes,
+      sessionName: this.config.backend.tmux.sessionName,
+      nowIso: new Date().toISOString(),
+      cwd: process.cwd(),
+      generateWorkerId: () => nanoid(8).toLowerCase(),
+      allocateAvatar: (existingWorkers) => this.nextAvatar(undefined, existingWorkers),
+      allocatePosition: (existingWorkers) => this.nextSpawnPosition(existingWorkers)
+    });
+
+    for (const worker of plan.toSave) {
+      this.workers.saveWorker(worker);
+    }
+
+    const removedWorkerIds: string[] = [];
+    for (const workerId of plan.toDelete) {
+      if (this.workers.deleteWorker(workerId)) {
+        removedWorkerIds.push(workerId);
       }
     }
 
-    for (const worker of currentWorkers) {
-      const liveMatch = liveByWorkerId.get(worker.id) ?? liveByWindow.get(worker.tmuxRef.window);
-      if (!liveMatch) {
-        const directLive = await this.tmux.windowExists(worker.tmuxRef);
-        if (directLive) {
-          if (worker.status === "stopped") {
-            const resumed: Worker = {
-              ...worker,
-              status: "idle",
-              activityText: undefined,
-              activityTool: undefined,
-              activityPath: undefined,
-              updatedAt: new Date().toISOString()
-            };
-            this.workers.saveWorker(resumed);
-            updatedWorkers.push(resumed);
-          }
-          continue;
-        }
-
-        const removed = this.workers.deleteWorker(worker.id);
-        if (removed) {
-          removedWorkerIds.push(worker.id);
-        }
-        continue;
-      }
-
-      consumedWindows.add(liveMatch.window);
-
-      const projectId = this.resolveProjectId(liveMatch, worker);
-      const runtimeId = this.resolveRuntimeId(liveMatch.runtimeId, worker.runtimeId);
-      const runtimeConfig = this.config.runtimes[runtimeId];
-
-      const reconciled: Worker = {
-        ...worker,
-        name: liveMatch.window,
-        projectId,
-        projectPath: this.resolveProjectPath(liveMatch, projectId, worker.projectPath),
-        runtimeId,
-        runtimeLabel: liveMatch.runtimeLabel ?? runtimeConfig?.label ?? worker.runtimeLabel,
-        command: worker.command,
-        status: worker.status === "stopped" ? "working" : worker.status,
-        tmuxRef: {
-          session: this.config.backend.tmux.sessionName,
-          window: liveMatch.window,
-          pane: liveMatch.pane
-        },
-        updatedAt: new Date().toISOString()
-      };
-
-      if (!isSameWorkerRecord(worker, reconciled)) {
-        this.workers.saveWorker(reconciled);
-        updatedWorkers.push(reconciled);
-      }
-    }
-
-    for (const liveWindow of liveManagedWindows) {
-      if (consumedWindows.has(liveWindow.window)) {
-        continue;
-      }
-
-      const workerId = liveWindow.workerId ?? nanoid(8).toLowerCase();
-      if (this.workers.getWorker(workerId)) {
-        continue;
-      }
-
-      const projectId = this.resolveProjectId(liveWindow);
-      const runtimeId = this.resolveRuntimeId(liveWindow.runtimeId);
-      const runtimeConfig = this.config.runtimes[runtimeId];
-      const now = new Date().toISOString();
-
-      const adopted: Worker = {
-        id: workerId,
-        name: liveWindow.window,
-        projectId,
-        projectPath: this.resolveProjectPath(liveWindow, projectId, process.cwd()),
-        runtimeId,
-        runtimeLabel: liveWindow.runtimeLabel ?? runtimeConfig?.label ?? runtimeId,
-        command: runtimeConfig?.command ?? ["bash"],
-        status: "idle",
-        avatarType: this.nextAvatar(),
-        movementMode: "hold",
-        position: this.nextSpawnPosition(),
-        tmuxRef: {
-          session: this.config.backend.tmux.sessionName,
-          window: liveWindow.window,
-          pane: liveWindow.pane
-        },
-        createdAt: now,
-        updatedAt: now
-      };
-
-      this.workers.saveWorker(adopted);
-      adoptedWorkers.push(adopted);
+    if (Object.keys(plan.discoveredProjects).length > 0) {
+      this.discoveredProjects = { ...this.discoveredProjects, ...plan.discoveredProjects };
+      this.refreshConfigProjects();
     }
 
     return {
-      updatedWorkers,
-      adoptedWorkers,
+      updatedWorkers: plan.updatedWorkers,
+      adoptedWorkers: plan.adoptedWorkers,
       removedWorkerIds
     };
+  }
+
+  // windowExists is a tmux round-trip; resolving it here (only for workers with no
+  // live managed-window match) keeps planReconciliation a pure function.
+  private async resolveDirectlyLiveWorkerIds(
+    persistedWorkers: Worker[],
+    liveWindows: ManagedWindow[]
+  ): Promise<Set<string>> {
+    const lookups = buildLiveWindowLookups(liveWindows);
+    const directLiveWorkerIds = new Set<string>();
+
+    for (const worker of persistedWorkers) {
+      if (findLiveMatch(worker, lookups)) {
+        continue;
+      }
+
+      if (await this.tmux.windowExists(worker.tmuxRef)) {
+        directLiveWorkerIds.add(worker.id);
+      }
+    }
+
+    return directLiveWorkerIds;
   }
 
   private requireWorker(workerId: string): Worker {
@@ -384,69 +327,6 @@ export class OrchestratorService {
       throw notFoundError(`Agent '${workerId}' not found.`, "worker_not_found");
     }
     return worker;
-  }
-
-  private resolveProjectId(liveWindow: ManagedWindow, currentWorker?: Worker): string {
-    if (liveWindow.projectId && this.config.projects[liveWindow.projectId]) {
-      return liveWindow.projectId;
-    }
-
-    if (currentWorker && this.config.projects[currentWorker.projectId]) {
-      return currentWorker.projectId;
-    }
-
-    const projectPath = liveWindow.projectPath;
-    if (projectPath) {
-      for (const [projectId, project] of Object.entries(this.config.projects)) {
-        if (project.path === projectPath) {
-          return projectId;
-        }
-      }
-    }
-
-    const fallbackPath = projectPath ?? process.cwd();
-    const basename = path.basename(fallbackPath) || "adopted";
-    const baseId = slugify(liveWindow.projectId ?? basename);
-
-    let candidate = baseId;
-    let suffix = 2;
-    while (this.config.projects[candidate]) {
-      candidate = `${baseId}-${suffix}`;
-      suffix += 1;
-    }
-
-    const discoveredProject: ProjectConfig = {
-      path: fallbackPath,
-      shortName: candidate.slice(0, 8),
-      label: basename,
-      source: "discovered"
-    };
-
-    this.discoveredProjects[candidate] = discoveredProject;
-    this.refreshConfigProjects();
-
-    return candidate;
-  }
-
-  private resolveProjectPath(liveWindow: ManagedWindow, projectId: string, fallbackPath: string): string {
-    return liveWindow.projectPath ?? this.config.projects[projectId]?.path ?? fallbackPath;
-  }
-
-  private resolveRuntimeId(candidateRuntimeId?: string, fallbackRuntimeId?: string): string {
-    if (candidateRuntimeId && this.config.runtimes[candidateRuntimeId]) {
-      return candidateRuntimeId;
-    }
-
-    if (fallbackRuntimeId && this.config.runtimes[fallbackRuntimeId]) {
-      return fallbackRuntimeId;
-    }
-
-    if (this.config.runtimes.shell) {
-      return "shell";
-    }
-
-    const firstRuntimeId = Object.keys(this.config.runtimes)[0];
-    return firstRuntimeId ?? "shell";
   }
 
   private nextAvatar(preferred?: AvatarType, workers?: Worker[]): AvatarType {

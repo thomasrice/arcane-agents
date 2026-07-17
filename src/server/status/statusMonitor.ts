@@ -67,6 +67,15 @@ interface WorkerStatusUpdateOutcome {
   nextStatus: Worker["status"] | "stopped";
 }
 
+export interface StatusMonitorOptions {
+  workers: WorkerRepository;
+  tmux: TmuxAdapter;
+  pollIntervalMs: number;
+  onWorkerUpdated: (worker: Worker) => void;
+  onWorkerRemoved: (workerId: string) => void;
+  config: ResolvedConfig;
+}
+
 const defaultDecisionFacts: StatusDecisionFacts = {
   command: "",
   commandQuietForMs: 0,
@@ -103,15 +112,20 @@ export class StatusMonitor {
   private readonly workerPollConcurrency = resolveStatusPollConcurrency();
   private readonly interactiveCommands: ReadonlySet<string>;
   private readonly runtimeFreshnessOverrides: ReadonlyMap<string, number>;
+  private readonly workers: WorkerRepository;
+  private readonly tmux: TmuxAdapter;
+  private readonly pollIntervalMs: number;
+  private readonly onWorkerUpdated: (worker: Worker) => void;
+  private readonly onWorkerRemoved: (workerId: string) => void;
 
-  constructor(
-    private readonly workers: WorkerRepository,
-    private readonly tmux: TmuxAdapter,
-    private readonly pollIntervalMs: number,
-    private readonly onWorkerUpdated: (worker: Worker) => void,
-    private readonly onWorkerRemoved: (workerId: string) => void,
-    config: ResolvedConfig
-  ) {
+  constructor(options: StatusMonitorOptions) {
+    this.workers = options.workers;
+    this.tmux = options.tmux;
+    this.pollIntervalMs = options.pollIntervalMs;
+    this.onWorkerUpdated = options.onWorkerUpdated;
+    this.onWorkerRemoved = options.onWorkerRemoved;
+
+    const config = options.config;
     this.interactiveCommands = new Set(config.status.interactiveCommands.map((cmd) => cmd.toLowerCase()));
 
     const freshnessOverrides = new Map<string, number>();

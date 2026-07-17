@@ -1,4 +1,5 @@
 import type { AvatarType, ProjectConfig, RuntimeConfig } from "../../../shared/types";
+import type { OutpostSpawnArea } from "../../../shared/mapSpec";
 
 export interface SpawnPlan {
   projectId: string;
@@ -10,16 +11,14 @@ export interface SpawnPlan {
   avatar?: AvatarType;
 }
 
-export interface SpawnAreaSpec {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
+/**
+ * Normalised view of the outpost map used by the spawn planner. Derived from
+ * {@link RawOutpostMap} by `loadOutpostSpawnSpec`, which leaves `width`/`height`
+ * undefined when the file omits or malforms them.
+ */
 export interface OutpostMapSpec {
   width?: number;
   height?: number;
   tileSize: number;
-  spawnArea?: SpawnAreaSpec;
+  spawnArea?: OutpostSpawnArea;
 }

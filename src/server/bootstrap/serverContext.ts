@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { ResolvedConfig } from "../../shared/types";
 import { DiscoveryService } from "../config/discovery";
-import { getArcaneAgentsPaths, isNonDefaultSession, loadResolvedConfig } from "../config/loadConfig";
+import { applySessionOverrides, getArcaneAgentsPaths, loadResolvedConfig } from "../config/loadConfig";
 import { OrchestratorService } from "../orchestrator/orchestratorService";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { StatusMonitor } from "../status/statusMonitor";
@@ -26,14 +26,7 @@ export async function createServerContext(sessionName?: string): Promise<ServerC
   fs.mkdirSync(paths.stateDir, { recursive: true });
   fs.mkdirSync(paths.cacheDir, { recursive: true });
 
-  const baseConfig = loadResolvedConfig(paths);
-
-  if (isNonDefaultSession(sessionName)) {
-    const baseTmuxName = baseConfig.backend.tmux.sessionName;
-    const baseSocketName = baseConfig.backend.tmux.socketName;
-    baseConfig.backend.tmux.sessionName = `${baseTmuxName}-${sessionName}`;
-    baseConfig.backend.tmux.socketName = `${baseSocketName}-${sessionName}`;
-  }
+  const baseConfig = applySessionOverrides(loadResolvedConfig(paths), sessionName);
 
   const discoveryService = new DiscoveryService();
   const initialDiscovery = await discoveryService.discover(baseConfig);
@@ -49,26 +42,37 @@ export async function createServerContext(sessionName?: string): Promise<ServerC
 
   const hub = new RealtimeHub();
 
-  await orchestrator.reconcileWithTmux();
+  // Adopted workers (managed tmux windows with no persisted record) are new to
+  // any connected client, so announce them over the realtime hub instead of
+  // waiting for the next status poll to surface them. The client's ws handler
+  // treats worker-created/worker-updated identically (both upsert), so
+  // worker-created is the correct shape for a first-time appearance.
+  const reconciliation = await orchestrator.reconcileWithTmux();
+  for (const worker of reconciliation.adoptedWorkers) {
+    hub.broadcast({
+      type: "worker-created",
+      worker
+    });
+  }
 
-  const statusMonitor = new StatusMonitor(
+  const statusMonitor = new StatusMonitor({
     workers,
     tmux,
-    baseConfig.backend.tmux.pollIntervalMs,
-    (worker) => {
+    pollIntervalMs: baseConfig.backend.tmux.pollIntervalMs,
+    onWorkerUpdated: (worker) => {
       hub.broadcast({
         type: "worker-updated",
         worker
       });
     },
-    (workerId) => {
+    onWorkerRemoved: (workerId) => {
       hub.broadcast({
         type: "worker-removed",
         workerId
       });
     },
-    baseConfig
-  );
+    config: baseConfig
+  });
 
   const terminalBridge = new TerminalBridge(workers, baseConfig.backend.tmux, {
     onSubmittedInput: () => {

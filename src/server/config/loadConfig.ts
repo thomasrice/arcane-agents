@@ -20,6 +20,28 @@ export function isNonDefaultSession(sessionName?: string): boolean {
   return sessionName !== undefined && sessionName !== "default";
 }
 
+// Named sessions get their own tmux session and socket so they cannot collide
+// with the default instance. This keeps all session-name knowledge (state-dir
+// suffixing above, tmux-name suffixing here) inside the config module; callers
+// just consume the resolved config.
+export function applySessionOverrides(config: ResolvedConfig, sessionName?: string): ResolvedConfig {
+  if (!isNonDefaultSession(sessionName)) {
+    return config;
+  }
+
+  return {
+    ...config,
+    backend: {
+      ...config.backend,
+      tmux: {
+        ...config.backend.tmux,
+        sessionName: `${config.backend.tmux.sessionName}-${sessionName}`,
+        socketName: `${config.backend.tmux.socketName}-${sessionName}`
+      }
+    }
+  };
+}
+
 export function getArcaneAgentsPaths(sessionName?: string): ArcaneAgentsPaths {
   const configDir = resolveUserPath("~/.config/arcane-agents");
   const baseStateDir = resolveUserPath("~/.local/state/arcane-agents");

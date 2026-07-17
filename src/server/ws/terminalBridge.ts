@@ -2,7 +2,7 @@ import * as pty from "node-pty";
 import type { ResolvedConfig } from "../../shared/types";
 import type { RawData, WebSocket } from "ws";
 import { WorkerRepository } from "../persistence/workerRepository";
-import { buildTmuxAttachArgs } from "../tmux/tmuxClient";
+import { buildTmuxAttachArgs } from "../tmux/tmuxAdapter";
 
 interface TerminalBridgeOptions {
   onSubmittedInput?: (workerId: string) => void;
@@ -28,7 +28,10 @@ export class TerminalBridge {
     const worker = this.workers.getWorker(workerId);
     if (!worker) {
       socket.send(JSON.stringify({ type: "error", message: `Unknown agent '${workerId}'.` }));
-      socket.close();
+      // Policy-violation close code, consistent with websocketUpgrade's
+      // "Invalid agent id" path — an unknown worker is a protocol violation,
+      // not an abnormal condition.
+      socket.close(1008, "Unknown agent");
       return;
     }
 
@@ -40,8 +43,24 @@ export class TerminalBridge {
 
     let terminal: pty.IPty | undefined;
     let ready = false;
+    let torndown = false;
 
-    socket.on("message", (raw) => {
+    // Run-once teardown: kill the pty exactly once no matter how many of
+    // close/error/spawn-failure fire (the guard prevents a node-pty
+    // double-kill). It also detaches the message handler, which is what stops a
+    // post-failure resize from re-spawning a second `tmux attach` against an
+    // already-closed socket. The close/error listeners are left attached so a
+    // late `error` event still has a handler (an unhandled 'error' would throw).
+    const teardown = () => {
+      if (torndown) {
+        return;
+      }
+      torndown = true;
+      socket.off("message", onMessage);
+      terminal?.kill();
+    };
+
+    const onMessage = (raw: RawData) => {
       const incoming = rawDataToString(raw);
       const control = parseResizeMessage(incoming);
 
@@ -62,6 +81,7 @@ export class TerminalBridge {
             const detail = error instanceof Error ? error.message : String(error);
             console.error(`[arcane-agents] terminal bridge failed to spawn pty for ${workerId}: ${detail}`);
             socket.close(1011, "Failed to attach terminal");
+            teardown();
             return;
           }
 
@@ -94,14 +114,11 @@ export class TerminalBridge {
       }
 
       terminal!.write(incoming);
-    });
-
-    const cleanup = () => {
-      terminal?.kill();
     };
 
-    socket.on("close", cleanup);
-    socket.on("error", cleanup);
+    socket.on("message", onMessage);
+    socket.on("close", teardown);
+    socket.on("error", teardown);
   }
 
   private handleTerminalOutput(workerId: string): void {

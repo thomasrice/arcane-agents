@@ -1,10 +1,18 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { ResolvedConfig, TmuxRef } from "../../shared/types";
-import { findExecutable, shellQuote } from "../platform/shell";
-import { buildFriendlyTmuxDefaults, buildTmuxArgs, buildTmuxCommandPrefix } from "./tmuxClient";
+import { detectClipboardCopyCommand } from "../platform/clipboard";
+import { shellQuote } from "../platform/shell";
 
 const execFileAsync = promisify(execFile);
+
+interface TmuxConnectionOptions {
+  socketName: string;
+}
+
+interface FriendlyTmuxDefaultsOptions {
+  copyCommand?: string;
+}
 
 interface SpawnTmuxInput {
   workerId: string;
@@ -25,11 +33,6 @@ interface PaneState {
 
 interface SendInputOptions {
   submit?: boolean;
-}
-
-interface ClipboardCommandCandidate {
-  binary: string;
-  command: string;
 }
 
 export interface ManagedWindow {
@@ -344,46 +347,40 @@ function normalizeOption(value: string | undefined): string | undefined {
   return value;
 }
 
-async function detectClipboardCopyCommand(): Promise<string | undefined> {
-  const candidates = clipboardCandidatesForEnvironment(process.platform, process.env);
-  for (const candidate of candidates) {
-    if (await commandExists(candidate.binary)) {
-      return candidate.command;
-    }
-  }
+// Pure argv/command builders for the managed tmux socket. These carry no tmux
+// process state, so they stay exported alongside the adapter that consumes them
+// (and are reused by the terminal bridge's `tmux attach` spawn).
 
-  return undefined;
+export function buildTmuxArgs(args: string[], options: TmuxConnectionOptions): string[] {
+  return ["-L", options.socketName, ...args];
 }
 
-export function clipboardCandidatesForEnvironment(
-  platform: NodeJS.Platform,
-  env: NodeJS.ProcessEnv = process.env
-): ClipboardCommandCandidate[] {
-  if (platform === "darwin") {
-    return [{ binary: "pbcopy", command: "pbcopy" }];
-  }
+export function buildTmuxAttachArgs(target: string, options: TmuxConnectionOptions): string[] {
+  return buildTmuxArgs(["attach-session", "-t", target], options);
+}
 
-  if (platform === "win32") {
-    return [{ binary: "clip.exe", command: "clip.exe" }];
-  }
+export function buildTmuxCommandPrefix(options: TmuxConnectionOptions): string {
+  return `tmux -L ${shellQuote(options.socketName)}`;
+}
 
-  const linuxCandidates = [
-    { binary: "wl-copy", command: "wl-copy" },
-    { binary: "xclip", command: "xclip -selection clipboard -in" },
-    { binary: "xsel", command: "xsel --clipboard --input" }
+export function buildFriendlyTmuxDefaults(options: FriendlyTmuxDefaultsOptions = {}): string[][] {
+  const copyAction = options.copyCommand ? "copy-pipe-and-cancel" : "copy-selection-and-cancel";
+  const commands: string[][] = [
+    ["set-option", "-g", "mouse", "on"],
+    ["set-option", "-s", "escape-time", "0"],
+    ["set-window-option", "-g", "history-limit", "100000"],
+    ["bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", copyAction],
+    ["bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane", "send-keys", "-X", copyAction]
   ];
 
-  if (platform === "linux" && isWslEnvironment(env)) {
-    return [{ binary: "clip.exe", command: "clip.exe" }, ...linuxCandidates];
+  if (options.copyCommand) {
+    commands.splice(
+      3,
+      0,
+      ["set-option", "-s", "set-clipboard", "external"],
+      ["set-option", "-s", "copy-command", options.copyCommand]
+    );
   }
 
-  return linuxCandidates;
-}
-
-async function commandExists(binary: string): Promise<boolean> {
-  return findExecutable(binary) !== undefined;
-}
-
-function isWslEnvironment(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP || env.WSLENV);
+  return commands;
 }
