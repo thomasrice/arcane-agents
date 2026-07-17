@@ -1,6 +1,8 @@
 import type { ControlGroupMap } from "../app/types";
 import type { AppHotkeyContext } from "./hotkeyContext";
 
+const controlGroupCycleOrder = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0] as const;
+
 export function handleSystemHotkeys(event: KeyboardEvent, context: AppHotkeyContext): boolean {
   if (context.restartConfirmWorkerIds.length > 0) {
     if (isUnmodifiedEnter(event)) {
@@ -188,6 +190,49 @@ export function handleNavigationHotkeys(event: KeyboardEvent, context: AppHotkey
 
     event.preventDefault();
     context.cycleIdleSelection(-1);
+    return true;
+  }
+
+  if (
+    (event.key === "`" || event.code === "Backquote") &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    !context.isEditableTarget(event.target)
+  ) {
+    if (context.isTerminalTarget(event.target)) {
+      return true;
+    }
+
+    const activeWorkerIdSet = new Set(context.activeWorkers.map((worker) => worker.id));
+    const populatedGroups = controlGroupCycleOrder.flatMap((digit) => {
+      const workerIds = (context.controlGroupByDigitRef.current[digit] ?? []).filter((workerId) =>
+        activeWorkerIdSet.has(workerId)
+      );
+      return workerIds.length > 0 ? [workerIds] : [];
+    });
+    if (populatedGroups.length === 0) {
+      return true;
+    }
+
+    const focusedWorkerId =
+      context.focusedSelectedWorkerId ??
+      (context.selectedWorkerIds.length === 1 ? context.selectedWorkerIds[0] : undefined);
+    const selectedWorkerIdSet = new Set(context.selectedWorkerIds);
+    const currentGroupIndex = populatedGroups.findIndex(
+      (workerIds) =>
+        Boolean(focusedWorkerId && workerIds.includes(focusedWorkerId)) ||
+        (workerIds.length === selectedWorkerIdSet.size &&
+          workerIds.every((workerId) => selectedWorkerIdSet.has(workerId)))
+    );
+    const nextGroup = populatedGroups[(currentGroupIndex + 1) % populatedGroups.length];
+    if (!nextGroup) {
+      return true;
+    }
+
+    event.preventDefault();
+    context.applySelection(nextGroup, { center: true });
     return true;
   }
 
