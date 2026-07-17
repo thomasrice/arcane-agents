@@ -194,11 +194,10 @@ export function handleNavigationHotkeys(event: KeyboardEvent, context: AppHotkey
   }
 
   if (
-    (event.key === "`" || event.code === "Backquote") &&
+    (event.key === "`" || event.key === "~" || event.code === "Backquote") &&
     !event.ctrlKey &&
     !event.metaKey &&
     !event.altKey &&
-    !event.shiftKey &&
     !context.isEditableTarget(event.target)
   ) {
     if (context.isTerminalTarget(event.target)) {
@@ -226,7 +225,14 @@ export function handleNavigationHotkeys(event: KeyboardEvent, context: AppHotkey
         (workerIds.length === selectedWorkerIdSet.size &&
           workerIds.every((workerId) => selectedWorkerIdSet.has(workerId)))
     );
-    const nextGroup = populatedGroups[(currentGroupIndex + 1) % populatedGroups.length];
+    const direction = event.shiftKey ? -1 : 1;
+    const nextGroupIndex =
+      currentGroupIndex < 0
+        ? direction > 0
+          ? 0
+          : populatedGroups.length - 1
+        : (currentGroupIndex + direction + populatedGroups.length) % populatedGroups.length;
+    const nextGroup = populatedGroups[nextGroupIndex];
     if (!nextGroup) {
       return true;
     }

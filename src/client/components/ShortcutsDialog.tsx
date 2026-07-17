@@ -23,8 +23,8 @@ export function ShortcutsDialog({
             <span>Select control group</span>
           </div>
           <div className="shortcut-row">
-            <kbd>`</kbd>
-            <span>Cycle populated control groups; skip gaps and wrap</span>
+            <kbd>` / Shift+`</kbd>
+            <span>Cycle populated control groups forwards / backwards; skip gaps and wrap</span>
           </div>
           <div className="shortcut-row">
             <kbd>Ctrl+1-0</kbd>

@@ -181,6 +181,7 @@ Default URLs:
 - `.` / `,` / `Shift+.`: cycle idle agents.
 - `1-0`: select control group.
 - `Backtick`: cycle through populated control groups in `1-9, 0` order, starting after the selected group or the group containing the focused unit, skipping gaps, and wrapping to the first group. With no selected or focused group, start at the first one.
+- `Shift+Backtick`: cycle the same groups in reverse, wrapping to the last group. With no selected or focused group, start at the last one.
 - `Ctrl+1-0`: assign selected agents to a control group.
 - `K`: open kill confirmation for selected agents.
 - `Shift+K`: kill highlighted roster agent (then `Enter` to confirm).
