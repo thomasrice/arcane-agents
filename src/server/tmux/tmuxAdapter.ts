@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { ResolvedConfig, TmuxRef } from "../../shared/types";
+import { findExecutable, shellQuote } from "../platform/shell";
 import { buildFriendlyTmuxDefaults, buildTmuxArgs, buildTmuxCommandPrefix } from "./tmuxClient";
 
 const execFileAsync = promisify(execFile);
@@ -20,10 +21,6 @@ interface PaneState {
   isDead: boolean;
   currentPath?: string;
   panePid?: number;
-}
-
-interface StopOptions {
-  background?: boolean;
 }
 
 interface SendInputOptions {
@@ -114,12 +111,7 @@ export class TmuxAdapter {
     };
   }
 
-  async stop(ref: TmuxRef, options?: StopOptions): Promise<void> {
-    if (options?.background) {
-      void this.stopGracefully(ref).catch(() => undefined);
-      return;
-    }
-
+  async stop(ref: TmuxRef): Promise<void> {
     await this.stopGracefully(ref);
   }
 
@@ -333,13 +325,6 @@ function firstLine(input: string): string {
   return line;
 }
 
-function shellQuote(value: string): string {
-  if (value.length === 0) {
-    return "''";
-  }
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -396,16 +381,7 @@ export function clipboardCandidatesForEnvironment(
 }
 
 async function commandExists(binary: string): Promise<boolean> {
-  const locator = process.platform === "win32" ? "where" : "which";
-
-  try {
-    await execFileAsync(locator, [binary], {
-      maxBuffer: 1024 * 64
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  return findExecutable(binary) !== undefined;
 }
 
 function isWslEnvironment(env: NodeJS.ProcessEnv): boolean {

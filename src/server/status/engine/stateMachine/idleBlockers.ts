@@ -8,15 +8,6 @@ function isPromptDominantOpenCodeIdle(context: WorkerStatusSignalContext): boole
 }
 
 function detectIdleBlocker(context: WorkerStatusSignalContext, evidence: WorkingEvidence): IdleBlocker | undefined {
-  if (isPromptDominantOpenCodeIdle(context)) {
-    return {
-      reason: {
-        code: "opencode-prompt-idle",
-        message: "OpenCode prompt is visible without a fresh active execution signal."
-      }
-    };
-  }
-
   if (isShellCommand(context.commandLower) && context.transcriptSnapshot?.status !== "working") {
     if (hasAnyWorkingEvidence(evidence)) {
       return undefined;

@@ -1,3 +1,5 @@
+import { shellQuote } from "../platform/shell";
+
 interface TmuxConnectionOptions {
   socketName: string;
 }
@@ -38,12 +40,4 @@ export function buildFriendlyTmuxDefaults(options: FriendlyTmuxDefaultsOptions =
   }
 
   return commands;
-}
-
-function shellQuote(value: string): string {
-  if (value.length === 0) {
-    return "''";
-  }
-
-  return `'${value.replace(/'/g, `'\\''`)}'`;
 }

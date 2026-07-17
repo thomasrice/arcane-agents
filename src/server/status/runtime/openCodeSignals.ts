@@ -1,3 +1,5 @@
+import { findLastMatchingIndex } from "./terminalText";
+
 export interface OpenCodeSignals {
   prompt: boolean;
   active: boolean;
@@ -41,24 +43,6 @@ export function detectOpenCodeSignals(output: string): OpenCodeSignals {
     prompt,
     active
   };
-}
-
-function findLastMatchingIndex(lines: string[], predicate: (line: string) => boolean): number {
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    if (predicate(lines[index] ?? "")) {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
-export function hasOpenCodePromptSignal(output: string): boolean {
-  return detectOpenCodeSignals(output).prompt;
-}
-
-export function hasOpenCodeActiveSignal(output: string): boolean {
-  return detectOpenCodeSignals(output).active;
 }
 
 export function preferOpenCodeSpecificActivityText(

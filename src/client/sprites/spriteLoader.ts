@@ -3,8 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 export type SpriteDirection = "south" | "east" | "north" | "west";
 
 export interface CharacterSpriteSet {
-  type: string;
-  assetType: string;
   rotations: Partial<Record<SpriteDirection, HTMLImageElement>>;
   animations: {
     walk: Partial<Record<SpriteDirection, HTMLImageElement[]>>;
@@ -83,8 +81,7 @@ export function getSpriteFrame(spriteSet: CharacterSpriteSet | undefined, option
 }
 
 async function loadCharacterSpriteSet(characterType: string): Promise<CharacterSpriteSet> {
-  const assetType = resolveSpriteAssetType(characterType);
-  const baseUrl = `/api/assets/characters/${encodeURIComponent(assetType)}`;
+  const baseUrl = `/api/assets/characters/${encodeURIComponent(characterType)}`;
 
   const rotationEntries = await Promise.all(
     directions.map(async (direction) => {
@@ -116,8 +113,6 @@ async function loadCharacterSpriteSet(characterType: string): Promise<CharacterS
     working.length > 0;
 
   return {
-    type: characterType,
-    assetType,
     rotations,
     animations: {
       walk,
@@ -192,8 +187,4 @@ function resolveWalkFrameIndex(frameTick: number, frameCount: number): number {
   const cycleFrames = Math.max(targetWalkCycleFrames, frameCount);
   const normalizedTick = ((frameTick % cycleFrames) + cycleFrames) % cycleFrames;
   return Math.min(frameCount - 1, Math.floor((normalizedTick / cycleFrames) * frameCount));
-}
-
-export function resolveSpriteAssetType(characterType: string): string {
-  return characterType;
 }

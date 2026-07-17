@@ -1,3 +1,5 @@
+import { findLastMatchingIndex, stripTerminalControlSequences } from "./terminalText";
+
 export interface CodexSignals {
   prompt: boolean;
   active: boolean;
@@ -6,8 +8,6 @@ export interface CodexSignals {
 const codexSignalWindowLines = 240;
 const codexPromptFreshLineWindow = 24;
 const codexActiveFreshLineWindow = 12;
-const escapeChar = String.fromCharCode(0x1b);
-const bellChar = String.fromCharCode(0x07);
 
 const codexPromptMatchers: RegExp[] = [
   /needs your approval\./i,
@@ -59,14 +59,6 @@ export function detectCodexSignals(output: string): CodexSignals {
   };
 }
 
-export function hasCodexPromptSignal(output: string): boolean {
-  return detectCodexSignals(output).prompt;
-}
-
-export function hasCodexActiveSignal(output: string): boolean {
-  return detectCodexSignals(output).active;
-}
-
 export function extractCodexStatusText(line: string): string | undefined {
   const match = normalizeCodexRuntimeLine(line).match(/^status:\s+(.+)$/i);
   return match?.[1]?.trim() || undefined;
@@ -89,53 +81,6 @@ export function normalizeCodexRuntimeLine(line: string): string {
   return withoutFrame;
 }
 
-function stripTerminalControlSequences(line: string): string {
-  let normalized = "";
-
-  for (let index = 0; index < line.length; index += 1) {
-    const current = line[index] ?? "";
-    const next = line[index + 1] ?? "";
-
-    if (current === escapeChar && next === "]") {
-      index += 2;
-      while (index < line.length) {
-        const cursor = line[index] ?? "";
-        const following = line[index + 1] ?? "";
-        if (cursor === bellChar) {
-          break;
-        }
-        if (cursor === escapeChar && following === "\\") {
-          index += 1;
-          break;
-        }
-        index += 1;
-      }
-      continue;
-    }
-
-    if (current === escapeChar && next === "[") {
-      index += 2;
-      while (index < line.length) {
-        const code = line.charCodeAt(index);
-        if (code >= 0x40 && code <= 0x7e) {
-          break;
-        }
-        index += 1;
-      }
-      continue;
-    }
-
-    const code = current.charCodeAt(0);
-    if ((code >= 0x00 && code <= 0x08) || (code >= 0x0b && code <= 0x1a) || (code >= 0x1c && code <= 0x1f) || code === 0x7f) {
-      continue;
-    }
-
-    normalized += current;
-  }
-
-  return normalized;
-}
-
 function hasCodexPromptStatus(line: string): boolean {
   const statusText = extractCodexStatusText(line);
   return statusText ? codexPromptStatusMatchers.some((matcher) => matcher.test(statusText)) : false;
@@ -143,14 +88,4 @@ function hasCodexPromptStatus(line: string): boolean {
 
 function isCodexPromptLine(line: string): boolean {
   return codexPromptMatchers.some((matcher) => matcher.test(line));
-}
-
-function findLastMatchingIndex(lines: string[], predicate: (line: string) => boolean): number {
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    if (predicate(lines[index] ?? "")) {
-      return index;
-    }
-  }
-
-  return -1;
 }

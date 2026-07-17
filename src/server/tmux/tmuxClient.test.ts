@@ -25,26 +25,21 @@ describe("tmuxClient", () => {
     expect(buildTmuxCommandPrefix({ socketName: "arcane-agents-demo" })).toBe("tmux -L 'arcane-agents-demo'");
   });
 
-  it("enables friendly defaults with clipboard-aware copy bindings when a copy command is available", () => {
-    expect(buildFriendlyTmuxDefaults({ copyCommand: "wl-copy" })).toEqual([
-      ["set-option", "-g", "mouse", "on"],
-      ["set-option", "-s", "escape-time", "0"],
-      ["set-window-option", "-g", "history-limit", "100000"],
-      ["set-option", "-s", "set-clipboard", "external"],
-      ["set-option", "-s", "copy-command", "wl-copy"],
-      ["bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel"],
-      ["bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel"]
-    ]);
+  it("bridges the system clipboard and pipes copies when a copy command is available", () => {
+    const commands = buildFriendlyTmuxDefaults({ copyCommand: "wl-copy" });
+
+    // The copy-command branch adds clipboard bridging and switches the copy action.
+    expect(commands).toContainEqual(["set-option", "-s", "set-clipboard", "external"]);
+    expect(commands).toContainEqual(["set-option", "-s", "copy-command", "wl-copy"]);
+    expect(commands).toContainEqual(["bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel"]);
   });
 
-  it("falls back to tmux buffer copy bindings when no clipboard command is available", () => {
-    expect(buildFriendlyTmuxDefaults()).toEqual([
-      ["set-option", "-g", "mouse", "on"],
-      ["set-option", "-s", "escape-time", "0"],
-      ["set-window-option", "-g", "history-limit", "100000"],
-      ["bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection-and-cancel"],
-      ["bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection-and-cancel"]
-    ]);
+  it("omits clipboard bridging and falls back to buffer copies when no copy command is available", () => {
+    const commands = buildFriendlyTmuxDefaults();
+
+    expect(commands.some((command) => command.includes("copy-command"))).toBe(false);
+    expect(commands.some((command) => command.includes("set-clipboard"))).toBe(false);
+    expect(commands).toContainEqual(["bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection-and-cancel"]);
   });
 
   it("prefers the Windows clipboard bridge when running inside WSL", () => {

@@ -22,7 +22,7 @@ export function useAppHotkeys(context: AppHotkeyContext): void {
         return;
       }
 
-      void handleActionHotkeys(event, current);
+      handleActionHotkeys(event, current);
     };
 
     window.addEventListener("keydown", onKeyDown, true);

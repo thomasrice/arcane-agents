@@ -2,7 +2,6 @@ import { useMemo, type MutableRefObject } from "react";
 import type { Worker } from "../../shared/types";
 import type { RosterEntry } from "../app/types";
 import { formatShortcutSummonActivityText } from "../app/utils";
-import { resolveSpriteAssetType } from "../sprites/spriteLoader";
 import { TerminalPanel } from "./TerminalPanel";
 
 interface TerminalColumnProps {
@@ -110,7 +109,7 @@ export function TerminalColumn({
               <div className="worker-roster-main">
                 <img
                   className="worker-roster-avatar"
-                  src={`/api/assets/characters/${encodeURIComponent(resolveSpriteAssetType(worker.avatarType))}/rotations/south.png`}
+                  src={`/api/assets/characters/${encodeURIComponent(worker.avatarType)}/rotations/south.png`}
                   alt=""
                   loading="lazy"
                   aria-hidden="true"
@@ -204,7 +203,7 @@ export function TerminalColumn({
                     <div className="worker-roster-main">
                       <img
                         className="worker-roster-avatar"
-                        src={`/api/assets/characters/${encodeURIComponent(resolveSpriteAssetType(entry.worker.avatarType))}/rotations/south.png`}
+                        src={`/api/assets/characters/${encodeURIComponent(entry.worker.avatarType)}/rotations/south.png`}
                         alt=""
                         loading="lazy"
                         aria-hidden="true"
@@ -236,7 +235,7 @@ export function TerminalColumn({
                       {entry.shortcut.avatar ? (
                         <img
                           className="worker-roster-avatar worker-roster-summon-avatar"
-                          src={`/api/assets/characters/${encodeURIComponent(resolveSpriteAssetType(entry.shortcut.avatar))}/rotations/south.png`}
+                          src={`/api/assets/characters/${encodeURIComponent(entry.shortcut.avatar)}/rotations/south.png`}
                           alt=""
                           loading="lazy"
                           aria-hidden="true"

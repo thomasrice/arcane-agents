@@ -17,7 +17,6 @@ export interface WorkerNameplate {
   anchorX: number;
   topY: number;
   label: string;
-  visible: boolean;
   completionKey?: string;
   attentionKey?: string;
 }
@@ -53,42 +52,22 @@ interface AttentionPlaquePalette {
   textFill: string;
 }
 
-const completionPlaquePalettes = {
-  vivid: {
-    shimmerCycleMs: 1850,
-    baseTop: "rgba(139, 105, 20, 0.98)",
-    baseHighlight: "rgba(245, 212, 66, 0.98)",
-    baseMid: "rgba(212, 160, 23, 0.98)",
-    baseBottom: "rgba(156, 122, 16, 0.98)",
-    specular: "rgba(255, 242, 178, 0.72)",
-    innerTopShade: "rgba(122, 91, 17, 0.28)",
-    innerBottomShade: "rgba(122, 91, 17, 0.28)",
-    bevelLight: "rgba(232, 200, 64, 0.92)",
-    bevelDark: "rgba(107, 79, 10, 0.92)",
-    shimmerOuter: "rgba(255, 248, 219, 0)",
-    shimmerInner: "rgba(255, 249, 232, 0.72)",
-    textShadow: "rgba(255, 236, 168, 0.62)",
-    textFill: "#1a1000"
-  },
-  muted: {
-    shimmerCycleMs: 2600,
-    baseTop: "rgba(111, 84, 22, 0.95)",
-    baseHighlight: "rgba(208, 172, 74, 0.93)",
-    baseMid: "rgba(171, 130, 42, 0.93)",
-    baseBottom: "rgba(124, 94, 27, 0.95)",
-    specular: "rgba(245, 227, 173, 0.36)",
-    innerTopShade: "rgba(102, 76, 20, 0.2)",
-    innerBottomShade: "rgba(84, 61, 16, 0.34)",
-    bevelLight: "rgba(216, 184, 93, 0.7)",
-    bevelDark: "rgba(94, 68, 16, 0.76)",
-    shimmerOuter: "rgba(255, 247, 217, 0)",
-    shimmerInner: "rgba(255, 246, 215, 0.34)",
-    textShadow: "rgba(230, 208, 145, 0.38)",
-    textFill: "#251806"
-  }
-} satisfies Record<string, CompletionPlaquePalette>;
-
-const completionPlaquePalette = completionPlaquePalettes.muted;
+const completionPlaquePalette: CompletionPlaquePalette = {
+  shimmerCycleMs: 2600,
+  baseTop: "rgba(111, 84, 22, 0.95)",
+  baseHighlight: "rgba(208, 172, 74, 0.93)",
+  baseMid: "rgba(171, 130, 42, 0.93)",
+  baseBottom: "rgba(124, 94, 27, 0.95)",
+  specular: "rgba(245, 227, 173, 0.36)",
+  innerTopShade: "rgba(102, 76, 20, 0.2)",
+  innerBottomShade: "rgba(84, 61, 16, 0.34)",
+  bevelLight: "rgba(216, 184, 93, 0.7)",
+  bevelDark: "rgba(94, 68, 16, 0.76)",
+  shimmerOuter: "rgba(255, 247, 217, 0)",
+  shimmerInner: "rgba(255, 246, 215, 0.34)",
+  textShadow: "rgba(230, 208, 145, 0.38)",
+  textFill: "#251806"
+};
 
 const attentionPlaquePalette: AttentionPlaquePalette = {
   pulseCycleMs: 1700,
@@ -265,10 +244,6 @@ export function drawWorkerNameplates(
   context.font = "12px 'Trebuchet MS', sans-serif";
 
   for (const nameplate of nameplates) {
-    if (!nameplate.visible) {
-      continue;
-    }
-
     const labelWidth = Math.max(90, context.measureText(nameplate.label).width + 18);
     const labelHeight = 18;
     const left = nameplate.anchorX - labelWidth / 2;

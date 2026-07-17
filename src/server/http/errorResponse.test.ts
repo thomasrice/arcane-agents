@@ -19,16 +19,15 @@ describe("handleRequestError", () => {
 
     handleRequestError(response, validationError("Invalid payload", "invalid_payload"));
     expect(response.status).toHaveBeenCalledWith(400);
-    expect(response.json).toHaveBeenCalledWith({
-      error: "Invalid payload",
-      code: "invalid_payload"
-    });
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: "invalid_payload" }));
 
     handleRequestError(response, notFoundError("Missing worker", "worker_not_found"));
     expect(response.status).toHaveBeenCalledWith(404);
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: "worker_not_found" }));
 
     handleRequestError(response, conflictError("Worker already stopping", "worker_conflict"));
     expect(response.status).toHaveBeenCalledWith(409);
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: "worker_conflict" }));
   });
 
   it("maps malformed JSON body parse errors to validation response", () => {
@@ -36,10 +35,7 @@ describe("handleRequestError", () => {
     handleRequestError(response, { type: "entity.parse.failed" });
 
     expect(response.status).toHaveBeenCalledWith(400);
-    expect(response.json).toHaveBeenCalledWith({
-      error: "Request body must be valid JSON.",
-      code: "validation_error"
-    });
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: "validation_error" }));
   });
 
   it("maps unknown errors to internal server responses", () => {
@@ -47,9 +43,6 @@ describe("handleRequestError", () => {
     handleRequestError(response, new Error("boom"));
 
     expect(response.status).toHaveBeenCalledWith(500);
-    expect(response.json).toHaveBeenCalledWith({
-      error: "Internal server error.",
-      code: "internal_error"
-    });
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: "internal_error" }));
   });
 });

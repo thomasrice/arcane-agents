@@ -41,7 +41,6 @@ function createContext(overrides: Partial<WorkerStatusSignalContext> = {}): Work
     },
     transcriptSnapshot: undefined,
     parsed: {
-      status: "idle",
       activity: {
         text: undefined,
         tool: undefined,
@@ -92,7 +91,6 @@ describe("deriveWorkerStatusDecision", () => {
     const decision = deriveWorkerStatusDecision(
       createContext({
         parsed: {
-          status: "attention",
           activity: {
             text: "Allow this action?",
             tool: "terminal",
@@ -116,7 +114,6 @@ describe("deriveWorkerStatusDecision", () => {
         commandLower: "python",
         output: "Traceback (most recent call last):\nBoom",
         parsed: {
-          status: "error",
           activity: {
             text: "Error",
             tool: "terminal",

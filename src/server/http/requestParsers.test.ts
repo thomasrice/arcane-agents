@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
+import { AppError, isAppError } from "./appError";
 import { parseBroadcastInput, parseSpawnInput } from "./requestParsers";
+
+function expectValidationError(run: () => unknown, code: string): void {
+  let thrown: unknown;
+  try {
+    run();
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(isAppError(thrown)).toBe(true);
+  const appError = thrown as AppError;
+  expect(appError.status).toBe(400);
+  expect(appError.code).toBe(code);
+}
 
 describe("parseSpawnInput", () => {
   it("parses shortcut spawn input and sanitizes nearby worker IDs", () => {
@@ -32,18 +47,19 @@ describe("parseSpawnInput", () => {
   });
 
   it("rejects malformed spawn payloads", () => {
-    expect(() => parseSpawnInput(null)).toThrow("Spawn body must be an object.");
-    expect(() => parseSpawnInput({ projectId: "project-a" })).toThrow(
-      "Invalid spawn request: expected shortcutIndex or projectId+runtimeId."
+    expectValidationError(() => parseSpawnInput(null), "spawn_invalid_body");
+    expectValidationError(() => parseSpawnInput({ projectId: "project-a" }), "spawn_invalid_payload");
+    expectValidationError(
+      () => parseSpawnInput({ shortcutIndex: 0, spawnNearWorkerIds: "worker-1" }),
+      "spawn_invalid_nearby_worker_ids"
     );
-    expect(() => parseSpawnInput({ shortcutIndex: 0, spawnNearWorkerIds: "worker-1" })).toThrow(
-      "spawnNearWorkerIds must be an array when provided."
+    expectValidationError(
+      () => parseSpawnInput({ projectId: "project-a", runtimeId: "shell", command: ["", "test"] }),
+      "spawn_invalid_command"
     );
-    expect(() => parseSpawnInput({ projectId: "project-a", runtimeId: "shell", command: ["", "test"] })).toThrow(
-      "command must not include empty tokens."
-    );
-    expect(() => parseSpawnInput({ projectId: "project-a", runtimeId: "shell", command: ["npm", 7] })).toThrow(
-      "command must only contain strings."
+    expectValidationError(
+      () => parseSpawnInput({ projectId: "project-a", runtimeId: "shell", command: ["npm", 7] }),
+      "spawn_invalid_command"
     );
   });
 });
@@ -63,24 +79,30 @@ describe("parseBroadcastInput", () => {
   });
 
   it("rejects invalid broadcast payloads", () => {
-    expect(() => parseBroadcastInput({ workerIds: "w1", text: "hello" })).toThrow(
-      "Broadcast input requires workerIds array."
+    expectValidationError(
+      () => parseBroadcastInput({ workerIds: "w1", text: "hello" }),
+      "broadcast_invalid_worker_ids"
     );
 
-    expect(() => parseBroadcastInput({ workerIds: ["   "], text: "hello" })).toThrow(
-      "Broadcast workerIds must not contain empty IDs."
+    expectValidationError(
+      () => parseBroadcastInput({ workerIds: ["   "], text: "hello" }),
+      "broadcast_invalid_worker_ids"
     );
 
-    expect(() => parseBroadcastInput({ workerIds: ["w1", 9], text: "hello" })).toThrow(
-      "Broadcast workerIds must only contain strings."
+    expectValidationError(
+      () => parseBroadcastInput({ workerIds: ["w1", 9], text: "hello" }),
+      "broadcast_invalid_worker_ids"
     );
 
-    expect(() => parseBroadcastInput({ workerIds: ["w1"], text: "", submit: false })).toThrow(
-      "Broadcast input requires text or submit=true."
+    expectValidationError(
+      () => parseBroadcastInput({ workerIds: ["w1"], text: "", submit: false }),
+      "broadcast_invalid_payload"
     );
 
-    expect(() => parseBroadcastInput({ workerIds: ["w1"], text: "x".repeat(4097) })).toThrow(
-      "Broadcast input text is too long."
+    // 4096-char limit boundary: 4097 chars must be rejected.
+    expectValidationError(
+      () => parseBroadcastInput({ workerIds: ["w1"], text: "x".repeat(4097) }),
+      "broadcast_invalid_text"
     );
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Worker } from "../../shared/types";
 import type { AppHotkeyContext } from "./hotkeyContext";
-import { handleNavigationHotkeys } from "./hotkeyHandlers";
+import { handleNavigationHotkeys, handleSystemHotkeys } from "./hotkeyHandlers";
 
 function worker(id: string): Worker {
   return {
@@ -277,5 +277,96 @@ describe("control-group navigation hotkeys", () => {
     handleNavigationHotkeys(event, context);
 
     expect(applySelection).toHaveBeenCalledWith(["worker-3"], { center: true, focusWorkerId: "worker-3" });
+  });
+});
+
+describe("confirm-dialog system hotkeys", () => {
+  function confirmContext(overrides: Partial<AppHotkeyContext>): AppHotkeyContext {
+    return {
+      restartConfirmWorkerIds: [],
+      killConfirmWorkerIds: [],
+      confirmKillSelection: vi.fn(),
+      closeKillConfirm: vi.fn(),
+      confirmRestartSelection: vi.fn(),
+      closeRestartConfirm: vi.fn(),
+      isEditableTarget: () => false,
+      isTerminalTarget: () => false,
+      ...overrides
+    } as unknown as AppHotkeyContext;
+  }
+
+  function keydown(overrides: {
+    key: string;
+    shiftKey?: boolean;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    altKey?: boolean;
+    preventDefault: () => void;
+  }): KeyboardEvent {
+    return {
+      key: overrides.key,
+      code: "",
+      ctrlKey: overrides.ctrlKey ?? false,
+      metaKey: overrides.metaKey ?? false,
+      altKey: overrides.altKey ?? false,
+      shiftKey: overrides.shiftKey ?? false,
+      target: null,
+      preventDefault: overrides.preventDefault
+    } as unknown as KeyboardEvent;
+  }
+
+  it("ignores bare modifier keydowns while the kill confirm is open", () => {
+    const context = confirmContext({ killConfirmWorkerIds: ["worker-1"] });
+
+    for (const key of ["Shift", "Control", "Alt", "Meta", "CapsLock"]) {
+      const preventDefault = vi.fn();
+      // Not handled: routing must continue, and the dialog must not react.
+      expect(handleSystemHotkeys(keydown({ key, shiftKey: key === "Shift", preventDefault }), context)).toBe(false);
+      expect(preventDefault).not.toHaveBeenCalled();
+    }
+
+    expect(context.closeKillConfirm).not.toHaveBeenCalled();
+    expect(context.confirmKillSelection).not.toHaveBeenCalled();
+  });
+
+  it("confirms the kill selection on unmodified Enter", () => {
+    const context = confirmContext({ killConfirmWorkerIds: ["worker-1"] });
+    const preventDefault = vi.fn();
+
+    expect(handleSystemHotkeys(keydown({ key: "Enter", preventDefault }), context)).toBe(true);
+    expect(context.confirmKillSelection).toHaveBeenCalledOnce();
+    expect(context.closeKillConfirm).not.toHaveBeenCalled();
+    expect(preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it("dismisses the kill confirm on a non-modifier, non-Enter key", () => {
+    const context = confirmContext({ killConfirmWorkerIds: ["worker-1"] });
+    const preventDefault = vi.fn();
+
+    expect(handleSystemHotkeys(keydown({ key: "a", preventDefault }), context)).toBe(true);
+    expect(context.closeKillConfirm).toHaveBeenCalledOnce();
+    expect(context.confirmKillSelection).not.toHaveBeenCalled();
+    expect(preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it("applies the same contract to the restart confirm dialog", () => {
+    const shiftContext = confirmContext({ restartConfirmWorkerIds: ["worker-1"] });
+    const shiftPreventDefault = vi.fn();
+    expect(
+      handleSystemHotkeys(keydown({ key: "Shift", shiftKey: true, preventDefault: shiftPreventDefault }), shiftContext)
+    ).toBe(false);
+    expect(shiftContext.closeRestartConfirm).not.toHaveBeenCalled();
+    expect(shiftContext.confirmRestartSelection).not.toHaveBeenCalled();
+    expect(shiftPreventDefault).not.toHaveBeenCalled();
+
+    const enterContext = confirmContext({ restartConfirmWorkerIds: ["worker-1"] });
+    expect(handleSystemHotkeys(keydown({ key: "Enter", preventDefault: vi.fn() }), enterContext)).toBe(true);
+    expect(enterContext.confirmRestartSelection).toHaveBeenCalledOnce();
+    expect(enterContext.closeRestartConfirm).not.toHaveBeenCalled();
+
+    const letterContext = confirmContext({ restartConfirmWorkerIds: ["worker-1"] });
+    expect(handleSystemHotkeys(keydown({ key: "x", preventDefault: vi.fn() }), letterContext)).toBe(true);
+    expect(letterContext.closeRestartConfirm).toHaveBeenCalledOnce();
+    expect(letterContext.confirmRestartSelection).not.toHaveBeenCalled();
   });
 });

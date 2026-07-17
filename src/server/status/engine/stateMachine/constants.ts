@@ -20,14 +20,6 @@ const fatalRuntimeErrorMatchers: RegExp[] = [
   /\bsig(?:segv|kill|term)\b/i
 ];
 
-const recoverableToolErrorMatchers: RegExp[] = [
-  /request failed with status code\s*:?\s*\d{3}/i,
-  /\b(?:unauthorized|forbidden|rate limit|too many requests)\b/i,
-  /\b(?:timed?\s*out|timeout)\b/i,
-  /\b(?:network error|connection reset|connection refused|econnreset|econnrefused|enotfound)\b/i,
-  /\bhttp(?:\s+status)?\s*(?:code)?\s*:?\s*(?:401|403|404|408|409|410|422|429|500|502|503|504)\b/i
-];
-
 export {
   parsedStrongEvidenceWindowMs,
   recentErrorSignalWindowMs,
@@ -41,6 +33,5 @@ export {
   claudeWorkingFreshWindowMs,
   openCodeWorkingFreshWindowMs,
   codexWorkingFreshWindowMs,
-  fatalRuntimeErrorMatchers,
-  recoverableToolErrorMatchers
+  fatalRuntimeErrorMatchers
 };

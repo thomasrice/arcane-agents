@@ -5,6 +5,10 @@ const controlGroupCycleOrder = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0] as const;
 
 export function handleSystemHotkeys(event: KeyboardEvent, context: AppHotkeyContext): boolean {
   if (context.restartConfirmWorkerIds.length > 0) {
+    if (isModifierOnlyKey(event)) {
+      return false;
+    }
+
     if (isUnmodifiedEnter(event)) {
       event.preventDefault();
       context.confirmRestartSelection();
@@ -17,6 +21,10 @@ export function handleSystemHotkeys(event: KeyboardEvent, context: AppHotkeyCont
   }
 
   if (context.killConfirmWorkerIds.length > 0) {
+    if (isModifierOnlyKey(event)) {
+      return false;
+    }
+
     if (isUnmodifiedEnter(event)) {
       event.preventDefault();
       context.confirmKillSelection();
@@ -477,4 +485,21 @@ export function handleActionHotkeys(event: KeyboardEvent, context: AppHotkeyCont
 
 function isUnmodifiedEnter(event: KeyboardEvent): boolean {
   return event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+}
+
+// Bare modifier and lock keys carry no intent on their own (e.g. pressing Shift
+// on the way to Shift+Enter). They must not dismiss an open confirm dialog.
+const modifierOnlyKeys = new Set([
+  "Shift",
+  "Control",
+  "Alt",
+  "Meta",
+  "AltGraph",
+  "CapsLock",
+  "NumLock",
+  "ScrollLock"
+]);
+
+function isModifierOnlyKey(event: KeyboardEvent): boolean {
+  return modifierOnlyKeys.has(event.key);
 }

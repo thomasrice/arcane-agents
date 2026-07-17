@@ -3,7 +3,7 @@
   "version": "1.2.3",
   "description": "Local-first visual control room for tmux-backed coding agents",
   "bin": {
-    "arcane-agents": "dist/server/server/cli.js"
+    "arcane-agents": "dist/server/cli.js"
   },
   "files": [
     "dist",
@@ -21,8 +21,8 @@
     "dev:stack": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "ARCANE_AGENTS_API_PORT=7601 tsx watch src/server/index.ts",
     "dev:client": "vite --port 7600",
-    "build": "vite build && tsc -p tsconfig.server.json",
-    "start": "node dist/server/server/cli.js start",
+    "build": "vite build && tsc -p tsconfig.server.build.json",
+    "start": "node dist/server/cli.js start",
     "cli": "tsx src/server/cli.ts",
     "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",

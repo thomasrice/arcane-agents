@@ -6,7 +6,7 @@ import { drawSelectionBox, type SelectionBox } from "./selection";
 import type { SpriteBounds } from "./hitTesting";
 import { clamp, worldToScreen, type ViewportState } from "./viewportMath";
 import type { ActivityOverlayRenderState, WorkerMotion } from "./workerVisualState";
-import { drawCommandFeedbackLayer } from "./render/layers/commandFeedbackLayer";
+import { drawCommandFeedbackLayer, type CommandFeedback } from "./render/layers/commandFeedbackLayer";
 import {
   drawActivityOverlayLabel,
   drawCharacterGroundShadow,
@@ -32,14 +32,7 @@ const fadingWorkerDurationMs = 420;
 const occludedGhostAlpha = 0.44;
 const activityOverlayMaxBadgeWidth = 320;
 
-export interface CommandFeedback {
-  kind: "ok" | "blocked";
-  workerId: string;
-  startedAtMs: number;
-  durationMs: number;
-  destination: WorkerPosition;
-  path?: WorkerPosition[];
-}
+export type { CommandFeedback };
 
 export interface DrawSceneInput {
   context: CanvasRenderingContext2D;
@@ -223,7 +216,6 @@ export function drawScene({
         anchorX: spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x,
         topY: (spriteBounds ? spriteBounds.y + spriteBounds.height : screen.y + radius) + 4 * viewport.scale,
         label: displayLabel,
-        visible: true,
         completionKey: completionPending ? worker.id : undefined,
         attentionKey: attentionPending ? worker.id : undefined
       });

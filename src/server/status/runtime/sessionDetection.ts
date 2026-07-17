@@ -2,8 +2,8 @@ import type { Worker } from "../../../shared/types";
 
 const defaultCapturePaneLines = 35;
 const claudeCapturePaneLines = 60;
-const openCodeCapturePaneLines = 420;
-const codexCapturePaneLines = 420;
+export const openCodeCapturePaneLines = 420;
+export const codexCapturePaneLines = 420;
 
 export function capturePaneLineCount(worker: Worker, commandLower: string): number {
   if (isLikelyOpenCodeSession(worker, commandLower)) {

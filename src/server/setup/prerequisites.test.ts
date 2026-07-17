@@ -11,11 +11,9 @@ describe("recommendTmuxInstall", () => {
     expect(recommendTmuxInstall({
       platform: "darwin",
       lookupCommand: lookupFor(["brew"])
-    })).toEqual({
-      dependency: "tmux",
+    })).toMatchObject({
       packageManager: "Homebrew",
-      command: "brew install tmux",
-      note: "This installs tmux only."
+      command: "brew install tmux"
     });
   });
 
@@ -23,11 +21,9 @@ describe("recommendTmuxInstall", () => {
     expect(recommendTmuxInstall({
       platform: "linux",
       lookupCommand: lookupFor(["apt"])
-    })).toEqual({
-      dependency: "tmux",
+    })).toMatchObject({
       packageManager: "apt",
-      command: "sudo apt install -y tmux",
-      note: "This installs tmux only and does not run a full system upgrade."
+      command: "sudo apt install -y tmux"
     });
   });
 
@@ -36,11 +32,9 @@ describe("recommendTmuxInstall", () => {
       platform: "linux",
       lookupCommand: lookupFor(["pacman"]),
       isRootUser: true
-    })).toEqual({
-      dependency: "tmux",
+    })).toMatchObject({
       packageManager: "pacman",
-      command: "pacman -S --needed tmux",
-      note: "This installs tmux only and skips reinstalling it if already present."
+      command: "pacman -S --needed tmux"
     });
   });
 

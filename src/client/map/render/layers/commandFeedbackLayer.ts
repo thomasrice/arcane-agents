@@ -1,7 +1,7 @@
 import type { WorkerPosition } from "../../../../shared/types";
 import { clamp, worldToScreen, type ViewportState } from "../../viewportMath";
 
-export interface CommandFeedbackRenderInput {
+export interface CommandFeedback {
   kind: "ok" | "blocked";
   workerId: string;
   startedAtMs: number;
@@ -13,7 +13,7 @@ export interface CommandFeedbackRenderInput {
 export function drawCommandFeedbackLayer(
   context: CanvasRenderingContext2D,
   viewport: ViewportState,
-  feedback: CommandFeedbackRenderInput,
+  feedback: CommandFeedback,
   nowMs: number
 ): void {
   const elapsed = nowMs - feedback.startedAtMs;

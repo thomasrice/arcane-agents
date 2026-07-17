@@ -7,10 +7,6 @@ interface TileCoord {
   y: number;
 }
 
-export function buildBlockedTileSet(mapData: LoadedOutpostMap | undefined): Set<string> {
-  return mapData?.collisionTileKeys ?? new Set<string>();
-}
-
 export function clampWorldPosition(position: WorkerPosition, mapData: LoadedOutpostMap | undefined): WorkerPosition {
   if (!mapData) {
     return position;

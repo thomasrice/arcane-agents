@@ -41,7 +41,6 @@ export interface WorkerStatusSignalContext {
   observation: PaneObservation;
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
   parsed: {
-    status: Worker["status"];
     activity: ParsedActivity;
   };
   runtimeActivityText: string | undefined;

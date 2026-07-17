@@ -3,6 +3,7 @@ import { WorkerRepository } from "../persistence/workerRepository";
 import { TmuxAdapter } from "../tmux/tmuxAdapter";
 import type { PaneObservation } from "./paneObservation";
 import { ClaudeTranscriptTracker } from "./claudeTranscriptTracker";
+import { truncateWithEllipsis } from "./runtime/terminalText";
 import {
   collectWorkerStatusSignals,
   evaluateWorkerStatusSignals,
@@ -319,14 +320,6 @@ export class StatusMonitor {
       };
     }
 
-    if (evaluation.status === "stopped") {
-      this.removeWorker(worker.id);
-      return {
-        outcome: "removed",
-        nextStatus: "stopped"
-      };
-    }
-
     const updated = this.workers.updateStatus(worker.id, {
       status: evaluation.status,
       activityText: evaluation.activityText,
@@ -433,8 +426,8 @@ export class StatusMonitor {
 
     const fromTo = changed ? `${worker.status} -> ${evaluation.status}` : `${evaluation.status}`;
     const reasonText = evaluation.reasons.map((reason) => formatReason(reason.code, reason.detail)).join(", ");
-    const activityText = evaluation.activityText ? ` activity="${truncateForTrace(evaluation.activityText, 84)}"` : "";
-    const commandText = truncateForTrace(evaluation.facts.command, 32);
+    const activityText = evaluation.activityText ? ` activity="${truncateWithEllipsis(evaluation.activityText, 84)}"` : "";
+    const commandText = truncateWithEllipsis(evaluation.facts.command, 32);
     const traceFacts =
       `cmd=${JSON.stringify(commandText)} ` +
       `outQuiet=${Math.round(evaluation.facts.outputQuietForMs)}ms ` +
@@ -544,17 +537,5 @@ function formatReason(code: string, detail: string | undefined): string {
     return code;
   }
 
-  return `${code}:${truncateForTrace(detail, 48)}`;
-}
-
-function truncateForTrace(value: string, maxLength: number): string {
-  if (value.length <= maxLength) {
-    return value;
-  }
-
-  if (maxLength <= 1) {
-    return value.slice(0, Math.max(0, maxLength));
-  }
-
-  return `${value.slice(0, maxLength - 1).trimEnd()}…`;
+  return `${code}:${truncateWithEllipsis(detail, 48)}`;
 }

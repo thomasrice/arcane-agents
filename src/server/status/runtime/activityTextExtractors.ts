@@ -1,4 +1,6 @@
 import { detectCodexSignals, extractCodexStatusText, normalizeCodexRuntimeLine } from "./codexSignals";
+import { codexCapturePaneLines, openCodeCapturePaneLines } from "./sessionDetection";
+import { truncateWithEllipsis } from "./terminalText";
 
 interface SessionContext {
   isClaude: boolean;
@@ -6,9 +8,7 @@ interface SessionContext {
   isCodex: boolean;
 }
 
-const openCodeCapturePaneLines = 420;
 const openCodeThinkingContinuationMaxLines = 3;
-const codexCapturePaneLines = 240;
 
 export function extractRuntimeActivityText(output: string, session: SessionContext): string | undefined {
   if (session.isClaude) {
@@ -33,7 +33,7 @@ function extractClaudeRuntimeActivityText(output: string): string | undefined {
     const normalized = line.trim();
     const bulletActivity = extractClaudeBulletActivityText(normalized);
     if (bulletActivity) {
-      return truncateActivityText(bulletActivity, 72);
+      return truncateWithEllipsis(bulletActivity, 72);
     }
   }
 
@@ -92,7 +92,7 @@ function extractOpenCodeRuntimeActivityText(output: string): string | undefined 
 
     const thinkingMatch = normalized.match(/\bThinking:\s+(.+)$/i);
     if (thinkingMatch?.[1]) {
-      return `Thinking: ${truncateActivityText(thinkingMatch[1].trim(), 72)}`;
+      return `Thinking: ${truncateWithEllipsis(thinkingMatch[1].trim(), 72)}`;
     }
 
     const patchedMatch = normalized.match(/^←\s+Patched\s+(.+)$/i);
@@ -107,7 +107,7 @@ function extractOpenCodeRuntimeActivityText(output: string): string | undefined 
 
     const headerMatch = normalized.match(/^#\s+(.+)$/);
     if (headerMatch?.[1]) {
-      return truncateActivityText(headerMatch[1], 52);
+      return truncateWithEllipsis(headerMatch[1], 52);
     }
 
     if (normalized.toLowerCase().includes("esc interrupt")) {
@@ -160,7 +160,7 @@ function extractLatestOpenCodeThinkingActivity(output: string): string | undefin
       return undefined;
     }
 
-    return `Thinking: ${truncateActivityText(combined, 72)}`;
+    return `Thinking: ${truncateWithEllipsis(combined, 72)}`;
   }
 
   return undefined;
@@ -255,7 +255,7 @@ function extractCodexRuntimeActivityText(output: string): string | undefined {
       return undefined;
     }
 
-    return truncateActivityText(statusText, 72);
+    return truncateWithEllipsis(statusText, 72);
   }
 
   if (signals.prompt) {
@@ -284,17 +284,5 @@ function summarizeCommand(command: string): string {
     return "command";
   }
 
-  return truncateActivityText(compact, 46);
-}
-
-function truncateActivityText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) {
-    return text;
-  }
-
-  if (maxLength <= 1) {
-    return text.slice(0, Math.max(0, maxLength));
-  }
-
-  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+  return truncateWithEllipsis(compact, 46);
 }

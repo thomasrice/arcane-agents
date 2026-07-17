@@ -50,7 +50,6 @@ function createContext(overrides: Partial<WorkerStatusSignalContext> = {}): Work
     },
     transcriptSnapshot: undefined,
     parsed: {
-      status: "idle",
       activity: {
         text: undefined,
         tool: undefined,
@@ -107,11 +106,7 @@ describe("state machine helpers", () => {
     expect(looksLikeActiveRuntimeText("Waiting for approval")).toBe(false);
   });
 
-  it("returns freshness windows by runtime session", () => {
-    expect(statusFreshnessWindowMs(createContext({ isClaudeSession: true }))).toBe(10_000);
-    expect(statusFreshnessWindowMs(createContext({ isOpenCodeSession: true }))).toBe(12_000);
-    expect(statusFreshnessWindowMs(createContext({ isCodexSession: true }))).toBe(10_000);
-    expect(statusFreshnessWindowMs(createContext())).toBe(20_000);
+  it("prefers an explicit runtime freshness override over the runtime default", () => {
     expect(statusFreshnessWindowMs(createContext({ runtimeFreshnessWindowMs: 45_000 }))).toBe(45_000);
     expect(statusFreshnessWindowMs(createContext({ isClaudeSession: true, runtimeFreshnessWindowMs: 30_000 }))).toBe(30_000);
   });

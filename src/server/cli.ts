@@ -7,9 +7,9 @@ import readline from "node:readline";
 import type { ResolvedConfig } from "../shared/types";
 import { bootstrap } from "./bootstrapApp";
 import { getArcaneAgentsPaths, loadResolvedConfig } from "./config/loadConfig";
+import { findExecutable, shellQuote } from "./platform/shell";
 import { recommendTmuxInstall } from "./setup/prerequisites";
 import { resolveAppPath, resolveAppRoot, setAppRoot } from "./utils/appRoot";
-import { resolveUserPath } from "./utils/path";
 
 type CheckStatus = "ok" | "warn" | "fail";
 
@@ -382,10 +382,6 @@ function ensureStarterConfig(paths: ReturnType<typeof getArcaneAgentsPaths>): Wr
   }
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
 function printConfigHelp(): void {
   const paths = getArcaneAgentsPaths();
 
@@ -703,58 +699,6 @@ function readPackageVersion(): string {
   }
 
   return "0.0.0";
-}
-
-function findExecutable(commandToken: string): string | undefined {
-  if (!commandToken || commandToken.trim().length === 0) {
-    return undefined;
-  }
-
-  const token = commandToken.trim();
-  if (looksLikePathToken(token)) {
-    const resolvedPath = resolvePathToken(token);
-    return isExecutableFile(resolvedPath) ? resolvedPath : undefined;
-  }
-
-  const pathEntries = (process.env.PATH ?? "")
-    .split(path.delimiter)
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-
-  for (const entry of pathEntries) {
-    const candidate = path.join(entry, token);
-    if (isExecutableFile(candidate)) {
-      return candidate;
-    }
-  }
-
-  return undefined;
-}
-
-function isExecutableFile(filePath: string): boolean {
-  try {
-    const stats = fs.statSync(filePath);
-    if (!stats.isFile()) {
-      return false;
-    }
-
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function looksLikePathToken(token: string): boolean {
-  return token.includes(path.sep) || token.startsWith(".") || token.startsWith("~");
-}
-
-function resolvePathToken(token: string): string {
-  if (token.startsWith("~")) {
-    return resolveUserPath(token);
-  }
-
-  return path.resolve(token);
 }
 
 function hasFlag(args: string[], flag: string): boolean {

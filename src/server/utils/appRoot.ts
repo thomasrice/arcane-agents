@@ -16,16 +16,12 @@ export function resolveAppRoot(): string {
     return path.resolve(envRoot);
   }
 
-  const candidates = [
-    path.resolve(__dirname, "../../.."),
-    path.resolve(__dirname, "../../../.."),
-    path.resolve(process.cwd())
-  ];
-
-  for (const candidate of candidates) {
-    if (isLikelyAppRoot(candidate)) {
-      return candidate;
-    }
+  // Both the tsx dev entry (src/server/utils/appRoot.ts) and the built entry
+  // (dist/server/utils/appRoot.js) sit exactly three directories below the app
+  // root, so a single depth probe locates it in either layout.
+  const candidate = path.resolve(__dirname, "../../..");
+  if (isLikelyAppRoot(candidate)) {
+    return candidate;
   }
 
   return path.resolve(process.cwd());

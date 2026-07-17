@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LoadedOutpostMap } from "./tileMapLoader";
 import {
-  buildBlockedTileSet,
   clampWorldPosition,
   createCardinalWaypoints,
   findNearestWalkablePosition,
@@ -25,10 +24,8 @@ function createMap(width = 5, height = 5, collisionTileKeys: string[] = []): Loa
 }
 
 describe("pathfinding utilities", () => {
-  it("builds blocked sets and clamps world positions", () => {
+  it("clamps world positions", () => {
     const map = createMap(5, 5, ["2,2"]);
-    expect(buildBlockedTileSet(map)).toBe(map.collisionTileKeys);
-    expect(buildBlockedTileSet(undefined).size).toBe(0);
 
     expect(clampWorldPosition({ x: -5, y: 999 }, map)).toEqual({ x: 16, y: 34 });
     expect(clampWorldPosition({ x: 22, y: 23 }, undefined)).toEqual({ x: 22, y: 23 });

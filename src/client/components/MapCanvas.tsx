@@ -12,7 +12,6 @@ import {
 import type { Worker, WorkerPosition } from "../../shared/types";
 import { useOutpostMap, type LoadedOutpostMap } from "../map/tileMapLoader";
 import {
-  buildBlockedTileSet,
   clampWorldPosition,
   createCardinalWaypoints,
   findNearestWalkablePosition,
@@ -246,7 +245,7 @@ export function MapCanvas({
 
   const spriteTypes = useMemo(() => Array.from(new Set(workers.map((worker) => worker.avatarType))), [workers]);
   const spriteLibrary = useCharacterSpriteLibrary(spriteTypes);
-  const blockedTileKeys = useMemo(() => buildBlockedTileSet(mapData), [mapData]);
+  const blockedTileKeys = useMemo(() => mapData?.collisionTileKeys ?? new Set<string>(), [mapData]);
   const completionPendingWorkerIdSet = useMemo(
     () => (completionPendingWorkerIds?.length ? new Set(completionPendingWorkerIds) : undefined),
     [completionPendingWorkerIds]

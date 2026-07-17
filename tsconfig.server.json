@@ -9,7 +9,7 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "rootDir": "src",
-    "outDir": "dist/server",
+    "outDir": "dist",
     "types": ["node", "vitest/globals"]
   },
   "include": ["src/server", "src/shared"]

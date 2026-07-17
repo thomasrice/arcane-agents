@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import express from "express";
+import { notFoundError } from "../http/appError";
 import { handleRequestError } from "../http/errorResponse";
 import { registerApiRoutes } from "../http/routes/registerApiRoutes";
 import { resolveAppPath } from "../utils/appRoot";
@@ -24,7 +25,11 @@ export function createHttpApp(context: ServerContext): express.Express {
   const clientDistPath = resolveAppPath("dist", "client");
   if (process.env.NODE_ENV === "production" && fs.existsSync(clientDistPath)) {
     app.use(express.static(clientDistPath));
-    app.get("*", (_req, res) => {
+    app.get("*", (req, res) => {
+      if (req.path.startsWith("/api/")) {
+        handleRequestError(res, notFoundError(`Unknown API route: ${req.method} ${req.path}`, "route_not_found"));
+        return;
+      }
       res.sendFile(path.join(clientDistPath, "index.html"));
     });
   }

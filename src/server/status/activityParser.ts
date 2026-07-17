@@ -1,5 +1,4 @@
-import type { ActivityTool, WorkerStatus } from "../../shared/types";
-import { shellCommands } from "./engine/types";
+import type { ActivityTool } from "../../shared/types";
 
 export interface ParsedActivity {
   text?: string;
@@ -57,7 +56,6 @@ const filePathRegex =
   /(?:^|\s|"|')((?:~|\.|\.\.|\/)?(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.[A-Za-z][A-Za-z0-9_-]{0,7})(?=$|\s|"|'|:|,|\))/;
 
 export function parseActivity(currentCommand: string, output: string): {
-  status: WorkerStatus;
   activity: ParsedActivity;
 } {
   const lines = output
@@ -85,10 +83,7 @@ export function parseActivity(currentCommand: string, output: string): {
           ? `Working on ${filePath}`
           : fallbackLine;
 
-  const status = deriveStatus(currentCommand, needsInput, hasError);
-
   return {
-    status,
     activity: {
       text: activityText,
       tool: toolResult?.tool,
@@ -211,20 +206,4 @@ function hasErrorSignal(linesNewestFirst: string[]): boolean {
 
 function normalizeStatusLine(line: string): string {
   return line.replace(/^[\s│┃╹▀▣⬝■]+/, "").trim();
-}
-
-function deriveStatus(currentCommand: string, needsInput: boolean, hasError: boolean): WorkerStatus {
-  if (needsInput) {
-    return "attention";
-  }
-
-  if (hasError) {
-    return "error";
-  }
-
-  if (shellCommands.has(currentCommand.toLowerCase())) {
-    return "idle";
-  }
-
-  return "working";
 }
