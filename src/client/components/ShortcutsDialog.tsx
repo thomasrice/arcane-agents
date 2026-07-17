@@ -20,11 +20,11 @@ export function ShortcutsDialog({
         <div className="shortcut-grid">
           <div className="shortcut-row">
             <kbd>1-0</kbd>
-            <span>Select control group</span>
+            <span>Select control group (opens group page)</span>
           </div>
           <div className="shortcut-row">
             <kbd>` / Shift+`</kbd>
-            <span>Cycle populated control groups forwards / backwards; skip gaps and wrap</span>
+            <span>Cycle populated control groups forwards / backwards, opening the first member</span>
           </div>
           <div className="shortcut-row">
             <kbd>Ctrl+1-0</kbd>

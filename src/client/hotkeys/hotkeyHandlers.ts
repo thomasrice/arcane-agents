@@ -238,7 +238,12 @@ export function handleNavigationHotkeys(event: KeyboardEvent, context: AppHotkey
     }
 
     event.preventDefault();
-    context.applySelection(nextGroup, { center: true });
+    // Cycling is for scanning groups, so land on a member's terminal rather than
+    // the group page. Digit selection keeps the group page for rally commands.
+    // Order follows activeWorkers to match the group page listing and Tab.
+    const nextGroupIdSet = new Set(nextGroup);
+    const firstGroupMemberId = context.activeWorkers.find((worker) => nextGroupIdSet.has(worker.id))?.id;
+    context.applySelection(nextGroup, { center: true, focusWorkerId: firstGroupMemberId });
     return true;
   }
 

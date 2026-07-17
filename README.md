@@ -179,8 +179,8 @@ Default URLs:
 - `?`: show the full shortcut list in-app.
 - `Tab` / `Shift+Tab`: cycle agents (or cycle selected-group focus).
 - `.` / `,` / `Shift+.`: cycle idle agents.
-- `1-0`: select control group.
-- `Backtick`: cycle through populated control groups in `1-9, 0` order, starting after the selected group or the group containing the focused unit, skipping gaps, and wrapping to the first group. With no selected or focused group, start at the first one.
+- `1-0`: select control group. A group of more than one agent opens the group page, where you can send a rally command.
+- `Backtick`: cycle through populated control groups in `1-9, 0` order, starting after the selected group or the group containing the focused unit, skipping gaps, and wrapping to the first group. With no selected or focused group, start at the first one. Cycling into a group selects it and opens its first member's terminal rather than the group page, so you can scan groups by holding backtick; `Tab` then moves through the rest of the group, and `Ctrl+Alt+]` opens the group page.
 - `Shift+Backtick`: cycle the same groups in reverse, wrapping to the last group. With no selected or focused group, start at the last one.
 - `Ctrl+1-0`: assign selected agents to a control group.
 - `K`: open kill confirmation for selected agents.

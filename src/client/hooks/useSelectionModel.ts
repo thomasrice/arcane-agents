@@ -17,7 +17,10 @@ interface UseSelectionModelResult {
   setSelectedGroupActiveIndex: Dispatch<SetStateAction<number>>;
   focusedSelectedWorkerId: string | undefined;
   setFocusedSelectedWorkerId: Dispatch<SetStateAction<string | undefined>>;
-  applySelection: (workerIds: string[], options?: { center?: boolean; focusTerminal?: boolean }) => void;
+  applySelection: (
+    workerIds: string[],
+    options?: { center?: boolean; focusTerminal?: boolean; focusWorkerId?: string }
+  ) => void;
   requestTerminalFocus: () => void;
   onSelectWorker: (workerId: string | undefined) => void;
   onSelectionChange: (workerIds: string[]) => void;
@@ -48,23 +51,32 @@ export function useSelectionModel(
   );
   const idleWorkers = useMemo(() => activeWorkers.filter((worker) => worker.status === "idle"), [activeWorkers]);
 
-  const applySelection = useCallback((workerIds: string[], options?: { center?: boolean; focusTerminal?: boolean }) => {
-    const deduped = Array.from(new Set(workerIds));
-    setSelectedWorkerIds(deduped);
-    setFocusedSelectedWorkerId(undefined);
+  const applySelection = useCallback(
+    (workerIds: string[], options?: { center?: boolean; focusTerminal?: boolean; focusWorkerId?: string }) => {
+      const deduped = Array.from(new Set(workerIds));
+      setSelectedWorkerIds(deduped);
+      // Focusing a member swaps the group page for that member's terminal, so it
+      // only makes sense once the selection is actually a group.
+      setFocusedSelectedWorkerId(
+        options?.focusWorkerId && deduped.length > 1 && deduped.includes(options.focusWorkerId)
+          ? options.focusWorkerId
+          : undefined
+      );
 
-    const primaryWorkerId = deduped.length === 1 ? deduped[0] : undefined;
-    if (options?.center && deduped.length > 0) {
-      setMapCenterWorkerIds(deduped);
-      setMapCenterToken((current) => current + 1);
-    }
+      const primaryWorkerId = deduped.length === 1 ? deduped[0] : undefined;
+      if (options?.center && deduped.length > 0) {
+        setMapCenterWorkerIds(deduped);
+        setMapCenterToken((current) => current + 1);
+      }
 
-    if (options?.focusTerminal && primaryWorkerId) {
-      setTerminalFocusToken((current) => (current ?? 0) + 1);
-    } else {
-      setTerminalFocusToken(undefined);
-    }
-  }, []);
+      if (options?.focusTerminal && primaryWorkerId) {
+        setTerminalFocusToken((current) => (current ?? 0) + 1);
+      } else {
+        setTerminalFocusToken(undefined);
+      }
+    },
+    []
+  );
 
   const requestTerminalFocus = useCallback(() => {
     setTerminalFocusToken((current) => (current ?? 0) + 1);

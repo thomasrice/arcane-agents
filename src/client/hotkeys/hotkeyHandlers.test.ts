@@ -23,6 +23,17 @@ function worker(id: string): Worker {
   };
 }
 
+// Mirrors useSelectionModel's applySelection: member focus only sticks once the
+// selection is a group.
+function applySelectionInto(getContext: () => AppHotkeyContext) {
+  return (workerIds: string[], options?: { focusWorkerId?: string }) => {
+    const context = getContext();
+    context.selectedWorkerIds = workerIds;
+    context.focusedSelectedWorkerId =
+      options?.focusWorkerId && workerIds.length > 1 ? options.focusWorkerId : undefined;
+  };
+}
+
 describe("control-group navigation hotkeys", () => {
   it("requests map centering for every worker in a selected group", () => {
     const applySelection = vi.fn();
@@ -73,10 +84,7 @@ describe("control-group navigation hotkeys", () => {
       parseControlGroupDigit: () => undefined,
       selectedWorkerIds: ["worker-5-b"]
     } as unknown as AppHotkeyContext;
-    const applySelection = vi.fn((workerIds: string[]) => {
-      context.selectedWorkerIds = workerIds;
-      context.focusedSelectedWorkerId = undefined;
-    });
+    const applySelection = vi.fn(applySelectionInto(() => context));
     context.applySelection = applySelection;
     const event = {
       key: "`",
@@ -94,9 +102,9 @@ describe("control-group navigation hotkeys", () => {
     handleNavigationHotkeys(event, context);
 
     expect(applySelection.mock.calls).toEqual([
-      [["worker-6"], { center: true }],
-      [["worker-8"], { center: true }],
-      [["worker-5-a", "worker-5-b"], { center: true }]
+      [["worker-6"], { center: true, focusWorkerId: "worker-6" }],
+      [["worker-8"], { center: true, focusWorkerId: "worker-8" }],
+      [["worker-5-a", "worker-5-b"], { center: true, focusWorkerId: "worker-5-a" }]
     ]);
     expect(preventDefault).toHaveBeenCalledTimes(3);
   });
@@ -123,10 +131,7 @@ describe("control-group navigation hotkeys", () => {
       parseControlGroupDigit: () => undefined,
       selectedWorkerIds: ["worker-5-b"]
     } as unknown as AppHotkeyContext;
-    const applySelection = vi.fn((workerIds: string[]) => {
-      context.selectedWorkerIds = workerIds;
-      context.focusedSelectedWorkerId = undefined;
-    });
+    const applySelection = vi.fn(applySelectionInto(() => context));
     context.applySelection = applySelection;
     const event = {
       key: "~",
@@ -144,9 +149,9 @@ describe("control-group navigation hotkeys", () => {
     handleNavigationHotkeys(event, context);
 
     expect(applySelection.mock.calls).toEqual([
-      [["worker-8"], { center: true }],
-      [["worker-6"], { center: true }],
-      [["worker-5-a", "worker-5-b"], { center: true }]
+      [["worker-8"], { center: true, focusWorkerId: "worker-8" }],
+      [["worker-6"], { center: true, focusWorkerId: "worker-6" }],
+      [["worker-5-a", "worker-5-b"], { center: true, focusWorkerId: "worker-5-a" }]
     ]);
     expect(preventDefault).toHaveBeenCalledTimes(3);
   });
@@ -181,7 +186,64 @@ describe("control-group navigation hotkeys", () => {
 
     handleNavigationHotkeys(event, context);
 
-    expect(applySelection).toHaveBeenCalledWith(["worker-7"], { center: true });
+    expect(applySelection).toHaveBeenCalledWith(["worker-7"], { center: true, focusWorkerId: "worker-7" });
+  });
+
+  it("focuses the group member listed first, not the one stored first in the group", () => {
+    const applySelection = vi.fn();
+    const context = {
+      activeWorkers: [worker("worker-a"), worker("worker-z")],
+      applySelection,
+      controlGroupByDigitRef: { current: { 4: ["worker-z", "worker-a"] } },
+      focusedSelectedWorkerId: undefined,
+      isEditableTarget: () => false,
+      isTerminalTarget: () => false,
+      parseControlGroupDigit: () => undefined,
+      selectedWorkerIds: []
+    } as unknown as AppHotkeyContext;
+    const event = {
+      key: "`",
+      code: "Backquote",
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      target: null,
+      preventDefault: vi.fn()
+    } as unknown as KeyboardEvent;
+
+    handleNavigationHotkeys(event, context);
+
+    expect(applySelection).toHaveBeenCalledWith(["worker-z", "worker-a"], {
+      center: true,
+      focusWorkerId: "worker-a"
+    });
+  });
+
+  it("keeps the group page when a group is selected by digit", () => {
+    const applySelection = vi.fn();
+    const context = {
+      activeWorkers: [worker("worker-1"), worker("worker-2")],
+      applySelection,
+      controlGroupByDigitRef: { current: { 2: ["worker-1", "worker-2"] } },
+      isEditableTarget: () => false,
+      parseControlGroupDigit: () => 2,
+      selectedWorkerIds: []
+    } as unknown as AppHotkeyContext;
+    const event = {
+      key: "2",
+      code: "Digit2",
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      target: null,
+      preventDefault: vi.fn()
+    } as unknown as KeyboardEvent;
+
+    handleNavigationHotkeys(event, context);
+
+    expect(applySelection).toHaveBeenCalledWith(["worker-1", "worker-2"], { center: true });
   });
 
   it("starts cycling at the first populated group without a focused selection", () => {
@@ -214,6 +276,6 @@ describe("control-group navigation hotkeys", () => {
 
     handleNavigationHotkeys(event, context);
 
-    expect(applySelection).toHaveBeenCalledWith(["worker-3"], { center: true });
+    expect(applySelection).toHaveBeenCalledWith(["worker-3"], { center: true, focusWorkerId: "worker-3" });
   });
 });

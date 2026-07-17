@@ -5,7 +5,10 @@ import type { ShortcutHotkeyBinding } from "./shortcutHotkeys";
 
 export interface AppHotkeyContext {
   activeWorkers: Worker[];
-  applySelection: (workerIds: string[], options?: { center?: boolean; focusTerminal?: boolean }) => void;
+  applySelection: (
+    workerIds: string[],
+    options?: { center?: boolean; focusTerminal?: boolean; focusWorkerId?: string }
+  ) => void;
   clampNumber: (value: number, min: number, max: number) => number;
   closeKillConfirm: () => void;
   closeRestartConfirm: () => void;
