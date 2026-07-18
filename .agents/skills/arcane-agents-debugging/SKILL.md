@@ -11,7 +11,7 @@ Use this skill when a worker's map status (working / idle / attention / error) d
 
 Every poll (~2.5s), per worker: `statusMonitor` → `collectSignals` → `decide`.
 
-- `src/server/status/collectSignals.ts` reads the tmux pane (command, pid, output capture) and resolves ONE runtime adapter per worker: definite match first (worker.runtimeId → pane command → wrapped agent process under a shell pane), then output-sniffing as a last resort. The adapter (`src/server/status/runtimes/{claude,codex,openCode,generic}.ts`) owns capture size, freshness/spawn-grace windows, and a single-pass `detect(output) → {prompt, active, activityText}`.
+- `src/server/status/collectSignals.ts` reads the tmux pane (command, pid, output capture) and resolves ONE runtime adapter per worker: definite match first (worker.runtimeId → pane command → wrapped agent process under a shell pane), then output-sniffing as a last resort. The adapter (`src/server/status/runtimes/{claude,codex,openCode,omp,generic}.ts`) owns capture size, freshness/spawn-grace windows, and a single-pass `detect(output) → {prompt, active, activityText}`. `omp` is oh-my-pi, an interpreter-hosted agent CLI with its own TUI (codex-shaped constants).
 - Claude panes additionally get a transcript snapshot from `claudeTranscript/` (JSONL tailing; health = ok|absent|error; one transcript file belongs to at most one worker).
 - `src/server/status/decide.ts` weighs the evidence. Key invariant since v1.3.0: **for agent runtimes, scrollback text is never working evidence** — only native signals are (adapter `active`, Claude task/progress, transcript-working, live child process). Generic shell workers keep parsed-activity evidence (a running build has nothing else).
 
@@ -47,6 +47,7 @@ Given "worker `<name>` shows the wrong status":
 
 4. **Interpret.** Known signatures:
    - `facts.runtime: "generic"` but the pane is an agent CLI → classification gap (e.g. pane command reports `node`). The old false-working flap applies to generic workers, so misclassification reintroduces it.
+   - `facts.runtime: "omp"` is oh-my-pi. Live turn = a Braille spinner line (U+2800–U+28FF: ⠋⠙⠧⠏…) ending in `⟨esc⟩`; persistent footer = model · context% · $cost. A subprocess error in a `│`-bordered tool box (e.g. `AttributeError: …`) is content omp is handling, not a pane error — a live active signal keeps it working. Prompt/at-rest is currently approximated as "footer present, no live spinner" pending a real at-rest capture (`runtimes/omp.test.ts`).
    - `parsed-activity-signal` as a working reason on a claude/codex/opencode runtime → should be impossible since v1.3.0; if seen, the worker was classified generic at that moment.
    - `transcript: "ok"` + `outputQuietForMs` in the minutes → pre-v1.3.1 transcript misattribution signature (sessions sharing a `~/.claude/projects` dir).
    - `transcript: "error"` → transcript resolution/IO broke; status falls back to pane heuristics (weaker for Claude).

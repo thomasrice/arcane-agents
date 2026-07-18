@@ -677,6 +677,125 @@ describe("status decision — Codex hosted as a bare `node` pane", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Interpreter-hosted oh-my-pi / omp (pane command reports "node")
+// ---------------------------------------------------------------------------
+
+describe("status decision — oh-my-pi (omp) hosted as a bare `node` pane", () => {
+  // Live pane tails from the false-working bug: an omp CLI whose tmux pane command
+  // reports `node`. Before the fix it fell through to the generic adapter and both
+  // flapped working (parsed scrollback) and flipped error on subprocess errors.
+  const activeOmpNodePane = [
+    "│ 'location_fidelity': 100.0, 'false_positive_count': 0, 'field_error_counts': {}}) │",
+    "│ ⟨Timeout: 300s⟩ │",
+    "╰──────────────────────────────────────────────╯",
+    "",
+    " ⠧ Reading airline evaluation result ⟨esc⟩",
+    "",
+    "╭──     GPT-5.6-Sol · 󰪣 high   ~/code/personal-assistant   master *1   39.3%/272K 󰁨  $350.89 (sub) ──╮",
+    "╰─  ─╯"
+  ].join("\n");
+
+  // A tool-result box carrying an AttributeError from omp's OWN subprocess, while
+  // the live spinner still ticks. Must read working, never error.
+  const activeOmpErrorBoxNodePane = [
+    "│ AttributeError: 'EvaluationResult' object has no attribute 'score' │",
+    "│ ⟨Timeout: 300s⟩ │",
+    "╰──────────────────────────────────────────────╯",
+    "",
+    " ⠏ Evaluating recovered airline response ⟨esc⟩",
+    "",
+    "╭──     GPT-5.6-Sol · 󰪣 high   ~/code/personal-assistant   master *1   39.2%/272K 󰁨  $350.79 (sub) ──╮",
+    "╰─  ─╯"
+  ].join("\n");
+
+  // Footer chrome present, NO live spinner, and fresh scrollback tool words that
+  // WOULD flap a generic worker to working. As an omp agent runtime the scrollback
+  // is demoted and the parked child process is suppressed, so it settles to idle.
+  const finishedOmpNodePane = [
+    "│ Read src/app.ts │",
+    "│ Ran git status → nothing to commit │",
+    "╰──────────────────────────────────────────────╯",
+    "",
+    "╭──     GPT-5.6-Sol · 󰪣 high   ~/code/personal-assistant   master *1   39.1%/272K 󰁨  $351.02 (sub) ──╮",
+    "╰─  ─╯"
+  ].join("\n");
+
+  const ompRuntimeProcess: AgentRuntimeProcess = {
+    pid: 6161,
+    runtime: "omp",
+    command: "node",
+    args: "node /home/thomas/.local/share/oh-my-pi/bin/omp.js"
+  };
+
+  it("classifies the node pane as omp and reads an active turn as working (not parsed scrollback)", () => {
+    const result = evaluate({
+      runtime: "shell",
+      output: activeOmpNodePane,
+      currentCommand: "node",
+      outputQuietForMs: 1_500,
+      runtimeProcess: ompRuntimeProcess
+    });
+
+    expect(result.status).toBe("working");
+    expect(reasonCodes(result)).toContain("omp-active-signal");
+    expect(reasonCodes(result)).not.toContain("parsed-activity-signal");
+  });
+
+  it("keeps an active omp turn working even when a tool-result box shows a subprocess AttributeError", () => {
+    // The agent's own subprocess error, boxed as a tool result, is content omp is
+    // handling — not a pane error. The live native active signal keeps it working.
+    const result = evaluate({
+      runtime: "shell",
+      output: activeOmpErrorBoxNodePane,
+      currentCommand: "node",
+      outputQuietForMs: 1_500,
+      runtimeProcess: ompRuntimeProcess
+    });
+
+    expect(result.status).toBe("working");
+    expect(result.status).not.toBe("error");
+    expect(reasonCodes(result)).toContain("omp-active-signal");
+  });
+
+  it("sniffs the omp UI as omp when no runtime process is resolvable and reads active as working", () => {
+    // The real-world shape: an omp CLI hosted by an interpreter (`bun`/`node`)
+    // whose runtime process ps missed. The output-sniff must still recognise the
+    // Braille-spinner + ⟨esc⟩ / footer chrome and route the active turn through the
+    // native omp signal rather than the generic parser.
+    const result = evaluate({
+      runtime: "shell",
+      output: activeOmpNodePane,
+      currentCommand: "node",
+      outputQuietForMs: 1_500
+    });
+
+    expect(result.status).toBe("working");
+    expect(reasonCodes(result)).toContain("omp-active-signal");
+    expect(reasonCodes(result)).not.toContain("parsed-activity-signal");
+  });
+
+  it("reads a finished node-hosted omp at its footer as idle despite fresh scrollback tool words", () => {
+    // The flap-killer. The omp process is still alive (interpreter pane), but it is
+    // parked at its footer: the child-process signal is suppressed and the fresh
+    // "Read"/"git" scrollback words are demoted for the omp agent runtime, so a
+    // finished turn settles to idle instead of false-working.
+    const result = evaluate({
+      runtime: "shell",
+      output: finishedOmpNodePane,
+      currentCommand: "node",
+      outputQuietForMs: 3_000,
+      priorStatus: "idle",
+      runtimeProcess: ompRuntimeProcess
+    });
+
+    expect(result.status).toBe("idle");
+    expect(result.activityText).toBeUndefined();
+    expect(reasonCodes(result)).toContain("no-active-evidence");
+    expect(reasonCodes(result)).not.toContain("parsed-activity-signal");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Freshness-window boundaries (deterministic via frozen clock)
 // ---------------------------------------------------------------------------
 

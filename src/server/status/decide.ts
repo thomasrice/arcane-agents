@@ -2,7 +2,7 @@ import type { Worker } from "../../shared/types";
 import type { PaneObservation } from "./paneObservation";
 import type { ParsedActivity } from "./activityParser";
 import type { ClaudeStatusSnapshot, TranscriptHealth } from "./claudeTranscriptTracker";
-import type { AgentRuntimeProcess } from "./runtimes/runtimeProcess";
+import type { AgentRuntimeProcess, KnownAgentRuntime } from "./runtimes/runtimeProcess";
 import type { RuntimeAdapter, RuntimeAdapterId, RuntimeSignals } from "./runtimes/adapter";
 import { preferOpenCodeSpecificActivityText } from "./runtimes/openCode";
 import { buildWorkerSignals, type EvaluateWorkerStatusInput, type WorkerSignals } from "./collectSignals";
@@ -97,9 +97,12 @@ interface DecisionContext {
   hasCodexPromptSignal: boolean;
   hasCodexApprovalPrompt: boolean;
   hasCodexActiveSignal: boolean;
+  hasOmpPromptSignal: boolean;
+  hasOmpActiveSignal: boolean;
   isClaudeSession: boolean;
   isOpenCodeSession: boolean;
   isCodexSession: boolean;
+  isOmpSession: boolean;
   outputQuietForMs: number;
   commandQuietForMs: number;
   workerAgeMs: number;
@@ -127,6 +130,7 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
   const isClaudeSession = runtimeId === "claude";
   const isOpenCodeSession = runtimeId === "opencode";
   const isCodexSession = runtimeId === "codex";
+  const isOmpSession = runtimeId === "omp";
   const rs = signals.runtimeSignals;
 
   const createdAtMs = Date.parse(worker.createdAt);
@@ -153,9 +157,12 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
     hasCodexPromptSignal: isCodexSession && rs.prompt,
     hasCodexApprovalPrompt: isCodexSession && Boolean(rs.awaitingApproval),
     hasCodexActiveSignal: isCodexSession && rs.active,
+    hasOmpPromptSignal: isOmpSession && rs.prompt,
+    hasOmpActiveSignal: isOmpSession && rs.active,
     isClaudeSession,
     isOpenCodeSession,
     isCodexSession,
+    isOmpSession,
     outputQuietForMs: Math.max(0, nowMs - signals.observation.lastOutputChangeAtMs),
     commandQuietForMs: Math.max(0, nowMs - signals.observation.lastCommandChangeAtMs),
     workerAgeMs,
@@ -503,6 +510,12 @@ function collectWorkingEvidence(context: DecisionContext, hasRecoverableParserEr
     activityToolCandidates.push("terminal");
   }
 
+  if (context.hasOmpActiveSignal) {
+    strongReasons.push({ code: "omp-active-signal", message: "oh-my-pi active execution signal detected." });
+    activityTextCandidates.push(context.runtimeActivityText ?? "Responding");
+    activityToolCandidates.push("terminal");
+  }
+
   if (context.activeRuntimeProcess && !isRuntimeProcessAtRest(context)) {
     strongReasons.push({
       code: "agent-runtime-child-process",
@@ -624,10 +637,14 @@ function isRuntimeProcessAtRest(context: DecisionContext): boolean {
     return context.hasCodexPromptSignal && !context.hasCodexActiveSignal;
   }
 
+  if (runtime === "omp") {
+    return context.hasOmpPromptSignal && !context.hasOmpActiveSignal;
+  }
+
   return false;
 }
 
-function labelRuntime(runtime: "claude" | "opencode" | "codex"): string {
+function labelRuntime(runtime: KnownAgentRuntime): string {
   switch (runtime) {
     case "claude":
       return "Claude";
@@ -635,6 +652,8 @@ function labelRuntime(runtime: "claude" | "opencode" | "codex"): string {
       return "OpenCode";
     case "codex":
       return "Codex";
+    case "omp":
+      return "oh-my-pi";
   }
 }
 

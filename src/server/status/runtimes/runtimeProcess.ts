@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const maxProcessTreeDepth = 5;
 
-export type KnownAgentRuntime = "claude" | "opencode" | "codex";
+export type KnownAgentRuntime = "claude" | "opencode" | "codex" | "omp";
 
 export interface AgentRuntimeProcess {
   pid: number;
@@ -137,6 +137,11 @@ function classifyAgentRuntime(command: string, args: string): KnownAgentRuntime 
     /\bcodex\b/.test(commandAndArgs)
   ) {
     return "codex";
+  }
+
+  // oh-my-pi ships the `omp` binary; its package/path carries "oh-my-pi".
+  if (commandLower === "omp" || commandAndArgs.includes("oh-my-pi") || /\bomp\b/.test(commandAndArgs)) {
+    return "omp";
   }
 
   return undefined;

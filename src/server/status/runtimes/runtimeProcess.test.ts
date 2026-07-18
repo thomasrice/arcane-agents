@@ -51,6 +51,22 @@ describe("classifyPaneProcess", () => {
     expect(result?.runtime).toBe("claude");
   });
 
+  it("classifies an interpreter pane whose own argv is the oh-my-pi (omp) CLI", async () => {
+    psReturning("node node /home/thomas/.local/share/oh-my-pi/bin/omp.js");
+
+    const result = await classifyPaneProcess(4245);
+
+    expect(result?.runtime).toBe("omp");
+  });
+
+  it("classifies a bare `omp` binary pane as the omp runtime", async () => {
+    psReturning("omp omp");
+
+    const result = await classifyPaneProcess(4246);
+
+    expect(result?.runtime).toBe("omp");
+  });
+
   it("returns undefined for an interpreter pane running an unrelated node script", async () => {
     psReturning("node node /home/thomas/code/some-project/build.js");
 

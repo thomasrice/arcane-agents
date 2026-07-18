@@ -2,10 +2,11 @@ import type { Worker } from "../../../shared/types";
 import { claudeAdapter } from "./claude";
 import { codexAdapter } from "./codex";
 import { genericAdapter } from "./generic";
+import { ompAdapter } from "./omp";
 import { openCodeAdapter } from "./openCode";
 import type { KnownAgentRuntime } from "./runtimeProcess";
 
-export type RuntimeAdapterId = "claude" | "codex" | "opencode" | "generic";
+export type RuntimeAdapterId = "claude" | "codex" | "opencode" | "omp" | "generic";
 
 /**
  * The per-poll signal set a runtime adapter derives from ONE normalisation pass
@@ -48,7 +49,7 @@ export interface RuntimeAdapter {
 // (claude -> opencode -> codex) used by the freshness-window and activity-text
 // resolution, so a worker that would have matched multiple `isLikely*` predicates
 // resolves the same way it did before.
-const agentAdapters: RuntimeAdapter[] = [claudeAdapter, openCodeAdapter, codexAdapter];
+const agentAdapters: RuntimeAdapter[] = [claudeAdapter, openCodeAdapter, codexAdapter, ompAdapter];
 
 /**
  * Resolve the single adapter that governs a worker.
@@ -77,16 +78,23 @@ export function resolveRuntimeAdapter(
     const claudeSignals = claudeAdapter.detect(output);
     const openCodeSignals = openCodeAdapter.detect(output);
     const codexSignals = codexAdapter.detect(output);
+    const ompSignals = ompAdapter.detect(output);
 
     // Documented precedence is claude -> opencode -> codex, so Claude is tried
     // first. But Claude's active detector is bullet-based ("• …") and Codex draws
     // its rows with the same glyph, so Claude's detect() also fires on a Codex
     // pane. Claude therefore only wins the sniff when it is the ONLY runtime that
-    // recognises the pane; a runtime-SPECIFIC Codex/OpenCode signal (esc-to-
-    // interrupt, the approval dialog, the status footer, the ctrl+t/ctrl+p hints)
-    // takes precedence so a Codex/OpenCode pane is never misread as Claude.
-    // (Claude's detect() is side-effect free, so calling it here to sniff is safe.)
-    if (hasRuntimeSignal(claudeSignals) && !hasRuntimeSignal(openCodeSignals) && !hasRuntimeSignal(codexSignals)) {
+    // recognises the pane; a runtime-SPECIFIC Codex/OpenCode/omp signal (esc-to-
+    // interrupt, the approval dialog, the status footer, the ctrl+t/ctrl+p hints,
+    // omp's Braille spinner + ⟨esc⟩ / footer meter) takes precedence so those
+    // panes are never misread as Claude. (Claude's detect() is side-effect free,
+    // so calling it here to sniff is safe.)
+    if (
+      hasRuntimeSignal(claudeSignals) &&
+      !hasRuntimeSignal(openCodeSignals) &&
+      !hasRuntimeSignal(codexSignals) &&
+      !hasRuntimeSignal(ompSignals)
+    ) {
       return claudeAdapter;
     }
 
@@ -97,6 +105,10 @@ export function resolveRuntimeAdapter(
     if (hasRuntimeSignal(codexSignals)) {
       return codexAdapter;
     }
+
+    if (hasRuntimeSignal(ompSignals)) {
+      return ompAdapter;
+    }
   }
 
   return genericAdapter;
@@ -106,4 +118,4 @@ function hasRuntimeSignal(signals: RuntimeSignals): boolean {
   return signals.prompt || signals.active;
 }
 
-export { claudeAdapter, codexAdapter, genericAdapter, openCodeAdapter };
+export { claudeAdapter, codexAdapter, genericAdapter, ompAdapter, openCodeAdapter };
