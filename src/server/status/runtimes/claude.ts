@@ -58,6 +58,12 @@ function detectClaudeSignalsFromLines(lines: string[]): ClaudeSignals {
   const newestIndex = lines.length - 1;
   const latestPromptIndex = findLastMatchingIndex(lines, isClaudePromptLine);
   const latestProgressIndex = findLastMatchingIndex(lines, isClaudeProgressLine);
+  // The current Claude UI keeps the input box and mode footer on screen WHILE
+  // working, so chrome lines can never gate the active signal (they are always
+  // newer than the spinner). Ordering is instead anchored to the last ECHOED
+  // command ("❯ <text>"): a live spinner belongs to the turn started by the
+  // newest echo; spinner lines above an echo are a previous turn's residue.
+  const latestEchoIndex = findLastMatchingIndex(lines, isClaudeEchoedCommandLine);
 
   return {
     prompt:
@@ -68,8 +74,12 @@ function detectClaudeSignalsFromLines(lines: string[]): ClaudeSignals {
       latestProgressIndex >= 0 &&
       newestIndex >= 0 &&
       newestIndex - latestProgressIndex <= claudeActiveFreshLineWindow &&
-      (latestPromptIndex < 0 || latestProgressIndex >= latestPromptIndex)
+      (latestEchoIndex < 0 || latestProgressIndex >= latestEchoIndex)
   };
+}
+
+function isClaudeEchoedCommandLine(line: string): boolean {
+  return /^❯\s+\S/u.test(line);
 }
 
 function extractClaudeActiveTaskFromLines(lines: string[]): string | undefined {
@@ -105,16 +115,24 @@ function extractClaudeTaskText(line: string): string | undefined {
 }
 
 function isClaudeProgressLine(line: string): boolean {
-  const progressText = extractClaudeBulletText(line);
-  if (!progressText) {
+  // Live spinners use the animated glyph set; "•"/"·" bullets are tool/task
+  // rows, not spinners, and must not read as live activity on their own.
+  const spinnerMatch = line.match(/^(?:\*|✶|✳|✻|✢|✽)\s+(.+?)\s*$/);
+  if (!spinnerMatch?.[1]) {
     return false;
   }
 
-  if (!isGenericClaudeProgressLabel(progressText)) {
+  // A thinking/thought parenthetical is live regardless of form.
+  if (/\((?:[^)]*(?:thinking|thought\s+for)[^)]*)\)/i.test(line)) {
     return true;
   }
 
-  return /\bfor\s+\d+[ms]\b/i.test(progressText) || /\((?:[^)]*(?:thinking|thought\s+for)[^)]*)\)/i.test(line);
+  // "✻ Sautéed for 11m 3s" is a COMPLETED-segment marker the UI leaves in
+  // scrollback; the live spinner is the bare label ("✢ Wrangling…",
+  // "✻ Waiting for 1 background agent to finish"). Older Claude UIs used
+  // ticking duration spinners while live — that variant is retired and its
+  // duration form now always reads as completed.
+  return !/\bfor\s+\d+[ms]\b/i.test(spinnerMatch[1]);
 }
 
 function extractClaudeBulletText(line: string): string | undefined {
