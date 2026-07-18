@@ -14,7 +14,8 @@ import {
   parseOrThrow,
   positionSchema,
   renameSchema,
-  spawnSchema
+  spawnSchema,
+  statusFixtureQuerySchema
 } from "../schemas";
 
 interface RegisterApiRoutesDeps {
@@ -82,7 +83,8 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
 
     res.json({
       ...debug,
-      transitions: statusMonitor.getWorkerStatusHistory(req.params.workerId)
+      transitions: statusMonitor.getWorkerStatusHistory(req.params.workerId),
+      evaluations: statusMonitor.getWorkerStatusEvaluations(req.params.workerId)
     });
   });
 
@@ -92,6 +94,20 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
       transitions: statusMonitor.getWorkerStatusHistory(req.params.workerId)
     });
   });
+
+  app.get("/api/workers/:workerId/status-fixture", asyncRoute((req, res) => {
+    const query = parseOrThrow(statusFixtureQuerySchema, req.query, "status_fixture_invalid_query");
+    const result = statusMonitor.buildStatusFixture(req.params.workerId, {
+      useCurrent: query.current,
+      transitionIndex: query.transition
+    });
+
+    if (!result.found) {
+      throw notFoundError(`No worker found for '${req.params.workerId}'.`, "worker_not_found");
+    }
+
+    res.json(result.document);
+  }));
 
   app.post("/api/workers/spawn", asyncRoute(async (req, res) => {
     const spawnInput = parseOrThrow(spawnSchema, req.body, "spawn_invalid_payload");

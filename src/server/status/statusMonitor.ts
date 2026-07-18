@@ -2,10 +2,12 @@ import type { ResolvedConfig, Worker } from "../../shared/types";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { TmuxAdapter } from "../tmux/tmuxAdapter";
 import type { PaneObservation } from "./paneObservation";
-import { ClaudeTranscriptTracker } from "./claudeTranscriptTracker";
+import { ClaudeTranscriptTracker, type ClaudeStatusSnapshot, type TranscriptHealth } from "./claudeTranscriptTracker";
 import { truncateWithEllipsis } from "./runtimes/terminalText";
-import { collectSignals } from "./collectSignals";
-import { decide, type StatusDecisionFacts, type WorkerStatusDecision } from "./decide";
+import { collectSignals, type WorkerSignals } from "./collectSignals";
+import { decide, type StatusDecisionFacts, type StatusReason, type WorkerStatusDecision } from "./decide";
+import type { RuntimeAdapterId, RuntimeSignals } from "./runtimes/adapter";
+import type { AgentRuntimeProcess } from "./runtimes/runtimeProcess";
 
 type StatusTraceMode = "off" | "transitions" | "verbose";
 type WorkerPollOutcome = "unchanged" | "updated" | "removed" | "failed";
@@ -37,6 +39,83 @@ export interface WorkerStatusTimingSnapshot {
   outcome: WorkerPollOutcome;
   durationMs: number;
   evaluatedAt: string;
+}
+
+/**
+ * Compact per-poll evaluation record (feature 3). Deliberately carries NO pane
+ * text so a full ring of these stays cheap; the raw inputs needed to reproduce a
+ * decision live in the transition capture ring / latest-inputs slot instead.
+ */
+export interface WorkerStatusEvaluationSample {
+  at: string;
+  status: Worker["status"];
+  adapterId: RuntimeAdapterId;
+  runtimeSignals: { prompt: boolean; active: boolean };
+  transcriptHealth: TranscriptHealth;
+  outputQuietForMs: number;
+  reasonCodes: string[];
+}
+
+/**
+ * The full decision inputs retained at a status transition (feature 1) and in the
+ * one-slot latest-evaluation cache that powers `?current=1` (feature 3). Shaped so
+ * the fixture endpoint can project it straight onto the integration suite's
+ * EvaluateOptions. Mutable poll-owned objects (observation, runtimeSignals,
+ * transcript snapshot, runtime process) are snapshot-copied when captured so a
+ * later poll's in-place mutation cannot rewrite retained history.
+ */
+export interface CapturedDecisionInputs {
+  capturedAt: string;
+  fromStatus: Worker["status"];
+  toStatus: Worker["status"];
+  adapterId: RuntimeAdapterId;
+  output: string;
+  currentCommand: string;
+  outputQuietForMs: number;
+  commandQuietForMs: number;
+  workerAgeMs: number;
+  runtimeSignals: RuntimeSignals;
+  transcriptSnapshot: ClaudeStatusSnapshot | undefined;
+  transcriptHealth: TranscriptHealth;
+  observation: PaneObservation;
+  runtimeProcess: AgentRuntimeProcess | undefined;
+  interactiveCommands: readonly string[];
+  runtimeFreshnessWindowMs: number | undefined;
+  decision: { status: Worker["status"]; reasons: StatusReason[]; confidence: number };
+}
+
+/** A `WorkerStatusDebugSnapshot` plus the read-time flap count (feature 4). */
+export interface WorkerStatusDebugListEntry extends WorkerStatusDebugSnapshot {
+  transitionsLastHour: number;
+}
+
+/** The EvaluateOptions-shaped body of a fixture document (feature 2). */
+export interface StatusFixturePayload {
+  runtime: RuntimeAdapterId;
+  output: string;
+  outputQuietForMs: number;
+  commandQuietForMs: number;
+  workerAgeMs: number;
+  priorStatus: Worker["status"];
+  currentCommand: string;
+  interactiveCommands: readonly string[];
+  transcriptSnapshot: ClaudeStatusSnapshot | null;
+  runtimeFreshnessWindowMs: number | null;
+}
+
+export interface StatusFixtureDocument {
+  capturedAt: string;
+  worker: { id: string; name: string; runtimeId: string };
+  fixture: StatusFixturePayload | null;
+  decision: { status: Worker["status"]; reasons: StatusReason[]; confidence: number } | null;
+  transitions: number;
+}
+
+export type StatusFixtureResult = { found: false } | { found: true; document: StatusFixtureDocument };
+
+export interface StatusFixtureQuery {
+  useCurrent: boolean;
+  transitionIndex: number | undefined;
 }
 
 export interface StatusPollTimingSnapshot {
@@ -96,6 +175,16 @@ const defaultDecisionFacts: StatusDecisionFacts = {
 const maxTransitionHistoryEntries = 40;
 const maxPollTimingHistoryEntries = 40;
 const defaultStatusPollConcurrency = 4;
+// Ring-buffer bounds for the status-debugging telemetry.
+const maxTransitionCaptureEntries = 5;
+const maxEvaluationSampleEntries = 10;
+// Window the /api/status-debug flap summary counts recent transitions over.
+// NOTE: recent transitions are counted from `statusTransitionHistoryByWorker`,
+// which is bounded at `maxTransitionHistoryEntries` (40). A worker flapping more
+// than 40 times inside the window will under-report `transitionsLastHour` — the
+// count is deliberately taken from the already-bounded history rather than
+// growing an unbounded per-worker timestamp list just for this summary.
+const flapWindowMs = 60 * 60 * 1_000;
 
 export class StatusMonitor {
   private intervalId: NodeJS.Timeout | undefined;
@@ -107,10 +196,20 @@ export class StatusMonitor {
   private readonly statusDebugByWorker = new Map<string, WorkerStatusDebugSnapshot>();
   private readonly statusTransitionHistoryByWorker = new Map<string, WorkerStatusTransitionRecord[]>();
   private readonly workerTimingByWorker = new Map<string, WorkerStatusTimingSnapshot>();
+  // Status-debugging telemetry (bounded, in-memory, no persistence):
+  //   transitionCaptureByWorker — last 5 full decision inputs at each transition
+  //   evaluationSampleByWorker   — last 10 compact per-poll samples (no pane text)
+  //   latestInputsByWorker       — one slot of full inputs from the latest poll
+  private readonly transitionCaptureByWorker = new Map<string, CapturedDecisionInputs[]>();
+  private readonly evaluationSampleByWorker = new Map<string, WorkerStatusEvaluationSample[]>();
+  private readonly latestInputsByWorker = new Map<string, CapturedDecisionInputs>();
   private readonly recentPollTiming: StatusPollTimingSnapshot[] = [];
   private readonly traceMode: StatusTraceMode = resolveStatusTraceMode();
   private readonly workerPollConcurrency = resolveStatusPollConcurrency();
   private readonly interactiveCommands: ReadonlySet<string>;
+  // Stable array copy of interactiveCommands so each capture shares one reference
+  // (the set is config-level and never changes) rather than re-spreading per poll.
+  private readonly interactiveCommandsSnapshot: readonly string[];
   private readonly runtimeFreshnessOverrides: ReadonlyMap<string, number>;
   private readonly workers: WorkerRepository;
   private readonly tmux: TmuxAdapter;
@@ -127,6 +226,7 @@ export class StatusMonitor {
 
     const config = options.config;
     this.interactiveCommands = new Set(config.status.interactiveCommands.map((cmd) => cmd.toLowerCase()));
+    this.interactiveCommandsSnapshot = [...this.interactiveCommands];
 
     const freshnessOverrides = new Map<string, number>();
     for (const [id, runtime] of Object.entries(config.runtimes)) {
@@ -172,8 +272,19 @@ export class StatusMonitor {
     }, Math.max(0, delayMs));
   }
 
-  listWorkerStatusDebug(): WorkerStatusDebugSnapshot[] {
-    return [...this.statusDebugByWorker.values()].sort((a, b) => a.workerName.localeCompare(b.workerName));
+  listWorkerStatusDebug(): WorkerStatusDebugListEntry[] {
+    const nowMs = Date.now();
+    // Flap summary (feature 4): decorate each snapshot with its recent-transition
+    // count and surface the noisiest workers first so a misbehaving worker is
+    // findable in this one request; ties fall back to alphabetical name order.
+    return [...this.statusDebugByWorker.values()]
+      .map((snapshot) => ({
+        ...snapshot,
+        transitionsLastHour: this.countRecentTransitions(snapshot.workerId, nowMs)
+      }))
+      .sort(
+        (a, b) => b.transitionsLastHour - a.transitionsLastHour || a.workerName.localeCompare(b.workerName)
+      );
   }
 
   getWorkerStatusDebug(workerId: string): WorkerStatusDebugSnapshot | undefined {
@@ -182,6 +293,52 @@ export class StatusMonitor {
 
   getWorkerStatusHistory(workerId: string): WorkerStatusTransitionRecord[] {
     return this.statusTransitionHistoryByWorker.get(workerId) ?? [];
+  }
+
+  getWorkerStatusEvaluations(workerId: string): WorkerStatusEvaluationSample[] {
+    return this.evaluationSampleByWorker.get(workerId) ?? [];
+  }
+
+  /**
+   * Build the EvaluateOptions-shaped fixture document for a worker (feature 2).
+   * Returns `{ found: false }` for an unknown worker (route maps to 404); a known
+   * worker with no captured source yet yields a 200 empty-state document
+   * (`fixture: null`, `transitions: 0`). `useCurrent` builds from the latest full
+   * evaluation instead of a transition; `transitionIndex` selects the n-th most
+   * recent transition (0 = latest, the default).
+   */
+  buildStatusFixture(workerId: string, query: StatusFixtureQuery): StatusFixtureResult {
+    const worker = this.workers.getWorker(workerId);
+    if (!worker) {
+      return { found: false };
+    }
+
+    const captures = this.transitionCaptureByWorker.get(workerId) ?? [];
+    const captured = query.useCurrent
+      ? this.latestInputsByWorker.get(workerId)
+      : resolveTransitionCapture(captures, query.transitionIndex);
+
+    return {
+      found: true,
+      document: toStatusFixtureDocument(worker, captured, captures.length)
+    };
+  }
+
+  private countRecentTransitions(workerId: string, nowMs: number): number {
+    const history = this.statusTransitionHistoryByWorker.get(workerId);
+    if (!history) {
+      return 0;
+    }
+
+    const cutoffMs = nowMs - flapWindowMs;
+    let count = 0;
+    for (const record of history) {
+      if (Date.parse(record.at) >= cutoffMs) {
+        count += 1;
+      }
+    }
+
+    return count;
   }
 
   getStatusPerformanceDebug(): StatusPerformanceDebugSnapshot {
@@ -275,9 +432,14 @@ export class StatusMonitor {
         ...defaultDecisionFacts
       }
     };
+    // The raw inputs and the exact clock the decision ran against, retained so the
+    // status-debugging telemetry can reproduce the decision as a fixture. Left
+    // undefined on the failure path (no real inputs to capture).
+    let signals: WorkerSignals | undefined;
+    let decisionAtMs = Date.now();
 
     try {
-      const signals = await collectSignals({
+      const collected = await collectSignals({
         worker,
         tmux: this.tmux,
         paneObservation: this.paneObservation,
@@ -286,7 +448,7 @@ export class StatusMonitor {
         runtimeFreshnessWindowMs: this.runtimeFreshnessOverrides.get(worker.runtimeId)
       });
 
-      if (!signals) {
+      if (!collected) {
         this.removeWorker(worker.id);
         return {
           outcome: "removed",
@@ -294,8 +456,11 @@ export class StatusMonitor {
         };
       }
 
-      evaluation = decide(worker, signals, Date.now());
+      signals = collected;
+      decisionAtMs = Date.now();
+      evaluation = decide(worker, signals, decisionAtMs);
     } catch {
+      signals = undefined;
       evaluation = {
         status: "error",
         activityText: "Status check failed",
@@ -311,7 +476,11 @@ export class StatusMonitor {
 
     this.recordStatusDebug(worker, evaluation);
     this.traceStatusEvaluation(worker, evaluation);
-    this.recordStatusTransition(worker, evaluation);
+    this.recordStatusEvaluationSample(worker, evaluation, decisionAtMs);
+    if (signals) {
+      this.latestInputsByWorker.set(worker.id, this.buildCapturedInputs(worker, evaluation, signals, decisionAtMs));
+    }
+    this.recordStatusTransition(worker, evaluation, signals, decisionAtMs);
 
     if (
       evaluation.status === worker.status &&
@@ -353,6 +522,9 @@ export class StatusMonitor {
       this.statusDebugByWorker.delete(workerId);
       this.statusTransitionHistoryByWorker.delete(workerId);
       this.workerTimingByWorker.delete(workerId);
+      this.transitionCaptureByWorker.delete(workerId);
+      this.evaluationSampleByWorker.delete(workerId);
+      this.latestInputsByWorker.delete(workerId);
       this.onWorkerRemoved(workerId);
     }
   }
@@ -449,7 +621,12 @@ export class StatusMonitor {
     );
   }
 
-  private recordStatusTransition(worker: Worker, evaluation: WorkerStatusDecision): void {
+  private recordStatusTransition(
+    worker: Worker,
+    evaluation: WorkerStatusDecision,
+    signals: WorkerSignals | undefined,
+    decisionAtMs: number
+  ): void {
     if (evaluation.status === worker.status) {
       return;
     }
@@ -472,7 +649,158 @@ export class StatusMonitor {
     }
 
     this.statusTransitionHistoryByWorker.set(worker.id, history);
+
+    // Feature 1: retain the full decision inputs behind this transition so it can
+    // be reproduced as a fixture. Only possible when the poll actually collected
+    // signals (the failure path has no real inputs).
+    if (signals) {
+      this.recordTransitionCapture(worker, evaluation, signals, decisionAtMs);
+    }
   }
+
+  private recordStatusEvaluationSample(worker: Worker, evaluation: WorkerStatusDecision, decisionAtMs: number): void {
+    // Compact, pane-text-free (feature 3): everything here is read off the decision
+    // facts/reasons, so it records on every poll including the failure path.
+    const sample: WorkerStatusEvaluationSample = {
+      at: new Date(decisionAtMs).toISOString(),
+      status: evaluation.status,
+      adapterId: evaluation.facts.runtime,
+      runtimeSignals: {
+        prompt: evaluation.facts.runtimePromptSignal,
+        active: evaluation.facts.runtimeActiveSignal
+      },
+      transcriptHealth: evaluation.facts.transcript,
+      outputQuietForMs: evaluation.facts.outputQuietForMs,
+      reasonCodes: evaluation.reasons.map((reason) => reason.code)
+    };
+
+    const samples = this.evaluationSampleByWorker.get(worker.id) ?? [];
+    samples.push(sample);
+    if (samples.length > maxEvaluationSampleEntries) {
+      samples.splice(0, samples.length - maxEvaluationSampleEntries);
+    }
+
+    this.evaluationSampleByWorker.set(worker.id, samples);
+  }
+
+  private recordTransitionCapture(
+    worker: Worker,
+    evaluation: WorkerStatusDecision,
+    signals: WorkerSignals,
+    decisionAtMs: number
+  ): void {
+    const capture = this.buildCapturedInputs(worker, evaluation, signals, decisionAtMs);
+    const captures = this.transitionCaptureByWorker.get(worker.id) ?? [];
+    captures.push(capture);
+    if (captures.length > maxTransitionCaptureEntries) {
+      captures.splice(0, captures.length - maxTransitionCaptureEntries);
+    }
+
+    this.transitionCaptureByWorker.set(worker.id, captures);
+  }
+
+  private buildCapturedInputs(
+    worker: Worker,
+    evaluation: WorkerStatusDecision,
+    signals: WorkerSignals,
+    decisionAtMs: number
+  ): CapturedDecisionInputs {
+    // Snapshot-copy every poll-owned mutable object; observePane in particular
+    // returns and mutates ONE PaneObservation instance across polls, so retaining
+    // the live reference would let a later poll rewrite this captured history.
+    return {
+      capturedAt: new Date(decisionAtMs).toISOString(),
+      fromStatus: worker.status,
+      toStatus: evaluation.status,
+      adapterId: signals.runtime.id,
+      output: signals.output,
+      currentCommand: signals.currentCommand,
+      outputQuietForMs: evaluation.facts.outputQuietForMs,
+      commandQuietForMs: evaluation.facts.commandQuietForMs,
+      workerAgeMs: evaluation.facts.workerAgeMs,
+      runtimeSignals: {
+        prompt: signals.runtimeSignals.prompt,
+        active: signals.runtimeSignals.active,
+        activityText: signals.runtimeSignals.activityText,
+        activeTask: signals.runtimeSignals.activeTask
+      },
+      transcriptSnapshot: signals.transcriptSnapshot ? { ...signals.transcriptSnapshot } : undefined,
+      transcriptHealth: signals.transcriptHealth,
+      observation: { ...signals.observation },
+      runtimeProcess: signals.activeRuntimeProcess ? { ...signals.activeRuntimeProcess } : undefined,
+      interactiveCommands: this.interactiveCommandsSnapshot,
+      runtimeFreshnessWindowMs: signals.runtimeFreshnessWindowMs,
+      decision: {
+        status: evaluation.status,
+        reasons: evaluation.reasons,
+        confidence: evaluation.confidence
+      }
+    };
+  }
+}
+
+function resolveTransitionCapture(
+  captures: readonly CapturedDecisionInputs[],
+  index: number | undefined
+): CapturedDecisionInputs | undefined {
+  if (captures.length === 0) {
+    return undefined;
+  }
+
+  // Index counts newest-first (0 = latest transition), matching the "default
+  // latest" contract; the ring itself is stored oldest -> newest.
+  const newestFirstIndex = index ?? 0;
+  const arrayIndex = captures.length - 1 - newestFirstIndex;
+  if (arrayIndex < 0 || arrayIndex >= captures.length) {
+    return undefined;
+  }
+
+  return captures[arrayIndex];
+}
+
+function toStatusFixtureDocument(
+  worker: Worker,
+  captured: CapturedDecisionInputs | undefined,
+  transitionsCount: number
+): StatusFixtureDocument {
+  const workerSummary = {
+    id: worker.id,
+    name: worker.displayName ?? worker.name,
+    runtimeId: worker.runtimeId
+  };
+
+  if (!captured) {
+    return {
+      capturedAt: new Date().toISOString(),
+      worker: workerSummary,
+      fixture: null,
+      decision: null,
+      transitions: transitionsCount
+    };
+  }
+
+  return {
+    capturedAt: captured.capturedAt,
+    worker: workerSummary,
+    fixture: {
+      runtime: captured.adapterId,
+      output: captured.output,
+      outputQuietForMs: captured.outputQuietForMs,
+      commandQuietForMs: captured.commandQuietForMs,
+      workerAgeMs: captured.workerAgeMs,
+      priorStatus: captured.fromStatus,
+      currentCommand: captured.currentCommand,
+      interactiveCommands: captured.interactiveCommands,
+      transcriptSnapshot: captured.transcriptSnapshot ?? null,
+      runtimeFreshnessWindowMs: captured.runtimeFreshnessWindowMs ?? null
+    },
+    decision: {
+      status: captured.decision.status,
+      reasons: captured.decision.reasons,
+      confidence: captured.decision.confidence
+    },
+    transitions: transitionsCount
+  };
 }
 
 function resolveStatusPollConcurrency(): number {

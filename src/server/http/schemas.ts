@@ -160,6 +160,19 @@ export const broadcastInputSchema = z
     }
   });
 
+// Query for GET /api/workers/:workerId/status-fixture. `transition` selects the
+// n-th most recent captured transition (0 = latest); `current` (any of 1/true)
+// builds the fixture from the worker's latest evaluation instead of a transition.
+const statusFixtureFlagSchema = z
+  .union([z.string(), z.boolean()])
+  .optional()
+  .transform((value) => value === true || value === "1" || value === "true");
+
+export const statusFixtureQuerySchema = z.object({
+  transition: z.coerce.number().int().min(0).optional(),
+  current: statusFixtureFlagSchema
+});
+
 export const renameSchema = z.object({
   displayName: z.string()
 });

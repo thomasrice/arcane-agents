@@ -604,9 +604,10 @@ ARCANE_AGENTS_STATUS_TRACE=transitions npm run dev
 
 Status debugging APIs:
 
-- `GET /api/status-debug`
-- `GET /api/workers/:workerId/status-debug`
+- `GET /api/status-debug` (each worker also carries `transitionsLastHour`, a flap count sorted noisiest-first)
+- `GET /api/workers/:workerId/status-debug` (also returns the last 10 compact `evaluations`)
 - `GET /api/workers/:workerId/status-history`
+- `GET /api/workers/:workerId/status-fixture` — reproduce a live wrong status as an integration-test fixture; `?transition=<n>` picks the n-th most recent transition (0 = latest, default), `?current=1` uses the latest evaluation
 
 ## Stack
 
