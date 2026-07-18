@@ -5,6 +5,8 @@ import {
   bootstrapTailBytes,
   claudeProjectRoot,
   maxRecentTranscriptAgeMs,
+  transcriptFallbackCreatedAtSlackMs,
+  transcriptFallbackFreshnessMs,
   transcriptLookupRetryMs
 } from "./constants";
 import { resetTranscriptState } from "./accumulator";
@@ -20,16 +22,31 @@ interface ResolvedTranscriptPathInput {
   projectRoot?: string;
 }
 
+/**
+ * How a transcript path was resolved. The tracker maps these to a match strength
+ * for cross-worker exclusivity:
+ *   - "existing"      re-confirmed this worker's still-present attachment (no contest)
+ *   - "session-id"    exact file named by the pane's --session-id flag (strong)
+ *   - "session-start" first record within the session-start window (strong)
+ *   - "fallback"      bounded newest-mtime guess before start time is known (weak)
+ */
+export type TranscriptResolutionKind = "existing" | "session-id" | "session-start" | "fallback";
+
+export interface ResolvedTranscript {
+  path: string;
+  kind: TranscriptResolutionKind;
+}
+
 export async function resolveTranscriptPath({
   worker,
   state,
   paneCurrentPath,
   nowMs,
   projectRoot = claudeProjectRoot
-}: ResolvedTranscriptPathInput): Promise<string | undefined> {
+}: ResolvedTranscriptPathInput): Promise<ResolvedTranscript | undefined> {
   if (state.transcriptPath && (await isPathToFile(state.transcriptPath))) {
     state.nextTranscriptLookupAtMs = 0;
-    return state.transcriptPath;
+    return { path: state.transcriptPath, kind: "existing" };
   }
 
   if (nowMs < state.nextTranscriptLookupAtMs) {
@@ -38,6 +55,7 @@ export async function resolveTranscriptPath({
 
   const candidateDirs = buildTranscriptCandidateDirs(projectRoot, worker.projectPath, paneCurrentPath);
   const sessionId = extractSessionId(worker.command);
+  const workerCreatedAtMs = parseWorkerCreatedAtMs(worker.createdAt);
 
   for (const transcriptDir of candidateDirs) {
     if (!(await isPathToDirectory(transcriptDir))) {
@@ -48,11 +66,16 @@ export async function resolveTranscriptPath({
       const directPath = path.join(transcriptDir, `${sessionId}.jsonl`);
       if (await isPathToFile(directPath)) {
         state.nextTranscriptLookupAtMs = 0;
-        return directPath;
+        return { path: directPath, kind: "session-id" };
       }
     }
 
-    const match = await findMatchingTranscriptFile(transcriptDir, nowMs, state.claudeSessionStartAtMs);
+    const match = await findMatchingTranscriptFile(
+      transcriptDir,
+      nowMs,
+      state.claudeSessionStartAtMs,
+      workerCreatedAtMs
+    );
     if (match) {
       state.nextTranscriptLookupAtMs = 0;
       return match;
@@ -61,6 +84,11 @@ export async function resolveTranscriptPath({
 
   state.nextTranscriptLookupAtMs = nowMs + transcriptLookupRetryMs;
   return undefined;
+}
+
+function parseWorkerCreatedAtMs(createdAt: string): number | undefined {
+  const parsed = Date.parse(createdAt);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export async function collectTranscriptInputLines(state: ClaudeTranscriptState): Promise<string[]> {
@@ -111,8 +139,9 @@ interface TranscriptCandidate {
 async function findMatchingTranscriptFile(
   directoryPath: string,
   nowMs: number,
-  claudeSessionStartAtMs: number | undefined
-): Promise<string | undefined> {
+  claudeSessionStartAtMs: number | undefined,
+  workerCreatedAtMs: number | undefined
+): Promise<ResolvedTranscript | undefined> {
   const entries = await fs.readdir(directoryPath, { withFileTypes: true });
   const jsonlEntries = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"));
 
@@ -138,21 +167,79 @@ async function findMatchingTranscriptFile(
     return undefined;
   }
 
-  if (claudeSessionStartAtMs) {
-    await Promise.all(
-      candidates.map(async (candidate) => {
-        candidate.firstRecordTimestampMs = await readFirstRecordTimestamp(candidate.fullPath);
-      })
-    );
+  // Both branches now need the first-record timestamp: the session-start match
+  // uses it directly, and the bounded fallback uses it to reject transcripts that
+  // cannot belong to this worker.
+  await Promise.all(
+    candidates.map(async (candidate) => {
+      candidate.firstRecordTimestampMs = await readFirstRecordTimestamp(candidate.fullPath);
+    })
+  );
 
+  if (claudeSessionStartAtMs !== undefined) {
+    // Known session start: only a first-record timestamp inside the match window
+    // may attach. If none matches we deliberately do NOT fall back to newest-mtime
+    // — attaching another session's transcript is strictly worse than attaching
+    // none (the pane keeps its heuristic status and we retry later).
     const matched = findClosestByStartTime(candidates, claudeSessionStartAtMs);
-    if (matched) {
-      return matched;
-    }
+    return matched ? { path: matched, kind: "session-start" } : undefined;
   }
 
-  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return candidates[0]?.fullPath;
+  // Unknown session start: bounded mtime fallback only. This bridges the gap
+  // between a fresh spawn and the pgrep/ps start-time lookup resolving.
+  const fallback = selectBoundedFallback(candidates, nowMs, workerCreatedAtMs);
+  return fallback ? { path: fallback, kind: "fallback" } : undefined;
+}
+
+/**
+ * Pick the newest-mtime candidate that could plausibly belong to a worker whose
+ * session start time is not yet known, or undefined if none qualifies.
+ *
+ * A candidate qualifies only when its first record is BOTH:
+ *   (a) no earlier than `worker.createdAt` minus a small slack — a Claude session
+ *       cannot meaningfully predate the worker process that hosts it; and
+ *   (b) recent relative to now.
+ *
+ * Adoption case: when Arcane adopts an already-running pane, `worker.createdAt`
+ * marks the adoption, not the real session start, so the session's genuine
+ * transcript can predate createdAt and (a) alone would be unreliable. Bound (b)
+ * closes that gap: it also rejects a stale foreign transcript that is hot (recent
+ * mtime) but whose first record is old, which is exactly the shared-directory bug
+ * this fallback previously caused. An adopted worker therefore attaches nothing
+ * here and waits for the session-start match to claim its real transcript.
+ *
+ * A candidate with an unreadable first-record timestamp cannot be validated and
+ * is rejected — never attach a transcript we cannot vouch for.
+ */
+function selectBoundedFallback(
+  candidates: TranscriptCandidate[],
+  nowMs: number,
+  workerCreatedAtMs: number | undefined
+): string | undefined {
+  const freshnessLowerBoundMs = nowMs - transcriptFallbackFreshnessMs;
+  const createdAtLowerBoundMs =
+    workerCreatedAtMs !== undefined ? workerCreatedAtMs - transcriptFallbackCreatedAtSlackMs : undefined;
+
+  const eligible = candidates.filter((candidate) => {
+    const firstRecordMs = candidate.firstRecordTimestampMs;
+    if (firstRecordMs === undefined) {
+      return false;
+    }
+    if (firstRecordMs < freshnessLowerBoundMs) {
+      return false;
+    }
+    if (createdAtLowerBoundMs !== undefined && firstRecordMs < createdAtLowerBoundMs) {
+      return false;
+    }
+    return true;
+  });
+
+  if (eligible.length === 0) {
+    return undefined;
+  }
+
+  eligible.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return eligible[0]?.fullPath;
 }
 
 function findClosestByStartTime(candidates: TranscriptCandidate[], targetMs: number): string | undefined {

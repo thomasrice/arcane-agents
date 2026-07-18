@@ -132,7 +132,19 @@ export function drawScene({
       }
     }
 
-    // Overlay and flames go down first; non-occluded workers paint on top of them.
+    // Occluded workers are painted fully BEFORE the overlay. This base paint is
+    // load-bearing, not waste: occlusion cells often cover only part of a sprite
+    // (e.g. feet behind a roofline whose structure fills downward from the
+    // worker's tile), and for those workers this pass is the only opaque source
+    // of the uncovered body — the overlay then tucks the covered sliver behind
+    // the structure. Removing it turns a feet-only occlusion into a full-body
+    // ghost.
+    for (const worker of workers) {
+      if (occludedWorkerIds.has(worker.id)) {
+        drawWorker(scene, worker, { drawUi: false, queueNameplate: false });
+      }
+    }
+
     drawOutpostOcclusionOverlayLayer(context, viewport, width, height, mapData, mapPreviewImage);
     drawAmbientFlameEffectsLayer(context, viewport, width, height, mapData, mapPreviewImage, nowMs);
 
@@ -142,8 +154,9 @@ export function drawScene({
       }
     }
 
-    // Occluded workers are painted exactly once, after the overlay, as ghosts; their
-    // badge, control-group indicator, and nameplate all come from this single pass.
+    // Ghost pass: a translucent repaint above the overlay keeps fully-roofed
+    // workers locatable; badge, control-group indicator, and nameplate come
+    // from this top-most pass.
     for (const worker of workers) {
       if (occludedWorkerIds.has(worker.id)) {
         drawWorker(scene, worker, { ghostAlpha: occludedGhostAlpha });

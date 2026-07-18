@@ -76,16 +76,41 @@ function line(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function assistantToolUse(id: string, name: string, input: Record<string, unknown> = {}): string {
-  return line({ type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] } });
+// Real Claude transcript records carry a top-level ISO `timestamp`. Transcript
+// resolution now reads the FIRST record's timestamp before attaching (the bounded
+// mtime fallback validates it, and the session-start path matches against it), so
+// fixtures give records a realistic timestamp. It defaults to now — a fresh-spawn
+// transcript, exactly what the bounded fallback exists to attach — but can be
+// aged to model a foreign or pre-existing session.
+function nowIso(): string {
+  return new Date().toISOString();
 }
 
-function assistantText(value: string): string {
-  return line({ type: "assistant", message: { content: [{ type: "text", text: value }] } });
+function isoAgo(ms: number): string {
+  return new Date(Date.now() - ms).toISOString();
 }
 
-function systemTurnDuration(): string {
-  return line({ type: "system", subtype: "turn_duration" });
+function assistantToolUse(
+  id: string,
+  name: string,
+  input: Record<string, unknown> = {},
+  timestamp: string = nowIso()
+): string {
+  return line({ type: "assistant", timestamp, message: { content: [{ type: "tool_use", id, name, input }] } });
+}
+
+function assistantText(value: string, timestamp: string = nowIso()): string {
+  return line({ type: "assistant", timestamp, message: { content: [{ type: "text", text: value }] } });
+}
+
+function systemTurnDuration(timestamp: string = nowIso()): string {
+  return line({ type: "system", timestamp, subtype: "turn_duration" });
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+async function setMtime(filePath: string, mtimeMs: number): Promise<void> {
+  await fs.utimes(filePath, new Date(mtimeMs), new Date(mtimeMs));
 }
 
 /** The real per-project transcript directory the tracker resolves for a worker. */
@@ -217,5 +242,128 @@ describe("ClaudeTranscriptTracker", () => {
     // The tracker should re-bootstrap against the new file rather than carry the
     // previous file's active tool forward.
     expect((await tracker.poll(worker, "claude")).snapshot?.status).toBe("idle");
+  });
+
+  // --- Conservative transcript attachment in a shared project directory ---
+  //
+  // Panes whose Claude processes were started from the same cwd share ONE
+  // transcript project directory. Attaching another session's transcript is
+  // strictly worse than attaching none (pane heuristics still resolve status), so
+  // resolution is conservative: a known session start never falls back to
+  // newest-mtime, an unknown start uses only a bounded fallback, and one
+  // transcript file binds to at most one worker.
+
+  it("does not attach a hot foreign transcript when a known session start finds no match", async () => {
+    // The live bug: a worker whose real Claude session is 38 days old (its own
+    // transcript aged out of the 3-day mtime window) sat in a shared dir beside
+    // another session's hot transcript, and the old newest-mtime fallback wrongly
+    // attached it, flashing the idle worker as "working".
+    const worker = createWorker({ createdAt: nowIso() });
+    sessionStartMock.mockResolvedValue(Date.now() - 38 * DAY_MS);
+
+    // Foreign transcript: recently modified (hot, inside the 3-day window) but its
+    // first record is days old, so it cannot match the 38-day session start.
+    await writeTranscript(worker, "foreign.jsonl", [
+      assistantToolUse("t1", "Bash", { command: "npm test" }, isoAgo(6 * DAY_MS))
+    ]);
+
+    const tracker = trackerForTemp();
+    const result = await tracker.poll(worker, "claude", undefined, 4242);
+
+    expect(result.snapshot).toBeUndefined();
+    expect(result.health).toBe("absent");
+
+    // Stable across polls: it never latches onto the foreign transcript, so the
+    // downstream decision keeps using pane heuristics.
+    const again = await tracker.poll(worker, "claude", undefined, 4242);
+    expect(again.snapshot).toBeUndefined();
+    expect(again.health).toBe("absent");
+  });
+
+  it("attaches its own fresh transcript via the bounded fallback, not a hotter foreign one", async () => {
+    // Unknown session start (pgrep not resolved yet). The worker's own brand-new
+    // transcript must win over a foreign transcript with a newer mtime but an old
+    // first record — the very case the old newest-mtime fallback got wrong.
+    const worker = createWorker({ createdAt: nowIso() });
+
+    const own = await writeTranscript(worker, "own.jsonl", [assistantToolUse("t1", "Bash", { command: "run" })]);
+    const foreign = await writeTranscript(worker, "foreign.jsonl", [systemTurnDuration(isoAgo(2 * DAY_MS))]);
+    // Foreign is the hotter file: the old fallback would have picked it (-> idle).
+    await setMtime(own, Date.now() - 60_000);
+    await setMtime(foreign, Date.now());
+
+    const result = await trackerForTemp().poll(worker, "claude");
+
+    expect(result.health).toBe("ok");
+    expect(result.snapshot?.status).toBe("working");
+  });
+
+  it("rejects a fallback transcript whose first record predates the worker createdAt", async () => {
+    // Fresh enough for the recency bound (5 min old) but older than createdAt
+    // minus slack: a session cannot meaningfully predate the worker that hosts it.
+    const worker = createWorker({ createdAt: nowIso() });
+    await writeTranscript(worker, "early.jsonl", [
+      assistantToolUse("t1", "Bash", { command: "run" }, isoAgo(5 * 60 * 1000))
+    ]);
+
+    const result = await trackerForTemp().poll(worker, "claude");
+
+    expect(result.snapshot).toBeUndefined();
+    expect(result.health).toBe("absent");
+  });
+
+  it("binds a transcript to one worker: a fallback challenger loses to the start-matched owner", async () => {
+    const startMs = Date.now();
+    const workerA = createWorker({ id: "worker-A" });
+    const workerB = createWorker({ id: "worker-B", createdAt: nowIso() }); // same shared project dir
+    const tracker = trackerForTemp();
+
+    // Shared transcript whose first record matches A's session start.
+    await writeTranscript(workerA, "shared.jsonl", [
+      assistantToolUse("t1", "Bash", { command: "run" }, new Date(startMs).toISOString())
+    ]);
+    sessionStartMock.mockResolvedValue(startMs);
+
+    // A resolves via a session-start match (strong) and owns the file.
+    const a1 = await tracker.poll(workerA, "claude", undefined, 1111);
+    expect(a1.health).toBe("ok");
+    expect(a1.snapshot?.status).toBe("working");
+
+    // B (unknown start) would fall back onto the same file, but A owns it, so B
+    // gets nothing and keeps pane heuristics.
+    const b1 = await tracker.poll(workerB, "claude");
+    expect(b1.snapshot).toBeUndefined();
+    expect(b1.health).toBe("absent");
+
+    // A still owns the file.
+    const a2 = await tracker.poll(workerA, "claude", undefined, 1111);
+    expect(a2.health).toBe("ok");
+  });
+
+  it("evicts a weak fallback holder when a start-matched worker claims the same file", async () => {
+    const startMs = Date.now();
+    const workerA = createWorker({ id: "worker-A", createdAt: nowIso() });
+    const workerB = createWorker({ id: "worker-B" }); // same shared project dir
+    const tracker = trackerForTemp();
+
+    await writeTranscript(workerA, "shared.jsonl", [
+      assistantToolUse("t1", "Bash", { command: "run" }, new Date(startMs).toISOString())
+    ]);
+
+    // A attaches via the (weak) bounded fallback first.
+    const a1 = await tracker.poll(workerA, "claude");
+    expect(a1.health).toBe("ok");
+    expect(a1.snapshot?.status).toBe("working");
+
+    // B's session start matches the file: strong beats weak, so B takes it...
+    sessionStartMock.mockResolvedValue(startMs);
+    const b1 = await tracker.poll(workerB, "claude", undefined, 2222);
+    expect(b1.health).toBe("ok");
+    expect(b1.snapshot?.status).toBe("working");
+
+    // ...and A is detached, reporting absent rather than a stale "ok".
+    const a2 = await tracker.poll(workerA, "claude");
+    expect(a2.snapshot).toBeUndefined();
+    expect(a2.health).toBe("absent");
   });
 });

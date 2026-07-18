@@ -10,6 +10,7 @@ import type { ActiveToolEntry, ClaudeTranscriptState, ParsedTranscriptRecord } f
 
 export function createTranscriptState(): ClaudeTranscriptState {
   return {
+    transcriptMatchStrength: undefined,
     sessionStartLookup: { status: "pending", nextRetryAtMs: 0 },
     nextTranscriptLookupAtMs: 0,
     fileOffset: 0,

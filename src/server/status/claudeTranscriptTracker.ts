@@ -4,12 +4,21 @@ import {
   createTranscriptState,
   resetTranscriptState
 } from "./claudeTranscript/accumulator";
-import { claudeProjectRoot } from "./claudeTranscript/constants";
-import { collectTranscriptInputLines, resolveTranscriptPath } from "./claudeTranscript/io";
+import { claudeProjectRoot, transcriptLookupRetryMs } from "./claudeTranscript/constants";
+import {
+  collectTranscriptInputLines,
+  resolveTranscriptPath,
+  type ResolvedTranscript
+} from "./claudeTranscript/io";
 import { extractTranscriptRecords } from "./claudeTranscript/parser";
 import { findClaudeSessionStartTimeMs } from "./claudeTranscript/process";
 import { buildSnapshot } from "./claudeTranscript/snapshot";
-import type { ClaudeStatusSnapshot, ClaudeTranscriptState, TranscriptHealth } from "./claudeTranscript/types";
+import type {
+  ClaudeStatusSnapshot,
+  ClaudeTranscriptState,
+  TranscriptHealth,
+  TranscriptMatchStrength
+} from "./claudeTranscript/types";
 import { isLikelyClaudeSession } from "./runtimes/claude";
 
 export type { ClaudeStatusSnapshot, TranscriptHealth } from "./claudeTranscript/types";
@@ -59,26 +68,34 @@ export class ClaudeTranscriptTracker {
       await this.resolveSessionStart(state, panePid);
     }
 
-    let transcriptPath: string | undefined;
+    const nowMs = Date.now();
+    let resolved: ResolvedTranscript | undefined;
     try {
-      transcriptPath = await resolveTranscriptPath({
+      resolved = await resolveTranscriptPath({
         worker,
         state,
         paneCurrentPath,
-        nowMs: Date.now(),
+        nowMs,
         projectRoot: this.projectRoot
       });
     } catch {
       return { snapshot: undefined, health: "error" };
     }
 
-    if (!transcriptPath) {
+    if (!resolved) {
+      // No transcript resolves (none found, the file vanished, or we are waiting
+      // to retry). Drop any stale attachment so a gone file can't linger as a
+      // phantom exclusivity holder, and report absent so health reflects "no
+      // transcript" rather than "ok".
+      this.releaseTranscript(state);
       return { snapshot: undefined, health: "absent" };
     }
 
-    if (state.transcriptPath !== transcriptPath) {
-      state.transcriptPath = transcriptPath;
-      resetTranscriptState(state);
+    if (!this.claimTranscript(worker.id, state, resolved, nowMs)) {
+      // Another worker owns this transcript and outranks this attachment. Keep
+      // pane heuristics (absent) and retry later rather than binding one file to
+      // two workers.
+      return { snapshot: undefined, health: "absent" };
     }
 
     try {
@@ -116,6 +133,84 @@ export class ClaudeTranscriptTracker {
     } else {
       state.sessionStartLookup = { status: "failed", nextRetryAtMs: nowMs + failedSessionLookupRetryMs };
     }
+  }
+
+  /**
+   * Bind a resolved transcript to this worker, enforcing that one transcript file
+   * belongs to at most one worker. Returns false when this worker must NOT attach
+   * the file (its caller then reports absent and retries).
+   *
+   * Contest rule: a strong attachment (explicit --session-id, or a first-record
+   * timestamp inside the session-start window) beats a weak one (the bounded mtime
+   * fallback). A strong challenger evicts a weak incumbent; otherwise the incumbent
+   * keeps the file and the challenger loses.
+   */
+  private claimTranscript(
+    workerId: string,
+    state: ClaudeTranscriptState,
+    resolved: ResolvedTranscript,
+    nowMs: number
+  ): boolean {
+    // "existing" only ever re-confirms this worker's own still-present file, so
+    // there is nothing to contest and its strength is already recorded.
+    if (resolved.kind === "existing") {
+      return true;
+    }
+
+    const strength: TranscriptMatchStrength = resolved.kind === "fallback" ? "weak" : "strong";
+    const incumbent = this.findTranscriptHolder(resolved.path, workerId);
+
+    if (incumbent) {
+      const incumbentStrength = incumbent.transcriptMatchStrength ?? "weak";
+      const challengerWins = strength === "strong" && incumbentStrength === "weak";
+      if (!challengerWins) {
+        state.nextTranscriptLookupAtMs = nowMs + transcriptLookupRetryMs;
+        return false;
+      }
+
+      this.detachTranscript(incumbent, nowMs);
+    }
+
+    if (state.transcriptPath !== resolved.path) {
+      resetTranscriptState(state);
+    }
+    state.transcriptPath = resolved.path;
+    state.transcriptMatchStrength = strength;
+    return true;
+  }
+
+  /** The other worker's state currently holding `transcriptPath`, if any. */
+  private findTranscriptHolder(transcriptPath: string, exceptWorkerId: string): ClaudeTranscriptState | undefined {
+    for (const [id, candidate] of this.states) {
+      if (id !== exceptWorkerId && candidate.transcriptPath === transcriptPath) {
+        return candidate;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Detach a transcript that was lost to exclusivity so the worker falls back to
+   * pane heuristics (health absent on its next poll) and re-resolves after the
+   * retry cooldown.
+   */
+  private detachTranscript(state: ClaudeTranscriptState, nowMs: number): void {
+    resetTranscriptState(state);
+    state.transcriptPath = undefined;
+    state.transcriptMatchStrength = undefined;
+    state.nextTranscriptLookupAtMs = nowMs + transcriptLookupRetryMs;
+  }
+
+  /** Drop a now-invalid attachment (gone file / no resolution) without rescheduling. */
+  private releaseTranscript(state: ClaudeTranscriptState): void {
+    if (!state.transcriptPath) {
+      return;
+    }
+
+    resetTranscriptState(state);
+    state.transcriptPath = undefined;
+    state.transcriptMatchStrength = undefined;
   }
 
   forget(workerId: string): void {

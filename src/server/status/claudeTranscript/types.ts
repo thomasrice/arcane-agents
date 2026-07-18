@@ -29,8 +29,19 @@ export interface SessionStartLookupState {
   nextRetryAtMs: number;
 }
 
+/**
+ * How the currently-attached transcript was resolved, used by the tracker to
+ * enforce cross-worker exclusivity. A "strong" attachment comes from a positive
+ * identity match (explicit --session-id file, or a first-record timestamp within
+ * the session-start window); a "weak" attachment is the bounded mtime fallback.
+ * When two workers contest the same file, a strong attachment evicts a weak one.
+ */
+export type TranscriptMatchStrength = "strong" | "weak";
+
 export interface ClaudeTranscriptState {
   transcriptPath?: string;
+  /** Strength of the current `transcriptPath` attachment; undefined when none. */
+  transcriptMatchStrength?: TranscriptMatchStrength;
   claudeSessionStartAtMs?: number;
   sessionStartLookup: SessionStartLookupState;
   nextTranscriptLookupAtMs: number;
