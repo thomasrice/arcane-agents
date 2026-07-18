@@ -28,7 +28,6 @@ export default tseslint.config(
     },
     rules: {
       "no-empty": ["error", { allowEmptyCatch: true }],
-      "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         {
@@ -63,14 +62,6 @@ export default tseslint.config(
     languageOptions: {
       globals: {
         ...globals.node,
-      },
-    },
-  },
-  {
-    files: ["**/*.test.{ts,tsx}"],
-    languageOptions: {
-      globals: {
-        ...globals.vitest,
       },
     },
   },

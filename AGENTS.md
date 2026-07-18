@@ -22,28 +22,31 @@ Arcane Agents is a local-first visual control room for managing terminal-backed 
 ```
 src/
   server/         # Express server, API, tmux, status monitor
-    cli.ts        #   CLI entry (start/init/setup/config/sessions/doctor)
+    cli.ts        #   CLI entry; parses argv and dispatches to cli/commands
+    cli/          #   Per-command modules (start/init/setup/config/sessions/doctor) + arg/prompt/starter-config helpers
     index.ts / bootstrapApp.ts   # Server bootstrap
     bootstrap/    #   Express app assembly, server context, WS upgrade, shutdown
-    http/         #   REST API routes, request parsing, typed error responses
-    orchestrator/ #   Worker lifecycle (spawn/stop/restart), spawn planning, tmux reconcile
-    status/       #   Poll loop classifying each worker idle/working/attention; Claude transcript tracking
+    http/         #   REST API routes, zod request schemas, asyncRoute wrapper, typed error responses
+    orchestrator/ #   Worker lifecycle (spawn/stop/restart); spawn/ planning + reconcile/ pure tmux-reconciliation planner
+    status/       #   Poll loop classifying each worker idle/working/attention/error; runtimes/ (per-runtime RuntimeAdapters: claude/codex/openCode/generic) + claudeTranscript/ tailing
     tmux/         #   tmux shell-out adapter and argv builders
+    platform/     #   Cross-platform shell helpers (findExecutable, shellQuote) + clipboard/WSL detection
     ws/           #   Realtime broadcast hub + node-pty terminal bridge (WebSocket <-> PTY)
     persistence/  #   better-sqlite3 worker repository
     config/       #   YAML config load + schema, project discovery
-    assets/       #   Avatar and voice-line catalogues
+    assets/       #   Avatar, character-sprite, and voice-line catalogues
     setup/        #   Prerequisite checks
     utils/        #   App-root resolution and helpers
   client/         # Vite frontend: Canvas2D map, xterm.js, UI controls
-    App.tsx / main.tsx   # App shell and React entry
-    map/          #   Canvas2D map: rendering (render/), movement (runtime/), tiles, viewport, pathfinding
-    components/   #   Dialogs, terminal panel, command palette, bottom bar
-    hooks/        #   Data, selection, worker-action, and layout hooks
-    hotkeys/      #   Keyboard shortcut handling
+    App.tsx / main.tsx   # App shell (composition only) and React entry
+    state/        #   zustand store, selectors, imperative-handle bridge — single source of shell state
+    map/          #   Canvas2D map: render/layers + renderScene orchestration, runtime/ (movement sim + rAF loop), input/ (pointer state machine), commands/ (move orders), tiles, viewport, pathfinding
+    components/   #   MapCanvas, dialogs, terminal panel, command palette, bottom bar, roster items
+    hooks/        #   Server sync, worker actions, store reconciliation, fades, voice lines, terminal focus
+    hotkeys/      #   Declarative shortcut registry + matcher
     sprites/      #   Sprite-sheet loading
-    api.ts        #   Typed client for the server REST API
-  shared/         # Types and constants shared between client and server
+    api.ts / assetUrls.ts   # Typed REST client and asset-URL builders
+  shared/         # Types and constants shared between client and server (incl. mapSpec)
 ```
 
 ## Running

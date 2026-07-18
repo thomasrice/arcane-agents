@@ -146,6 +146,40 @@ function createEvaluation(status: Worker["status"]): WorkerStatusDecision {
   };
 }
 
+// A resolve-controlled barrier: each `enter()` parks until the test calls
+// `releaseOne()`, so concurrency is measured structurally (how many callers are
+// parked at once) rather than by racing real timers under a loaded event loop.
+interface ConcurrencyGate {
+  enter(): Promise<void>;
+  waitForArrival(): Promise<void>;
+  releaseOne(): void;
+}
+
+function createConcurrencyGate(): ConcurrencyGate {
+  const parked: Array<() => void> = [];
+  const arrivalWaiters: Array<() => void> = [];
+
+  return {
+    enter() {
+      return new Promise<void>((resolve) => {
+        parked.push(resolve);
+        arrivalWaiters.shift()?.();
+      });
+    },
+    waitForArrival() {
+      if (parked.length > 0) {
+        return Promise.resolve();
+      }
+      return new Promise<void>((resolve) => {
+        arrivalWaiters.push(resolve);
+      });
+    },
+    releaseOne() {
+      parked.shift()?.();
+    }
+  };
+}
+
 describe("StatusMonitor", () => {
   const collectMock = vi.mocked(collectSignals);
   const decideMock = vi.mocked(decide);
@@ -157,28 +191,27 @@ describe("StatusMonitor", () => {
     delete process.env.ARCANE_AGENTS_STATUS_POLL_CONCURRENCY;
   });
 
-  it("bounds concurrent worker evaluations", async () => {
+  it("bounds concurrent worker evaluations at the configured concurrency", async () => {
     process.env.ARCANE_AGENTS_STATUS_POLL_CONCURRENCY = "2";
 
-    const repository = createRepository([
-      createWorker("worker-1"),
-      createWorker("worker-2"),
-      createWorker("worker-3"),
-      createWorker("worker-4"),
-      createWorker("worker-5")
-    ]);
+    const workerCount = 5;
+    const repository = createRepository(
+      Array.from({ length: workerCount }, (_unused, index) => createWorker(`worker-${index + 1}`))
+    );
 
+    const gate = createConcurrencyGate();
     let inFlight = 0;
     let maxInFlight = 0;
+    const windowExists = vi.fn(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await gate.enter();
+      inFlight -= 1;
+      return true;
+    });
     const tmux = {
       hasManagedSession: vi.fn(async () => true),
-      windowExists: vi.fn(async () => {
-        inFlight += 1;
-        maxInFlight = Math.max(maxInFlight, inFlight);
-        await new Promise((resolve) => setTimeout(resolve, 8));
-        inFlight -= 1;
-        return true;
-      })
+      windowExists
     } as unknown as TmuxAdapter;
 
     const monitor = new StatusMonitor({
@@ -189,10 +222,21 @@ describe("StatusMonitor", () => {
       onWorkerRemoved: () => undefined,
       config: testConfig
     });
-    await monitor.pollOnce();
 
-    expect(maxInFlight).toBeLessThanOrEqual(2);
-    expect(maxInFlight).toBeGreaterThanOrEqual(1);
+    const poll = monitor.pollOnce();
+
+    // Admit workers one at a time. Because the semaphore holds the concurrency
+    // limit, each release lets at most one more evaluation park, so max-in-flight
+    // is decided by the limiter, not by how fast timers fire under load.
+    for (let processed = 0; processed < workerCount; processed += 1) {
+      await gate.waitForArrival();
+      gate.releaseOne();
+    }
+
+    await poll;
+
+    expect(windowExists).toHaveBeenCalledTimes(workerCount);
+    expect(maxInFlight).toBe(2);
   });
 
   it("records a status transition, notifies, and captures poll timing metrics", async () => {
