@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ResolvedConfig } from "../../shared/types";
+import { buildSpawnOptions } from "../app/spawnOptions";
+import { useFilterableList } from "../hooks/useFilterableList";
+import { FilterableOptionList } from "./FilterableOptionList";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -18,6 +21,8 @@ interface PaletteItem {
   run: () => void;
 }
 
+const getItemSearchText = (item: PaletteItem): string => item.searchText;
+
 export function CommandPalette({
   open,
   config,
@@ -26,86 +31,65 @@ export function CommandPalette({
   onOpenBatchSpawn,
   onClose
 }: CommandPaletteProps): JSX.Element | null {
-  const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const items = useMemo<PaletteItem[]>(() => {
-    const nextItems: PaletteItem[] = [];
-
-    nextItems.push({
-      id: "meta-batch-spawn",
-      label: "Batch Spawn...",
-      subLabel: "Spawn many agents from a name list",
-      searchText: "batch spawn names list multiple",
-      run: () => onOpenBatchSpawn()
-    });
-
-    config.shortcuts.forEach((shortcut, index) => {
-      nextItems.push({
-        id: `shortcut-${index}`,
-        label: `Spawn ${shortcut.label}`,
-        subLabel: `${shortcut.project} · ${shortcut.runtime}`,
-        searchText: `${shortcut.label} ${shortcut.project} ${shortcut.runtime}`.toLowerCase(),
-        run: () => onSpawnShortcut(index)
-      });
-    });
-
-    for (const [projectId, project] of Object.entries(config.projects)) {
-      for (const [runtimeId, runtime] of Object.entries(config.runtimes)) {
-        nextItems.push({
-          id: `combo-${projectId}-${runtimeId}`,
-          label: `${projectId} + ${runtime.label}`,
-          subLabel: `${project.shortName} · ${runtime.command.join(" ")}`,
-          searchText: `${projectId} ${project.shortName} ${runtimeId} ${runtime.label}`.toLowerCase(),
-          run: () => onSpawnProjectRuntime(projectId, runtimeId)
-        });
+    const nextItems: PaletteItem[] = [
+      {
+        id: "meta-batch-spawn",
+        label: "Batch Spawn...",
+        subLabel: "Spawn many agents from a name list",
+        searchText: "batch spawn names list multiple",
+        run: () => onOpenBatchSpawn()
       }
+    ];
+
+    for (const option of buildSpawnOptions(config)) {
+      nextItems.push({
+        id: option.id,
+        label: option.kind === "shortcut" ? `Spawn ${option.label}` : option.label,
+        subLabel: option.subLabel,
+        searchText: option.searchText,
+        run: () =>
+          "shortcutIndex" in option.input
+            ? onSpawnShortcut(option.input.shortcutIndex)
+            : onSpawnProjectRuntime(option.input.projectId, option.input.runtimeId)
+      });
     }
 
     return nextItems;
   }, [config, onOpenBatchSpawn, onSpawnProjectRuntime, onSpawnShortcut]);
 
-  const filteredItems = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) {
-      return items;
-    }
+  const { query, setQuery, filtered, activeIndex, setActiveIndex, reset, handleKeyDown } = useFilterableList(
+    items,
+    getItemSearchText
+  );
 
-    const pieces = term.split(/\s+/g).filter(Boolean);
-    return items.filter((item) => pieces.every((piece) => item.searchText.includes(piece)));
-  }, [items, query]);
+  const runSelection = useCallback(
+    (item: PaletteItem | undefined) => {
+      if (!item) {
+        return;
+      }
+      item.run();
+      onClose();
+    },
+    [onClose]
+  );
 
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    setQuery("");
-    setActiveIndex(0);
+    reset();
     queueMicrotask(() => {
       inputRef.current?.focus();
     });
-  }, [open]);
-
-  useEffect(() => {
-    if (activeIndex >= filteredItems.length) {
-      setActiveIndex(0);
-    }
-  }, [activeIndex, filteredItems.length]);
+  }, [open, reset]);
 
   if (!open) {
     return null;
   }
-
-  const runSelection = (index: number) => {
-    const item = filteredItems[index];
-    if (!item) {
-      return;
-    }
-    item.run();
-    onClose();
-  };
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -116,41 +100,18 @@ export function CommandPalette({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Type project/runtime or shortcut"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              onClose();
-            } else if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setActiveIndex((current) => Math.min(filteredItems.length - 1, current + 1));
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setActiveIndex((current) => Math.max(0, current - 1));
-            } else if (event.key === "Enter") {
-              event.preventDefault();
-              runSelection(activeIndex);
-            }
-          }}
+          onKeyDown={(event) => handleKeyDown(event, { onEnter: runSelection, onEscape: onClose })}
         />
 
-        <div className="palette-list">
-          {filteredItems.length === 0 ? <div className="palette-empty">No matching command</div> : null}
-
-          {filteredItems.map((item, index) => {
-            const active = index === activeIndex;
-            return (
-              <button
-                key={item.id}
-                className={`palette-item ${active ? "active" : ""}`}
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => runSelection(index)}
-              >
-                <span>{item.label}</span>
-                <small>{item.subLabel}</small>
-              </button>
-            );
-          })}
-        </div>
+        <FilterableOptionList
+          className="palette-list"
+          itemClassName="palette-item"
+          emptyText="No matching command"
+          options={filtered}
+          activeIndex={activeIndex}
+          onHoverIndex={setActiveIndex}
+          onSelectIndex={(index) => runSelection(filtered[index])}
+        />
       </div>
     </div>
   );

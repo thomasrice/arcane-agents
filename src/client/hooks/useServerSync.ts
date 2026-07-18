@@ -1,38 +1,33 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import type { ResolvedConfig, Worker, WsServerEvent } from "../../shared/types";
+import { useEffect } from "react";
+import type { WsServerEvent } from "../../shared/types";
 import { fetchConfig, fetchWorkers } from "../api";
-import { upsertWorker } from "../app/utils";
-
-interface UseArcaneAgentsDataResult {
-  config: ResolvedConfig | null;
-  workers: Worker[];
-  setWorkers: Dispatch<SetStateAction<Worker[]>>;
-  workersHydrated: boolean;
-}
+import { useAppStore } from "../state/appStore";
 
 const workerReconcileIntervalMs = 30_000;
 
-export function useArcaneAgentsData(
-  setErrorText: Dispatch<SetStateAction<string | undefined>>
-): UseArcaneAgentsDataResult {
-  const [config, setConfig] = useState<ResolvedConfig | null>(null);
-  const [workers, setWorkers] = useState<Worker[]>([]);
-  const [workersHydrated, setWorkersHydrated] = useState(false);
-
+// Owns the connection to the server: an initial REST hydration, a realtime
+// WebSocket with automatic reconnect, and a polling fallback that also fires on
+// tab focus / visibility. Writes everything into the app store; components read
+// via selectors. Reconnect/poll semantics are preserved from the original
+// useArcaneAgentsData exactly.
+export function useServerSync(): void {
   useEffect(() => {
+    const { setConfig, setWorkers, setErrorText } = useAppStore.getState();
+
     void Promise.all([fetchConfig(), fetchWorkers()])
       .then(([nextConfig, nextWorkers]) => {
         setConfig(nextConfig);
         setWorkers(nextWorkers);
-        setWorkersHydrated(true);
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : "Failed to load Arcane Agents data";
         setErrorText(message);
       });
-  }, [setErrorText]);
+  }, []);
 
   useEffect(() => {
+    const { setConfig, setWorkers, upsertWorker, removeWorker, setErrorText } = useAppStore.getState();
+
     let socket: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let reconcileTimer: ReturnType<typeof setInterval> | null = null;
@@ -52,7 +47,6 @@ export function useArcaneAgentsData(
         }
 
         setWorkers(nextWorkers);
-        setWorkersHydrated(true);
       } catch {
       } finally {
         reconcileInFlight = false;
@@ -90,17 +84,16 @@ export function useArcaneAgentsData(
         if (payload.type === "init") {
           setConfig(payload.config);
           setWorkers(payload.workers);
-          setWorkersHydrated(true);
           return;
         }
 
         if (payload.type === "worker-created" || payload.type === "worker-updated") {
-          setWorkers((currentWorkers) => upsertWorker(currentWorkers, payload.worker));
+          upsertWorker(payload.worker);
           return;
         }
 
         if (payload.type === "worker-removed") {
-          setWorkers((currentWorkers) => currentWorkers.filter((worker) => worker.id !== payload.workerId));
+          removeWorker(payload.workerId);
         }
       });
 
@@ -135,12 +128,5 @@ export function useArcaneAgentsData(
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       socket?.close();
     };
-  }, [setErrorText]);
-
-  return {
-    config,
-    workers,
-    setWorkers,
-    workersHydrated
-  };
+  }, []);
 }

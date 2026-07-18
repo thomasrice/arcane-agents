@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ResolvedConfig, WorkerSpawnInput } from "../../shared/types";
-import type { BatchSpawnItem } from "../hooks/workerActions/useWorkerMutationActions";
+import type { ResolvedConfig } from "../../shared/types";
+import type { BatchSpawnItem } from "../app/types";
+import { buildSpawnOptions, type SpawnOption } from "../app/spawnOptions";
+import { useFilterableList } from "../hooks/useFilterableList";
 
 interface BatchSpawnDialogProps {
   open: boolean;
@@ -9,61 +11,27 @@ interface BatchSpawnDialogProps {
   onBatchSpawn: (items: BatchSpawnItem[], onProgress: (done: number, total: number) => void) => Promise<void>;
 }
 
-interface ConfigOption {
-  id: string;
-  label: string;
-  subLabel: string;
-  searchText: string;
-  toInput: () => Omit<WorkerSpawnInput, "displayName" | "spawnNearWorkerIds">;
-}
+const getOptionSearchText = (option: SpawnOption): string => option.searchText;
 
 export function BatchSpawnDialog({ open, config, onClose, onBatchSpawn }: BatchSpawnDialogProps): JSX.Element | null {
   const [step, setStep] = useState<"config" | "names">("config");
   const [selectedConfigId, setSelectedConfigId] = useState<string | undefined>(undefined);
-  const [configQuery, setConfigQuery] = useState("");
   const [namesText, setNamesText] = useState("");
   const [spawning, setSpawning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | undefined>(undefined);
   const configInputRef = useRef<HTMLInputElement | null>(null);
   const namesTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const configOptions = useMemo<ConfigOption[]>(() => {
-    const options: ConfigOption[] = [];
-
-    config.shortcuts.forEach((shortcut, index) => {
-      options.push({
-        id: `shortcut-${index}`,
-        label: shortcut.label,
-        subLabel: `${shortcut.project} \u00b7 ${shortcut.runtime}`,
-        searchText: `${shortcut.label} ${shortcut.project} ${shortcut.runtime}`.toLowerCase(),
-        toInput: () => ({ shortcutIndex: index })
-      });
-    });
-
-    for (const [projectId, project] of Object.entries(config.projects)) {
-      for (const [runtimeId, runtime] of Object.entries(config.runtimes)) {
-        options.push({
-          id: `combo-${projectId}-${runtimeId}`,
-          label: `${projectId} + ${runtime.label}`,
-          subLabel: `${project.shortName} \u00b7 ${runtime.command.join(" ")}`,
-          searchText: `${projectId} ${project.shortName} ${runtimeId} ${runtime.label}`.toLowerCase(),
-          toInput: () => ({ projectId, runtimeId })
-        });
-      }
-    }
-
-    return options;
-  }, [config]);
-
-  const filteredOptions = useMemo(() => {
-    const term = configQuery.trim().toLowerCase();
-    if (!term) return configOptions;
-    const pieces = term.split(/\s+/g).filter(Boolean);
-    return configOptions.filter((opt) => pieces.every((p) => opt.searchText.includes(p)));
-  }, [configOptions, configQuery]);
+  const configOptions = useMemo<SpawnOption[]>(() => buildSpawnOptions(config), [config]);
+  const {
+    query: configQuery,
+    setQuery: setConfigQuery,
+    filtered: filteredOptions,
+    reset: resetConfigFilter
+  } = useFilterableList(configOptions, getOptionSearchText);
 
   const selectedConfig = useMemo(
-    () => configOptions.find((opt) => opt.id === selectedConfigId),
+    () => configOptions.find((option) => option.id === selectedConfigId),
     [configOptions, selectedConfigId]
   );
 
@@ -80,12 +48,12 @@ export function BatchSpawnDialog({ open, config, onClose, onBatchSpawn }: BatchS
     if (!open) return;
     setStep("config");
     setSelectedConfigId(undefined);
-    setConfigQuery("");
+    resetConfigFilter();
     setNamesText("");
     setSpawning(false);
     setProgress(undefined);
     queueMicrotask(() => configInputRef.current?.focus());
-  }, [open]);
+  }, [open, resetConfigFilter]);
 
   useEffect(() => {
     if (step === "names") {
@@ -95,7 +63,7 @@ export function BatchSpawnDialog({ open, config, onClose, onBatchSpawn }: BatchS
 
   if (!open) return null;
 
-  const handleSelectConfig = (option: ConfigOption) => {
+  const handleSelectConfig = (option: SpawnOption) => {
     setSelectedConfigId(option.id);
     setStep("names");
   };
@@ -104,7 +72,7 @@ export function BatchSpawnDialog({ open, config, onClose, onBatchSpawn }: BatchS
     if (!selectedConfig || parsedNames.length === 0 || spawning) return;
 
     const items: BatchSpawnItem[] = parsedNames.map((name) => ({
-      input: selectedConfig.toInput() as WorkerSpawnInput,
+      input: selectedConfig.input,
       displayName: name
     }));
 

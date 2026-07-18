@@ -1,249 +1,348 @@
-import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { useCallback } from "react";
 import type { Worker, WorkerSpawnInput } from "../../shared/types";
-import type { RosterEntry } from "../app/types";
-import { useWorkerActionUiState } from "./workerActions/useWorkerActionUiState";
-import { useWorkerKillActions } from "./workerActions/useWorkerKillActions";
-import { useWorkerMutationActions, type BatchSpawnItem } from "./workerActions/useWorkerMutationActions";
-import { useWorkerRallyActions } from "./workerActions/useWorkerRallyActions";
-import { useWorkerRestartActions } from "./workerActions/useWorkerRestartActions";
+import type { BatchSpawnItem } from "../app/types";
+import {
+  openWorkerInTerminal,
+  renameWorker,
+  restartWorker,
+  setWorkerMovementMode,
+  spawnWorker,
+  stopWorker,
+  updateWorkerPosition
+} from "../api";
+import { useAppStore } from "../state/appStore";
+import { selectRosterEntries, selectSelectedWorkers, selectTerminalWorker } from "../state/selectors";
 
 interface UseWorkerActionsParams {
-  workers: Worker[];
-  activeWorkers: Worker[];
-  setWorkers: Dispatch<SetStateAction<Worker[]>>;
-  selectedWorkers: Worker[];
-  selectedWorkerIds: string[];
-  setSelectedWorkerIds: Dispatch<SetStateAction<string[]>>;
-  focusedSelectedWorkerId: string | undefined;
-  terminalWorkerId: string | undefined;
-  rosterEntries: RosterEntry[];
-  rosterActiveIndex: number;
-  setRosterActiveIndex: Dispatch<SetStateAction<number>>;
-  applySelection: (workerIds: string[], options?: { center?: boolean; focusTerminal?: boolean }) => void;
-  setSpawnDialogOpen: Dispatch<SetStateAction<boolean>>;
-  setPaletteOpen: Dispatch<SetStateAction<boolean>>;
-  renameModalOpen: boolean;
-  setRenameModalOpen: Dispatch<SetStateAction<boolean>>;
-  renameTargetWorkerIds: string[];
-  setRenameTargetWorkerIds: Dispatch<SetStateAction<string[]>>;
-  setRenameDraft: Dispatch<SetStateAction<string>>;
-  restartConfirmWorkerIds: string[];
-  setRestartConfirmWorkerIds: Dispatch<SetStateAction<string[]>>;
-  killConfirmWorkerIds: string[];
-  setKillConfirmWorkerIds: Dispatch<SetStateAction<string[]>>;
-  rallyCommandDraft: string;
-  setRallyCommandDraft: Dispatch<SetStateAction<string>>;
-  rallyCommandSending: boolean;
-  setRallyCommandSending: Dispatch<SetStateAction<boolean>>;
-  rallyCommandResultText: string | undefined;
-  setRallyCommandResultText: Dispatch<SetStateAction<string | undefined>>;
-  setRespawningWorkerIds: Dispatch<SetStateAction<string[]>>;
   queueWorkerFade: (worker: Worker) => void;
   removeWorkerFade: (workerId: string) => void;
   playArrivalVoiceLine: (worker: Worker) => void;
-  setErrorText: Dispatch<SetStateAction<string | undefined>>;
 }
 
-interface UseWorkerActionsResult {
-  renameTargetWorkers: Worker[];
-  restartConfirmWorkers: Worker[];
-  killConfirmWorkers: Worker[];
+export interface UseWorkerActionsResult {
   runSpawn: (input: WorkerSpawnInput) => Promise<void>;
   runBatchSpawn: (items: BatchSpawnItem[], onProgress: (done: number, total: number) => void) => Promise<void>;
-  closeRenameModal: () => void;
-  closeRestartConfirm: () => void;
-  closeKillConfirm: () => void;
-  openRenameForWorkers: (workersToRename: Worker[]) => void;
   submitRename: (draft: string) => Promise<void>;
-  onRestartSelected: () => void;
-  onRestartRosterActive: () => void;
-  confirmRestartSelection: () => void;
-  onKillSelected: () => void;
-  onKillRosterActive: () => void;
-  confirmKillSelection: () => void;
+  onRenameSelected: () => void;
   onToggleMovementModeSelected: () => Promise<void>;
   onActivateRosterIndex: (index: number) => void;
   onOpenSelectedInTerminal: () => Promise<void>;
-  onSendRallyCommand: () => Promise<void>;
-  onRallyCommandDraftChange: (value: string) => void;
-  onRenameSelected: () => void;
   onPositionCommit: (workerId: string, position: { x: number; y: number }) => void;
+  onKillSelected: () => void;
+  onKillRosterActive: () => void;
+  onRestartSelected: () => void;
+  onRestartRosterActive: () => void;
+  confirmPending: () => void;
 }
 
+// Owns the spawn / rename / movement / kill / restart / rally flows. Unlike the
+// former 34-parameter conduit, every piece of shared state lives in the store —
+// the only external inputs are the fade controller and arrival voice line, which
+// are owned by sibling hooks outside the store.
 export function useWorkerActions({
-  workers,
-  activeWorkers,
-  setWorkers,
-  selectedWorkers,
-  selectedWorkerIds,
-  setSelectedWorkerIds,
-  focusedSelectedWorkerId,
-  terminalWorkerId,
-  rosterEntries,
-  rosterActiveIndex,
-  setRosterActiveIndex,
-  applySelection,
-  setSpawnDialogOpen,
-  setPaletteOpen,
-  renameModalOpen,
-  setRenameModalOpen,
-  renameTargetWorkerIds,
-  setRenameTargetWorkerIds,
-  setRenameDraft,
-  restartConfirmWorkerIds,
-  setRestartConfirmWorkerIds,
-  killConfirmWorkerIds,
-  setKillConfirmWorkerIds,
-  rallyCommandDraft,
-  setRallyCommandDraft,
-  rallyCommandSending,
-  setRallyCommandSending,
-  rallyCommandResultText,
-  setRallyCommandResultText,
-  setRespawningWorkerIds,
   queueWorkerFade,
   removeWorkerFade,
-  playArrivalVoiceLine,
-  setErrorText
+  playArrivalVoiceLine
 }: UseWorkerActionsParams): UseWorkerActionsResult {
-  const showError = useCallback(
-    (error: unknown) => {
-      setErrorText(error instanceof Error ? error.message : "Unknown request failure");
+  const showError = useCallback((error: unknown) => {
+    useAppStore.getState().setErrorText(error instanceof Error ? error.message : "Unknown request failure");
+  }, []);
+
+  const runSpawn = useCallback(
+    async (input: WorkerSpawnInput) => {
+      try {
+        const selectedWorkerIds = selectSelectedWorkers(useAppStore.getState()).map((worker) => worker.id);
+        const spawnInput: WorkerSpawnInput =
+          "shortcutIndex" in input && selectedWorkerIds.length > 0
+            ? { ...input, spawnNearWorkerIds: selectedWorkerIds }
+            : input;
+
+        const worker = await spawnWorker(spawnInput);
+        const store = useAppStore.getState();
+        store.upsertWorker(worker);
+        store.applySelection([worker.id], { center: true });
+        store.setSpawnDialogOpen(false);
+        store.setPaletteOpen(false);
+      } catch (error) {
+        showError(error);
+      }
     },
-    [setErrorText]
+    [showError]
   );
 
-  const {
-    renameTargetWorkers,
-    restartConfirmWorkers,
-    killConfirmWorkers,
-    closeRenameModal,
-    closeRestartConfirm,
-    closeKillConfirm,
-    openRenameForWorkers
-  } =
-    useWorkerActionUiState({
-      workers,
-      activeWorkers,
-      renameModalOpen,
-      setRenameModalOpen,
-      renameTargetWorkerIds,
-      setRenameTargetWorkerIds,
-      restartConfirmWorkerIds,
-      setRestartConfirmWorkerIds,
-      killConfirmWorkerIds,
-      setKillConfirmWorkerIds,
-      setRenameDraft
-    });
+  const runBatchSpawn = useCallback(
+    async (items: BatchSpawnItem[], onProgress: (done: number, total: number) => void) => {
+      const initialSelectedIds = selectSelectedWorkers(useAppStore.getState()).map((worker) => worker.id);
+      const spawnedWorkerIds: string[] = [];
+      let lastWorkerId: string | undefined;
 
-  const { runSpawn, runBatchSpawn, submitRename, onToggleMovementModeSelected, onOpenSelectedInTerminal, onPositionCommit } =
-    useWorkerMutationActions({
-      setWorkers,
-      selectedWorkers,
-      terminalWorkerId,
-      applySelection,
-      setSpawnDialogOpen,
-      setPaletteOpen,
-      renameTargetWorkerIds,
-      closeRenameModal,
-      showError
-    });
+      for (let index = 0; index < items.length; index++) {
+        onProgress(index, items.length);
+        const item = items[index];
+        const spawnInput: WorkerSpawnInput = {
+          ...item.input,
+          displayName: item.displayName,
+          spawnNearWorkerIds: lastWorkerId ? [lastWorkerId] : initialSelectedIds.slice(0, 1)
+        };
 
-  const { onRestartSelected, onRestartRosterActive, confirmRestartSelection } = useWorkerRestartActions({
-    workers,
-    selectedWorkerIds,
-    rosterEntries,
-    rosterActiveIndex,
-    applySelection,
-    setRestartConfirmWorkerIds,
-    closeRestartConfirm,
-    restartConfirmWorkerIds,
-    setRespawningWorkerIds,
-    queueWorkerFade,
-    removeWorkerFade,
-    setWorkers,
-    playArrivalVoiceLine,
-    showError
-  });
-
-  const { onKillSelected, onKillRosterActive, confirmKillSelection } = useWorkerKillActions({
-    workers,
-    selectedWorkerIds,
-    setSelectedWorkerIds,
-    rosterEntries,
-    rosterActiveIndex,
-    setKillConfirmWorkerIds,
-    closeKillConfirm,
-    killConfirmWorkerIds,
-    queueWorkerFade,
-    removeWorkerFade,
-    setWorkers,
-    showError
-  });
-
-  const { onSendRallyCommand, onRallyCommandDraftChange } = useWorkerRallyActions({
-    selectedWorkers,
-    rallyCommandDraft,
-    setRallyCommandDraft,
-    rallyCommandSending,
-    setRallyCommandSending,
-    rallyCommandResultText,
-    setRallyCommandResultText,
-    showError
-  });
-
-  const onActivateRosterIndex = useCallback(
-    (index: number) => {
-      const entry = rosterEntries[index];
-      if (!entry) {
-        return;
+        try {
+          const worker = await spawnWorker(spawnInput);
+          useAppStore.getState().upsertWorker(worker);
+          spawnedWorkerIds.push(worker.id);
+          lastWorkerId = worker.id;
+        } catch (error) {
+          showError(error);
+          break;
+        }
       }
 
-      setRosterActiveIndex(index);
+      onProgress(spawnedWorkerIds.length, items.length);
 
-      if (entry.kind === "worker") {
-        applySelection([entry.worker.id], { center: true });
-        return;
+      if (spawnedWorkerIds.length > 0) {
+        useAppStore.getState().applySelection(spawnedWorkerIds, { center: true });
       }
-
-      void runSpawn({ shortcutIndex: entry.shortcutIndex });
     },
-    [applySelection, rosterEntries, runSpawn, setRosterActiveIndex]
+    [showError]
+  );
+
+  const submitRename = useCallback(
+    async (draft: string) => {
+      const store = useAppStore.getState();
+      const targetWorkerIds = [...store.renameTargetWorkerIds];
+      if (targetWorkerIds.length === 0) {
+        store.closeRename();
+        return;
+      }
+
+      try {
+        if (targetWorkerIds.length === 1) {
+          const worker = await renameWorker(targetWorkerIds[0], draft);
+          useAppStore.getState().upsertWorker(worker);
+        } else {
+          const baseName = draft.trim();
+          const renamedWorkers = await Promise.all(
+            targetWorkerIds.map((workerId, index) =>
+              renameWorker(workerId, baseName.length > 0 ? `${baseName} ${index + 1}` : "")
+            )
+          );
+          const state = useAppStore.getState();
+          for (const worker of renamedWorkers) {
+            state.upsertWorker(worker);
+          }
+        }
+
+        useAppStore.getState().closeRename();
+      } catch (error) {
+        showError(error);
+      }
+    },
+    [showError]
   );
 
   const onRenameSelected = useCallback(() => {
+    const state = useAppStore.getState();
+    const selectedWorkers = selectSelectedWorkers(state);
     if (selectedWorkers.length === 0) {
       return;
     }
 
     const focusedGroupWorker =
-      selectedWorkers.length > 1 ? selectedWorkers.find((worker) => worker.id === focusedSelectedWorkerId) : undefined;
-    openRenameForWorkers(focusedGroupWorker ? [focusedGroupWorker] : selectedWorkers);
-  }, [focusedSelectedWorkerId, openRenameForWorkers, selectedWorkers]);
+      selectedWorkers.length > 1
+        ? selectedWorkers.find((worker) => worker.id === state.focusedSelectedWorkerId)
+        : undefined;
+    state.openRenameForWorkers(focusedGroupWorker ? [focusedGroupWorker] : selectedWorkers);
+  }, []);
+
+  const onToggleMovementModeSelected = useCallback(async () => {
+    const selectedWorkers = selectSelectedWorkers(useAppStore.getState());
+    if (selectedWorkers.length === 0) {
+      return;
+    }
+
+    const nextMode = selectedWorkers.every((worker) => worker.movementMode === "hold") ? "wander" : "hold";
+
+    try {
+      const updatedWorkers = await Promise.all(
+        selectedWorkers.map((worker) => setWorkerMovementMode(worker.id, nextMode))
+      );
+      const state = useAppStore.getState();
+      for (const worker of updatedWorkers) {
+        state.upsertWorker(worker);
+      }
+    } catch (error) {
+      showError(error);
+    }
+  }, [showError]);
+
+  const onOpenSelectedInTerminal = useCallback(async () => {
+    const terminalWorker = selectTerminalWorker(useAppStore.getState());
+    if (!terminalWorker) {
+      return;
+    }
+
+    try {
+      await openWorkerInTerminal(terminalWorker.id);
+    } catch (error) {
+      showError(error);
+    }
+  }, [showError]);
+
+  const onPositionCommit = useCallback(
+    (workerId: string, position: { x: number; y: number }) => {
+      void updateWorkerPosition(workerId, position.x, position.y)
+        .then((worker) => {
+          useAppStore.getState().upsertWorker(worker);
+        })
+        .catch((error) => {
+          showError(error);
+        });
+    },
+    [showError]
+  );
+
+  const onKillWorker = useCallback(
+    async (workerId: string) => {
+      const worker = useAppStore.getState().workers.find((item) => item.id === workerId);
+      if (!worker) {
+        return;
+      }
+
+      queueWorkerFade(worker);
+
+      try {
+        const result = await stopWorker(workerId);
+        const state = useAppStore.getState();
+        state.removeWorker(result.workerId);
+        state.setSelectedWorkerIds((current) => current.filter((currentWorkerId) => currentWorkerId !== result.workerId));
+      } catch (error) {
+        removeWorkerFade(workerId);
+        showError(error);
+      }
+    },
+    [queueWorkerFade, removeWorkerFade, showError]
+  );
+
+  const onRestartWorker = useCallback(
+    async (workerId: string) => {
+      const store = useAppStore.getState();
+      const worker = store.workers.find((item) => item.id === workerId);
+      if (!worker) {
+        return;
+      }
+
+      queueWorkerFade(worker);
+      store.setRespawningWorkerIds((current) => (current.includes(workerId) ? current : [...current, workerId]));
+
+      try {
+        const updatedWorker = await restartWorker(workerId);
+        const respawnedWorker: Worker = {
+          ...updatedWorker,
+          createdAt: new Date().toISOString()
+        };
+        const state = useAppStore.getState();
+        state.upsertWorker(respawnedWorker);
+        state.setRespawningWorkerIds((current) => current.filter((currentWorkerId) => currentWorkerId !== workerId));
+        state.applySelection([respawnedWorker.id], { center: true });
+        playArrivalVoiceLine(respawnedWorker);
+      } catch (error) {
+        removeWorkerFade(workerId);
+        useAppStore
+          .getState()
+          .setRespawningWorkerIds((current) => current.filter((currentWorkerId) => currentWorkerId !== workerId));
+        showError(error);
+      }
+    },
+    [playArrivalVoiceLine, queueWorkerFade, removeWorkerFade, showError]
+  );
+
+  const onActivateRosterIndex = useCallback(
+    (index: number) => {
+      const state = useAppStore.getState();
+      const entry = selectRosterEntries(state)[index];
+      if (!entry) {
+        return;
+      }
+
+      state.setRosterActiveIndex(index);
+
+      if (entry.kind === "worker") {
+        state.applySelection([entry.worker.id], { center: true });
+        return;
+      }
+
+      void runSpawn({ shortcutIndex: entry.shortcutIndex });
+    },
+    [runSpawn]
+  );
+
+  const onKillSelected = useCallback(() => {
+    const state = useAppStore.getState();
+    if (state.selectedWorkerIds.length === 0) {
+      return;
+    }
+
+    state.requestConfirm("kill", state.selectedWorkerIds);
+  }, []);
+
+  const onKillRosterActive = useCallback(() => {
+    const state = useAppStore.getState();
+    const entry = selectRosterEntries(state)[state.rosterActiveIndex];
+    if (!entry || entry.kind !== "worker") {
+      return;
+    }
+
+    state.requestConfirm("kill", [entry.worker.id]);
+  }, []);
+
+  const onRestartSelected = useCallback(() => {
+    const state = useAppStore.getState();
+    if (state.selectedWorkerIds.length === 0) {
+      return;
+    }
+
+    state.requestConfirm("restart", state.selectedWorkerIds);
+  }, []);
+
+  const onRestartRosterActive = useCallback(() => {
+    const state = useAppStore.getState();
+    const entry = selectRosterEntries(state)[state.rosterActiveIndex];
+    if (!entry || entry.kind !== "worker") {
+      return;
+    }
+
+    state.requestConfirm("restart", [entry.worker.id]);
+  }, []);
+
+  // Single confirm handler for both kill and restart: read the pending atom,
+  // close it, then dispatch the per-worker action for its kind.
+  const confirmPending = useCallback(() => {
+    const state = useAppStore.getState();
+    const pending = state.pendingConfirm;
+    if (!pending || pending.workerIds.length === 0) {
+      return;
+    }
+
+    const workerIds = [...pending.workerIds];
+    const performOne = pending.kind === "kill" ? onKillWorker : onRestartWorker;
+    state.clearConfirm();
+    for (const workerId of workerIds) {
+      void performOne(workerId);
+    }
+  }, [onKillWorker, onRestartWorker]);
 
   return {
-    renameTargetWorkers,
-    restartConfirmWorkers,
-    killConfirmWorkers,
     runSpawn,
     runBatchSpawn,
-    closeRenameModal,
-    closeRestartConfirm,
-    closeKillConfirm,
-    openRenameForWorkers,
     submitRename,
-    onRestartSelected,
-    onRestartRosterActive,
-    confirmRestartSelection,
-    onKillSelected,
-    onKillRosterActive,
-    confirmKillSelection,
+    onRenameSelected,
     onToggleMovementModeSelected,
     onActivateRosterIndex,
     onOpenSelectedInTerminal,
-    onSendRallyCommand,
-    onRallyCommandDraftChange,
-    onRenameSelected,
-    onPositionCommit
+    onPositionCommit,
+    onKillSelected,
+    onKillRosterActive,
+    onRestartSelected,
+    onRestartRosterActive,
+    confirmPending
   };
 }

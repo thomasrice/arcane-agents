@@ -593,6 +593,25 @@ body.split-pane-dragging {
 
 .shortcuts-dialog {
   width: min(720px, calc(100vw - 34px));
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+}
+
+.shortcut-section {
+  margin-top: 14px;
+}
+
+.shortcut-section:first-of-type {
+  margin-top: 8px;
+}
+
+.shortcut-section-label {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(214, 229, 188, 0.62);
 }
 
 .shortcut-grid {

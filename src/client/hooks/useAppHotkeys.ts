@@ -1,28 +1,32 @@
 import { useEffect, useRef } from "react";
-import type { AppHotkeyContext } from "../hotkeys/hotkeyContext";
-import { handleActionHotkeys, handleNavigationHotkeys, handleSystemHotkeys } from "../hotkeys/hotkeyHandlers";
+import { isTerminalTarget } from "../app/utils";
+import type { AppHotkeyDeps } from "../hotkeys/hotkeyContext";
+import { runHotkeyRegistry, type HotkeyContext } from "../hotkeys/registry";
+import { useAppStore } from "../state/appStore";
+import {
+  selectActiveWorkers,
+  selectFirstSummonEntryIndex,
+  selectInSelectedGroupView,
+  selectRosterEntries,
+  selectSelectedWorkerId,
+  selectSelectedWorkers
+} from "../state/selectors";
 
-export function useAppHotkeys(context: AppHotkeyContext): void {
-  const contextRef = useRef(context);
-  contextRef.current = context;
+// Single window keydown listener. On each key it snapshots the store (state + store
+// actions) and merges App's injected callbacks into the registry context, then walks
+// the registry. Reading the store live at event time removes the mirror-ref the old
+// context needed.
+export function useAppHotkeys(deps: AppHotkeyDeps): void {
+  const depsRef = useRef(deps);
+  depsRef.current = deps;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const current = contextRef.current;
-
-      if (shouldBypassHotkeyRoutingForTerminalInput(event, current)) {
+      const context = buildHotkeyContext(depsRef.current);
+      if (shouldBypassHotkeyRoutingForTerminalInput(event, context)) {
         return;
       }
-
-      if (handleSystemHotkeys(event, current)) {
-        return;
-      }
-
-      if (handleNavigationHotkeys(event, current)) {
-        return;
-      }
-
-      handleActionHotkeys(event, current);
+      runHotkeyRegistry(event, context);
     };
 
     window.addEventListener("keydown", onKeyDown, true);
@@ -30,20 +34,64 @@ export function useAppHotkeys(context: AppHotkeyContext): void {
   }, []);
 }
 
-function shouldBypassHotkeyRoutingForTerminalInput(event: KeyboardEvent, context: AppHotkeyContext): boolean {
-  if (!context.isTerminalTarget(event.target)) {
+function buildHotkeyContext(deps: AppHotkeyDeps): HotkeyContext {
+  const state = useAppStore.getState();
+  return {
+    activeWorkers: selectActiveWorkers(state),
+    selectedWorkerId: selectSelectedWorkerId(state),
+    selectedWorkerIds: state.selectedWorkerIds,
+    selectedWorkers: selectSelectedWorkers(state),
+    focusedSelectedWorkerId: state.focusedSelectedWorkerId,
+    inSelectedGroupView: selectInSelectedGroupView(state),
+    rosterEntries: selectRosterEntries(state),
+    rosterActiveIndex: state.rosterActiveIndex,
+    selectedGroupActiveIndex: state.selectedGroupActiveIndex,
+    firstSummonEntryIndex: selectFirstSummonEntryIndex(state),
+    controlGroups: state.controlGroups,
+    pendingConfirm: state.pendingConfirm,
+    openDialog: state.openDialog,
+    shortcutHotkeyBindings: deps.shortcutHotkeyBindings,
+
+    applySelection: state.applySelection,
+    cycleSelection: state.cycleSelection,
+    cycleIdleSelection: state.cycleIdleSelection,
+    cycleSelectedGroupFocus: state.cycleSelectedGroupFocus,
+    setControlGroups: state.setControlGroups,
+    setRosterActiveIndex: state.setRosterActiveIndex,
+    setSelectedGroupActiveIndex: state.setSelectedGroupActiveIndex,
+    setFocusedSelectedWorkerId: state.setFocusedSelectedWorkerId,
+    requestTerminalFocus: state.requestTerminalFocus,
+    clearConfirm: state.clearConfirm,
+    closeRename: state.closeRename,
+    setBatchSpawnDialogOpen: state.setBatchSpawnDialogOpen,
+    setShortcutsOverlayOpen: state.setShortcutsOverlayOpen,
+    setPaletteOpen: state.setPaletteOpen,
+    setSpawnDialogOpen: state.setSpawnDialogOpen,
+    nudgeMapColumnRatio: state.nudgeMapColumnRatio,
+    resetMapColumnRatio: state.resetMapColumnRatio,
+
+    confirmPending: deps.confirmPending,
+    onKillSelected: deps.onKillSelected,
+    onKillRosterActive: deps.onKillRosterActive,
+    onRestartSelected: deps.onRestartSelected,
+    onRestartRosterActive: deps.onRestartRosterActive,
+    onRenameSelected: deps.onRenameSelected,
+    onToggleMovementModeSelected: deps.onToggleMovementModeSelected,
+    onActivateRosterIndex: deps.onActivateRosterIndex,
+    onScatterSelected: deps.onScatterSelected,
+    runSpawn: deps.runSpawn,
+    focusRallyCommandInput: deps.focusRallyCommandInput,
+    escapeTerminalFocus: deps.escapeTerminalFocus,
+    isTerminalEscapeShortcut: deps.isTerminalEscapeShortcut
+  };
+}
+
+function shouldBypassHotkeyRoutingForTerminalInput(event: KeyboardEvent, context: HotkeyContext): boolean {
+  if (!isTerminalTarget(event.target)) {
     return false;
   }
 
-  if (
-    context.restartConfirmWorkerIds.length > 0 ||
-    context.killConfirmWorkerIds.length > 0 ||
-    context.renameModalOpen ||
-    context.batchSpawnDialogOpen ||
-    context.shortcutsOverlayOpen ||
-    context.paletteOpen ||
-    context.spawnDialogOpen
-  ) {
+  if (context.pendingConfirm !== null || context.openDialog !== null) {
     return false;
   }
 

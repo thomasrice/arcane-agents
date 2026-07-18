@@ -1,9 +1,13 @@
+import { getHotkeyReference } from "../hotkeys/registry";
+
 interface ShortcutsDialogProps {
   open: boolean;
   leaveTerminalFocusHotkeys: string[];
   onClose: () => void;
 }
 
+// Rendered entirely from the hotkey registry (plus the configured leave-terminal chord),
+// so the on-screen reference can never drift from the actual bindings.
 export function ShortcutsDialog({
   open,
   leaveTerminalFocusHotkeys,
@@ -13,104 +17,27 @@ export function ShortcutsDialog({
     return null;
   }
 
+  const sections = getHotkeyReference({ leaveTerminalFocusHotkeys });
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="dialog shortcuts-dialog" onClick={(event) => event.stopPropagation()}>
         <div className="dialog-title">Keyboard Shortcuts</div>
-        <div className="shortcut-grid">
-          <div className="shortcut-row">
-            <kbd>1-0</kbd>
-            <span>Select control group (opens group page)</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>` / Shift+`</kbd>
-            <span>Cycle populated control groups forwards / backwards, opening the first member</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>Ctrl+1-0</kbd>
-            <span>Assign selected agent to group</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>Tab</kbd>
-            <span>Select next agent (or cycle selected group focus)</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>Shift+Tab</kbd>
-            <span>Select previous agent (or cycle selected group focus)</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>. / , / Shift+.</kbd>
-            <span>Cycle idle agents only</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>J / K</kbd>
-            <span>Move selection in roster and summon list</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>C</kbd>
-            <span>Focus Rally Command input (selected group view)</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>N</kbd>
-            <span>Jump to summon list</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>W/A/S/D</kbd>
-            <span>Move selected agent(s) smoothly (hold)</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>Shift+W/A/S/D</kbd>
-            <span>Pan map</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>+ / -</kbd>
-            <span>Zoom map in or out (outside terminal focus)</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>[ / ] / Shift+[ / Shift+] / =</kbd>
-            <span>Resize columns, jump split to edge, or reset split</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>Left-drag divider</kbd>
-            <span>Drag to resize map and terminal columns</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>Enter</kbd>
-            <span>Activate highlighted item or focus terminal</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>{leaveTerminalFocusHotkeys.join(" / ") || "Not configured"}</kbd>
-            <span>Leave terminal focus; in selected group view, return to group list</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>R</kbd>
-            <span>Rename selected agent</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>P</kbd>
-            <span>Open respawn confirm for selected or highlighted agent</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>M</kbd>
-            <span>Toggle mode on selected agent</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>K</kbd>
-            <span>Open kill confirm (Shift+K in selected group view)</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>Shift+K</kbd>
-            <span>Kill highlighted roster agent (then Enter)</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>?</kbd>
-            <span>Toggle this shortcut panel</span>
-          </div>
-          <div className="shortcut-row">
-            <kbd>Esc</kbd>
-            <span>Close overlay/dialog, then deselect</span>
-          </div>
-        </div>
+        {sections.map((section) =>
+          section.rows.length === 0 ? null : (
+            <div key={section.title} className="shortcut-section">
+              <div className="shortcut-section-label">{section.title}</div>
+              <div className="shortcut-grid">
+                {section.rows.map((row) => (
+                  <div key={`${row.keys}-${row.description}`} className="shortcut-row">
+                    <kbd>{row.keys}</kbd>
+                    <span>{row.description}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        )}
       </div>
     </div>
   );

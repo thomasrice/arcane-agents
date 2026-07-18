@@ -17,3 +17,5 @@ export const recenterVisibilityPaddingPx = 56;
 export const commandFeedbackDurationMs = 900;
 export const blockedFeedbackDurationMs = 750;
 export const workerPersonalSpacePx = 26;
+export const scatterBaseSpreadPx = 80;
+export const scatterPerWorkerSpreadPx = 20;

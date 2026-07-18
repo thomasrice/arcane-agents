@@ -120,6 +120,36 @@ export function planManualMove(input: ManualMoveInput): ManualMoveResult {
   };
 }
 
+export interface ScatterConfig {
+  /** Base spread radius in px before the per-worker term. */
+  baseSpreadPx: number;
+  /** Additional spread radius per worker in the group. */
+  perWorkerSpreadPx: number;
+  /** RNG in [0, 1); injectable so scatter is deterministic under test. */
+  rng: () => number;
+}
+
+/**
+ * Scatter a group around its own centroid: each worker gets a random target inside
+ * a box whose size grows with the group. Walkability is enforced later when the
+ * caller feeds each target through `planManualMove`, so targets here are raw world
+ * points. Positions in / targets out are 1:1 by index.
+ */
+export function planScatterTargets(positions: WorkerPosition[], config: ScatterConfig): WorkerPosition[] {
+  if (positions.length === 0) {
+    return [];
+  }
+
+  const centerX = positions.reduce((sum, position) => sum + position.x, 0) / positions.length;
+  const centerY = positions.reduce((sum, position) => sum + position.y, 0) / positions.length;
+  const spread = config.baseSpreadPx + positions.length * config.perWorkerSpreadPx;
+
+  return positions.map(() => ({
+    x: centerX + (config.rng() - 0.5) * spread * 2,
+    y: centerY + (config.rng() - 0.5) * spread * 2
+  }));
+}
+
 /** Lay out a target position per worker so a group fans out into a centred grid. */
 export function formationTargets(count: number, targetWorld: WorkerPosition, config: FormationConfig): WorkerPosition[] {
   if (count <= 1) {

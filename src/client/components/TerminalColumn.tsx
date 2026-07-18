@@ -1,8 +1,11 @@
-import { useMemo, type MutableRefObject } from "react";
+import { useMemo, type Ref } from "react";
 import type { Worker } from "../../shared/types";
+import { characterRotationUrl } from "../assetUrls";
 import type { RosterEntry } from "../app/types";
 import { formatShortcutSummonActivityText } from "../app/utils";
-import { TerminalPanel } from "./TerminalPanel";
+import { RallyCommandCard, type RallyCommandHandle } from "./RallyCommandCard";
+import { TerminalPanel, type TerminalPanelHandle } from "./TerminalPanel";
+import { WorkerRosterItem } from "./WorkerRosterItem";
 
 interface TerminalColumnProps {
   activeWorkers: Worker[];
@@ -12,19 +15,14 @@ interface TerminalColumnProps {
   selectedGroupActiveIndex: number;
   setSelectedGroupActiveIndex: (index: number) => void;
   setFocusedSelectedWorkerId: (workerId: string | undefined) => void;
-  rallyCommandInputRef: MutableRefObject<HTMLTextAreaElement | null>;
-  rallyCommandDraft: string;
-  rallyCommandSending: boolean;
-  rallyCommandResultText: string | undefined;
-  onRallyCommandDraftChange: (value: string) => void;
-  onSendRallyCommand: () => void | Promise<void>;
+  rallyCardRef: Ref<RallyCommandHandle>;
   rosterEntries: RosterEntry[];
   completionPendingWorkerIds: string[];
   rosterActiveIndex: number;
   setRosterActiveIndex: (index: number) => void;
   onActivateRosterIndex: (index: number) => void;
   onOpenSelectedInTerminal: () => void | Promise<void>;
-  terminalFocusToken: number | undefined;
+  terminalPanelRef: Ref<TerminalPanelHandle>;
 }
 
 export function TerminalColumn({
@@ -35,19 +33,14 @@ export function TerminalColumn({
   selectedGroupActiveIndex,
   setSelectedGroupActiveIndex,
   setFocusedSelectedWorkerId,
-  rallyCommandInputRef,
-  rallyCommandDraft,
-  rallyCommandSending,
-  rallyCommandResultText,
-  onRallyCommandDraftChange,
-  onSendRallyCommand,
+  rallyCardRef,
   rosterEntries,
   completionPendingWorkerIds,
   rosterActiveIndex,
   setRosterActiveIndex,
   onActivateRosterIndex,
   onOpenSelectedInTerminal,
-  terminalFocusToken
+  terminalPanelRef
 }: TerminalColumnProps): JSX.Element {
   const completionPendingWorkerIdSet = useMemo(
     () => new Set(completionPendingWorkerIds),
@@ -96,91 +89,27 @@ export function TerminalColumn({
         <div className="worker-roster">
           <div className="worker-roster-section-label">Selected Group</div>
           {selectedWorkers.map((worker, index) => (
-            <button
+            <WorkerRosterItem
               key={worker.id}
-              className={`worker-roster-item ${index === selectedGroupActiveIndex ? "active" : ""}`}
+              worker={worker}
+              active={index === selectedGroupActiveIndex}
+              completionPending={completionPendingWorkerIdSet.has(worker.id)}
               onMouseEnter={() => setSelectedGroupActiveIndex(index)}
               onClick={() => {
                 setSelectedGroupActiveIndex(index);
                 setFocusedSelectedWorkerId(worker.id);
               }}
-              type="button"
-            >
-              <div className="worker-roster-main">
-                <img
-                  className="worker-roster-avatar"
-                  src={`/api/assets/characters/${encodeURIComponent(worker.avatarType)}/rotations/south.png`}
-                  alt=""
-                  loading="lazy"
-                  aria-hidden="true"
-                />
-                <div className="worker-roster-text">
-                  <div className="worker-roster-name-row">
-                    <div className="worker-roster-name">{worker.displayName ?? worker.name}</div>
-                    {completionPendingWorkerIdSet.has(worker.id) ? (
-                      <span className="worker-complete-badge" title="Finished and waiting for review">
-                        READY
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="worker-roster-meta">
-                    {worker.projectId} · {worker.runtimeId} · {worker.status}
-                  </div>
-                  {worker.activityText ? <div className="worker-roster-activity">{worker.activityText}</div> : null}
-                </div>
-              </div>
-            </button>
+            />
           ))}
 
-          <form
-            className="rally-command-card"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void onSendRallyCommand();
-            }}
-          >
-            <div className="rally-command-header">
-              <div className="rally-command-title">Rally Command</div>
-              <div className="rally-command-count">{selectedWorkers.length} agents</div>
-            </div>
-            <textarea
-              ref={rallyCommandInputRef}
-              className="input rally-command-input"
-              value={rallyCommandDraft}
-              onChange={(event) => {
-                onRallyCommandDraftChange(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                const bare = !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
-                const ctrlOnly = (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey;
-                if (event.key === "Enter" && (bare || ctrlOnly)) {
-                  event.preventDefault();
-                  void onSendRallyCommand();
-                }
-              }}
-              placeholder="Type once, send to all selected agents (use $NAME for per-agent names)..."
-              disabled={rallyCommandSending}
-              rows={3}
-            />
-            <div className="rally-command-actions">
-              <div className="rally-command-hint">Enter sends, Shift+Enter adds a new line, $NAME inserts each agent's name</div>
-              <button
-                className="bar-btn"
-                type="submit"
-                disabled={rallyCommandSending || rallyCommandDraft.length === 0}
-              >
-                {rallyCommandSending ? "Sending..." : `Send to ${selectedWorkers.length}`}
-              </button>
-            </div>
-            {rallyCommandResultText ? <div className="rally-command-result">{rallyCommandResultText}</div> : null}
-          </form>
+          <RallyCommandCard ref={rallyCardRef} selectedWorkers={selectedWorkers} />
         </div>
       ) : terminalWorker ? (
         <TerminalPanel
+          ref={terminalPanelRef}
           workerId={terminalWorker.id}
           workerName={terminalWorker.displayName ?? terminalWorker.name}
           connectionKey={terminalWorker.tmuxRef.pane}
-          focusRequestKey={terminalFocusToken}
         />
       ) : (
         <div className="worker-roster">
@@ -194,36 +123,13 @@ export function TerminalColumn({
                 ) : null}
 
                 {entry.kind === "worker" ? (
-                  <button
-                    className={`worker-roster-item ${index === rosterActiveIndex ? "active" : ""}`}
+                  <WorkerRosterItem
+                    worker={entry.worker}
+                    active={index === rosterActiveIndex}
+                    completionPending={completionPendingWorkerIdSet.has(entry.worker.id)}
                     onMouseEnter={() => setRosterActiveIndex(index)}
                     onClick={() => onActivateRosterIndex(index)}
-                    type="button"
-                  >
-                    <div className="worker-roster-main">
-                      <img
-                        className="worker-roster-avatar"
-                        src={`/api/assets/characters/${encodeURIComponent(entry.worker.avatarType)}/rotations/south.png`}
-                        alt=""
-                        loading="lazy"
-                        aria-hidden="true"
-                      />
-                      <div className="worker-roster-text">
-                        <div className="worker-roster-name-row">
-                          <div className="worker-roster-name">{entry.worker.displayName ?? entry.worker.name}</div>
-                          {completionPendingWorkerIdSet.has(entry.worker.id) ? (
-                            <span className="worker-complete-badge" title="Finished and waiting for review">
-                              READY
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="worker-roster-meta">
-                          {entry.worker.projectId} · {entry.worker.runtimeId} · {entry.worker.status}
-                        </div>
-                        {entry.worker.activityText ? <div className="worker-roster-activity">{entry.worker.activityText}</div> : null}
-                      </div>
-                    </div>
-                  </button>
+                  />
                 ) : (
                   <button
                     className={`worker-roster-item worker-roster-item-summon ${index === rosterActiveIndex ? "active" : ""}`}
@@ -235,7 +141,7 @@ export function TerminalColumn({
                       {entry.shortcut.avatar ? (
                         <img
                           className="worker-roster-avatar worker-roster-summon-avatar"
-                          src={`/api/assets/characters/${encodeURIComponent(entry.shortcut.avatar)}/rotations/south.png`}
+                          src={characterRotationUrl(entry.shortcut.avatar, "south")}
                           alt=""
                           loading="lazy"
                           aria-hidden="true"

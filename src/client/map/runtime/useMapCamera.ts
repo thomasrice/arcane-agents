@@ -20,8 +20,6 @@ export interface CanvasSize {
 interface UseMapCameraInput {
   mapData: LoadedOutpostMap | undefined;
   workers: Worker[];
-  centerOnWorkerIds: string[] | undefined;
-  centerRequestKey: number | undefined;
   resolveWorkerPosition: (worker: Worker) => WorkerPosition;
 }
 
@@ -32,22 +30,18 @@ export interface MapCamera {
   setConstrainedViewport: Dispatch<SetStateAction<ViewportState>>;
   zoomViewportAroundPoint: (point: { x: number; y: number }, zoomDelta: number) => void;
   zoomViewportByFactor: (factor: number) => void;
+  /** Recentre the viewport on the given workers unless they are already fully visible. */
+  centerOnWorkers: (workerIds: string[]) => void;
 }
 
 /**
  * Owns the map camera: the container ResizeObserver-driven `canvasSize`, the
- * `viewport` (always clamped to keep the map contained), zooming, and the two
- * auto-centre behaviours (first fit-to-map, and recentring on a selection request).
+ * `viewport` (always clamped to keep the map contained), zooming, first fit-to-map,
+ * and the imperative `centerOnWorkers` recentre (called through the MapCanvas handle
+ * — the caller no longer threads a token/request-key prop).
  */
-export function useMapCamera({
-  mapData,
-  workers,
-  centerOnWorkerIds,
-  centerRequestKey,
-  resolveWorkerPosition
-}: UseMapCameraInput): MapCamera {
+export function useMapCamera({ mapData, workers, resolveWorkerPosition }: UseMapCameraInput): MapCamera {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const lastCenterRequestRef = useRef<number | undefined>(undefined);
 
   const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 1000, height: 640 });
   const [viewport, setViewport] = useState<ViewportState>({ scale: defaultZoomScale, offsetX: 70, offsetY: 25 });
@@ -120,43 +114,38 @@ export function useMapCamera({
     setHasCenteredOnMap(true);
   }, [canvasSize.height, canvasSize.width, hasCenteredOnMap, mapData, setConstrainedViewport]);
 
-  useEffect(() => {
-    if (!centerOnWorkerIds || centerOnWorkerIds.length === 0 || centerRequestKey === undefined) {
-      return;
-    }
-    if (lastCenterRequestRef.current === centerRequestKey) {
-      return;
-    }
-    const centeredWorkerIdSet = new Set(centerOnWorkerIds);
-    const positions = workers
-      .filter((worker) => centeredWorkerIdSet.has(worker.id))
-      .map((worker) => resolveWorkerPosition(worker));
-    const center = getBoundingCenter(positions);
-    if (!center) {
-      return;
-    }
-    lastCenterRequestRef.current = centerRequestKey;
-    const allWorkersVisible = positions.every((position) =>
-      isInsideViewport(worldToScreen(position.x, position.y, viewport), canvasSize.width, canvasSize.height, recenterVisibilityPaddingPx)
-    );
-    if (allWorkersVisible) {
-      return;
-    }
-    setConstrainedViewport((current) => ({
-      ...current,
-      offsetX: canvasSize.width / 2 - center.x * current.scale,
-      offsetY: canvasSize.height / 2 - center.y * current.scale
-    }));
-  }, [
-    canvasSize.height,
-    canvasSize.width,
-    centerOnWorkerIds,
-    centerRequestKey,
-    resolveWorkerPosition,
-    setConstrainedViewport,
-    viewport,
-    workers
-  ]);
+  const centerOnWorkers = useCallback(
+    (workerIds: string[]) => {
+      if (workerIds.length === 0) {
+        return;
+      }
+      const centeredWorkerIdSet = new Set(workerIds);
+      const positions = workers
+        .filter((worker) => centeredWorkerIdSet.has(worker.id))
+        .map((worker) => resolveWorkerPosition(worker));
+      const center = getBoundingCenter(positions);
+      if (!center) {
+        return;
+      }
+      const allWorkersVisible = positions.every((position) =>
+        isInsideViewport(
+          worldToScreen(position.x, position.y, viewport),
+          canvasSize.width,
+          canvasSize.height,
+          recenterVisibilityPaddingPx
+        )
+      );
+      if (allWorkersVisible) {
+        return;
+      }
+      setConstrainedViewport((current) => ({
+        ...current,
+        offsetX: canvasSize.width / 2 - center.x * current.scale,
+        offsetY: canvasSize.height / 2 - center.y * current.scale
+      }));
+    },
+    [canvasSize.height, canvasSize.width, resolveWorkerPosition, setConstrainedViewport, viewport, workers]
+  );
 
   return {
     containerRef,
@@ -164,6 +153,7 @@ export function useMapCamera({
     viewport,
     setConstrainedViewport,
     zoomViewportAroundPoint,
-    zoomViewportByFactor
+    zoomViewportByFactor,
+    centerOnWorkers
   };
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import type { Worker, WorkerPosition } from "../../shared/types";
 import { useOutpostMap } from "../map/tileMapLoader";
 import { useCharacterSpriteLibrary, type SpriteDirection } from "../sprites/spriteLoader";
@@ -9,15 +9,27 @@ import { useMapKeyboardMotion } from "../map/runtime/useMapKeyboardMotion";
 import { useMapCamera } from "../map/runtime/useMapCamera";
 import { useMapPreviewImage } from "../map/runtime/useMapPreviewImage";
 import { useMapInteraction } from "../map/input/useMapInteraction";
+import { planScatterTargets } from "../map/commands/moveOrders";
 import {
   keyboardMoveUnitsPerSecond,
   keyboardPanSpeedPerSecond,
   movementIntervalMs,
+  scatterBaseSpreadPx,
+  scatterPerWorkerSpreadPx,
   spriteBaseSize,
   walkAnimationIntervalMs,
   workerPersonalSpacePx,
   workerRadius
 } from "../map/mapRuntimeConstants";
+
+export interface MapCanvasHandle {
+  /** Recentre the viewport on the given workers (no-op if already fully visible). */
+  centerOnWorkers: (workerIds: string[]) => void;
+  /** Scatter the given group around its centroid, pathing each to a walkable target. */
+  scatterWorkers: (workerIds: string[]) => void;
+  /** Move keyboard focus onto the canvas (used when leaving terminal focus). */
+  focus: () => void;
+}
 
 interface MapCanvasProps {
   workers: Worker[];
@@ -33,36 +45,30 @@ interface MapCanvasProps {
   onActivateWorker?: (workerId: string) => void;
   onMoveOrderIssued?: (workerId: string) => void;
   onPositionCommit: (workerId: string, position: WorkerPosition) => void;
-  externalMoveOrders?: Array<{ workerId: string; target: WorkerPosition }>;
-  externalMoveOrderToken?: number;
-  centerOnWorkerIds?: string[];
-  centerRequestKey?: number;
 }
 
-export function MapCanvas({
-  workers,
-  fadingWorkers,
-  selectedWorkerId,
-  selectedWorkerIds,
-  focusedSelectedWorkerId,
-  terminalFocusedSelected,
-  terminalFocusedWorkerId,
-  controlGroups,
-  completionPendingWorkerIds,
-  onSelectionChange,
-  onActivateWorker,
-  onMoveOrderIssued,
-  onPositionCommit,
-  externalMoveOrders,
-  externalMoveOrderToken,
-  centerOnWorkerIds,
-  centerRequestKey
-}: MapCanvasProps): JSX.Element {
+export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function MapCanvas(
+  {
+    workers,
+    fadingWorkers,
+    selectedWorkerId,
+    selectedWorkerIds,
+    focusedSelectedWorkerId,
+    terminalFocusedSelected,
+    terminalFocusedWorkerId,
+    controlGroups,
+    completionPendingWorkerIds,
+    onSelectionChange,
+    onActivateWorker,
+    onMoveOrderIssued,
+    onPositionCommit
+  }: MapCanvasProps,
+  ref
+): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const workerFacingRef = useRef<Record<string, SpriteDirection>>({});
   const selectedWorkerIdsRef = useRef<Set<string>>(new Set());
   const drawStateRef = useRef<MapDrawState | null>(null);
-  const lastExternalMoveOrderTokenRef = useRef<number | undefined>(undefined);
 
   const simulation = useMemo(
     () => new MovementSimulation({ stepIntervalMs: movementIntervalMs, personalSpacePx: workerPersonalSpacePx }),
@@ -87,8 +93,15 @@ export function MapCanvas({
   const { mapPreviewImage, mapPreviewLoadError } = useMapPreviewImage(mapData);
   const mapRenderError = mapErrorText ?? mapPreviewLoadError;
 
-  const { containerRef, canvasSize, viewport, setConstrainedViewport, zoomViewportAroundPoint, zoomViewportByFactor } =
-    useMapCamera({ mapData, workers, centerOnWorkerIds, centerRequestKey, resolveWorkerPosition });
+  const {
+    containerRef,
+    canvasSize,
+    viewport,
+    setConstrainedViewport,
+    zoomViewportAroundPoint,
+    zoomViewportByFactor,
+    centerOnWorkers
+  } = useMapCamera({ mapData, workers, resolveWorkerPosition });
 
   const {
     hover,
@@ -119,24 +132,45 @@ export function MapCanvas({
     selectedWorkerIdsRef.current = new Set(selectedWorkerIds);
   }, [selectedWorkerIds]);
 
-  useEffect(() => {
-    if (
-      externalMoveOrderToken === undefined ||
-      externalMoveOrderToken === lastExternalMoveOrderTokenRef.current ||
-      !externalMoveOrders ||
-      externalMoveOrders.length === 0
-    ) {
-      return;
-    }
-    lastExternalMoveOrderTokenRef.current = externalMoveOrderToken;
-    const workersById = new Map(workers.map((worker) => [worker.id, worker]));
-    for (const order of externalMoveOrders) {
-      const worker = workersById.get(order.workerId);
-      if (worker) {
-        issueManualMoveToWorld(worker, order.target);
+  // Scatter a group around its centroid. Lives in the map layer because it needs live
+  // simulated positions and walkability; App only passes the worker ids.
+  const scatterWorkers = useCallback(
+    (workerIds: string[]) => {
+      const idSet = new Set(workerIds);
+      const targetWorkers = workers.filter((worker) => idSet.has(worker.id));
+      if (targetWorkers.length === 0) {
+        return;
       }
-    }
-  }, [externalMoveOrderToken, externalMoveOrders, workers, issueManualMoveToWorld]);
+      const targets = planScatterTargets(
+        targetWorkers.map((worker) => resolveWorkerPosition(worker)),
+        { baseSpreadPx: scatterBaseSpreadPx, perWorkerSpreadPx: scatterPerWorkerSpreadPx, rng: Math.random }
+      );
+      targetWorkers.forEach((worker, index) => {
+        const target = targets[index];
+        if (target) {
+          issueManualMoveToWorld(worker, target);
+        }
+      });
+    },
+    [issueManualMoveToWorld, resolveWorkerPosition, workers]
+  );
+
+  // The handle object is stable; it dispatches through refs so callers always hit the
+  // latest closures without the handle identity churning as props change.
+  const centerOnWorkersRef = useRef(centerOnWorkers);
+  centerOnWorkersRef.current = centerOnWorkers;
+  const scatterWorkersRef = useRef(scatterWorkers);
+  scatterWorkersRef.current = scatterWorkers;
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      centerOnWorkers: (workerIds: string[]) => centerOnWorkersRef.current(workerIds),
+      scatterWorkers: (workerIds: string[]) => scatterWorkersRef.current(workerIds),
+      focus: () => canvasRef.current?.focus()
+    }),
+    []
+  );
 
   useMapRuntime({
     canvasRef,
@@ -207,4 +241,4 @@ export function MapCanvas({
       ) : null}
     </div>
   );
-}
+});

@@ -5,7 +5,7 @@ import { listAvatarVoiceLineFiles } from "../../assets/voiceLineCatalog";
 import { RealtimeHub } from "../../ws/realtimeHub";
 import { OrchestratorService } from "../../orchestrator/orchestratorService";
 import type { StatusMonitor } from "../../status/statusMonitor";
-import type { Worker } from "../../../shared/types";
+import type { VoiceLineCatalog, Worker } from "../../../shared/types";
 import { notFoundError } from "../appError";
 import { asyncRoute } from "../asyncRoute";
 import {
@@ -51,11 +51,11 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
 
   app.get("/api/avatars/:avatarType/voice-lines", (req, res) => {
     const avatarType = req.params.avatarType;
-    const files = listAvatarVoiceLineFiles(avatarType);
-    res.json({
+    const catalog: VoiceLineCatalog = {
       avatarType,
-      files
-    });
+      files: listAvatarVoiceLineFiles(avatarType)
+    };
+    res.json(catalog);
   });
 
   app.get("/api/workers", (_req, res) => {

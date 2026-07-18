@@ -1,9 +1,11 @@
 import { nanoid } from "nanoid";
 import type {
   AvatarType,
+  BroadcastInputResult,
   MovementMode,
   ProjectConfig,
   ResolvedConfig,
+  StopWorkerResult,
   Worker,
   WorkerPosition,
   WorkerSpawnInput
@@ -21,22 +23,6 @@ import { TmuxAdapter, type ManagedWindow } from "../tmux/tmuxAdapter";
 
 interface BroadcastInputOptions {
   submit?: boolean;
-}
-
-export interface BroadcastInputResult {
-  requestedCount: number;
-  deliveredWorkerIds: string[];
-  skippedWorkerIds: string[];
-  failed: Array<{
-    workerId: string;
-    error: string;
-  }>;
-}
-
-export interface StopWorkerResult {
-  workerId: string;
-  removed: boolean;
-  alreadyStopped: boolean;
 }
 
 const outpostSpawnSpec = loadOutpostSpawnSpec();

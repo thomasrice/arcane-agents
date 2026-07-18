@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 
@@ -28,24 +28,45 @@ const tokyoNightTheme = {
   brightWhite: "#c0caf5"
 };
 
+export interface TerminalPanelHandle {
+  focus: () => void;
+}
+
 interface TerminalPanelProps {
   workerId?: string;
   workerName?: string;
   connectionKey?: string;
-  focusRequestKey?: number;
 }
 
-export function TerminalPanel({ workerId, workerName, connectionKey, focusRequestKey }: TerminalPanelProps): JSX.Element {
+export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(function TerminalPanel(
+  { workerId, workerName, connectionKey }: TerminalPanelProps,
+  ref
+): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const fitRafRef = useRef<number | null>(null);
-  const lastFocusRequestRef = useRef<number | undefined>(undefined);
 
   const focusTerminal = useCallback(() => {
     terminalRef.current?.focus();
   }, []);
+
+  // Focus request comes in through the imperative handle. The extra deferred focus
+  // covers the case where the panel has just mounted for a newly selected worker and
+  // the xterm instance is still settling.
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => {
+        focusTerminal();
+        setTimeout(() => {
+          focusTerminal();
+        }, 0);
+      }
+    }),
+    [focusTerminal]
+  );
 
   const sendResizeMessage = useCallback(() => {
     const socket = socketRef.current;
@@ -237,32 +258,8 @@ export function TerminalPanel({ workerId, workerName, connectionKey, focusReques
     };
   }, [connectionKey, scheduleFit, sendResizeMessage, workerId, workerName]);
 
-  useEffect(() => {
-    if (!workerId) {
-      return;
-    }
-
-    if (focusRequestKey === undefined) {
-      return;
-    }
-
-    if (lastFocusRequestRef.current === focusRequestKey) {
-      return;
-    }
-    lastFocusRequestRef.current = focusRequestKey;
-
-    focusTerminal();
-    const timer = setTimeout(() => {
-      focusTerminal();
-    }, 0);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [focusRequestKey, focusTerminal, workerId]);
-
   return <div className="terminal-panel" ref={containerRef} />;
-}
+});
 
 function isShiftEnterEvent(event: KeyboardEvent): boolean {
   return (

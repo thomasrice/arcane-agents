@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { ResolvedConfig, Worker, WorkerStatus } from "../../shared/types";
+import { fetchVoiceLineCatalog } from "../api";
+import { voiceLineEventUrl, voiceLineFileUrl } from "../assetUrls";
 
 type VoiceLineEvent = "arrive" | "move" | "attention" | "complete" | "death";
 type VoiceLineVariantPrefix = "move" | "selected";
@@ -43,11 +45,11 @@ export function useWorkerVoiceLines({ config, workers, workersHydrated, selected
   }, [workers]);
 
   const resolveVoiceLineUrl = useCallback((avatarType: string, event: VoiceLineEvent): string => {
-    return `/api/assets/characters/${encodeURIComponent(avatarType)}/voice-lines/${event}.mp3`;
+    return voiceLineEventUrl(avatarType, event);
   }, []);
 
   const resolveVoiceLineFileUrl = useCallback((avatarType: string, fileName: string): string => {
-    return `/api/assets/characters/${encodeURIComponent(avatarType)}/voice-lines/${encodeURIComponent(fileName)}`;
+    return voiceLineFileUrl(avatarType, fileName);
   }, []);
 
   const resolveVoiceLineVariantUrls = useCallback(
@@ -170,18 +172,9 @@ export function useWorkerVoiceLines({ config, workers, workersHydrated, selected
   const fetchAvatarVoiceLineCatalog = useCallback(
     async (avatarType: string): Promise<void> => {
       try {
-        const response = await fetch(`/api/avatars/${encodeURIComponent(avatarType)}/voice-lines`);
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json()) as { files?: unknown };
-        if (!Array.isArray(payload.files)) {
-          return;
-        }
-
-        const files = payload.files
-          .filter((file): file is string => typeof file === "string" && file.toLowerCase().endsWith(".mp3"))
+        const { files: catalogFiles } = await fetchVoiceLineCatalog(avatarType);
+        const files = catalogFiles
+          .filter((file) => file.toLowerCase().endsWith(".mp3"))
           .sort((a, b) => a.localeCompare(b));
 
         const catalog: Record<VoiceLineVariantPrefix, string[]> = {

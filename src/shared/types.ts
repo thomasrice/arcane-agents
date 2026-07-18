@@ -124,3 +124,24 @@ export type WsServerEvent =
   | { type: "worker-created"; worker: Worker }
   | { type: "worker-updated"; worker: Worker }
   | { type: "worker-removed"; workerId: string };
+
+export interface BroadcastInputResult {
+  requestedCount: number;
+  deliveredWorkerIds: string[];
+  skippedWorkerIds: string[];
+  failed: Array<{
+    workerId: string;
+    error: string;
+  }>;
+}
+
+export interface StopWorkerResult {
+  workerId: string;
+  removed: boolean;
+  alreadyStopped: boolean;
+}
+
+export interface VoiceLineCatalog {
+  avatarType: string;
+  files: string[];
+}

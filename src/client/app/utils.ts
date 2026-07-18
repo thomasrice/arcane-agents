@@ -1,5 +1,4 @@
-import type { BroadcastInputResult } from "../api";
-import type { Worker } from "../../shared/types";
+import type { BroadcastInputResult, Worker } from "../../shared/types";
 import {
   controlGroupStorageKey,
   defaultMapColumnRatio,
@@ -136,7 +135,7 @@ export function clampNumber(value: number, min: number, max: number): number {
 }
 
 export function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
+  if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) {
     return false;
   }
 
@@ -149,7 +148,9 @@ export function isTerminalTarget(target: EventTarget | null): boolean {
 }
 
 export function isElementInTerminalPanel(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && Boolean(target.closest(".terminal-panel"));
+  return (
+    typeof HTMLElement !== "undefined" && target instanceof HTMLElement && Boolean(target.closest(".terminal-panel"))
+  );
 }
 
 function toDisplayHotkeys(hotkeys: string[] | undefined): string[] {

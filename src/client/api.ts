@@ -1,14 +1,11 @@
-import type { ResolvedConfig, Worker, WorkerSpawnInput } from "../shared/types";
-
-export interface BroadcastInputResult {
-  requestedCount: number;
-  deliveredWorkerIds: string[];
-  skippedWorkerIds: string[];
-  failed: Array<{
-    workerId: string;
-    error: string;
-  }>;
-}
+import type {
+  BroadcastInputResult,
+  ResolvedConfig,
+  StopWorkerResult,
+  VoiceLineCatalog,
+  Worker,
+  WorkerSpawnInput
+} from "../shared/types";
 
 async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -49,8 +46,8 @@ export function spawnWorker(input: WorkerSpawnInput): Promise<Worker> {
   });
 }
 
-export function stopWorker(workerId: string): Promise<{ ok: true; workerId: string }> {
-  return requestJson<{ ok: true; workerId: string }>(`/api/workers/${workerId}/stop`, {
+export function stopWorker(workerId: string): Promise<{ ok: true } & StopWorkerResult> {
+  return requestJson<{ ok: true } & StopWorkerResult>(`/api/workers/${workerId}/stop`, {
     method: "POST"
   });
 }
@@ -97,4 +94,8 @@ export function broadcastWorkerInput(workerIds: string[], text: string, submit =
       submit
     })
   });
+}
+
+export function fetchVoiceLineCatalog(avatarType: string): Promise<VoiceLineCatalog> {
+  return requestJson<VoiceLineCatalog>(`/api/avatars/${encodeURIComponent(avatarType)}/voice-lines`);
 }

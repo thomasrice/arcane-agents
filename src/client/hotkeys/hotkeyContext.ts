@@ -1,67 +1,22 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { Worker } from "../../shared/types";
-import type { ControlGroupMap, RosterEntry } from "../app/types";
 import type { ShortcutHotkeyBinding } from "./shortcutHotkeys";
 
-export interface AppHotkeyContext {
-  activeWorkers: Worker[];
-  applySelection: (
-    workerIds: string[],
-    options?: { center?: boolean; focusTerminal?: boolean; focusWorkerId?: string }
-  ) => void;
-  clampNumber: (value: number, min: number, max: number) => number;
-  closeKillConfirm: () => void;
-  closeRestartConfirm: () => void;
-  closeRenameModal: () => void;
-  confirmKillSelection: () => void;
-  confirmRestartSelection: () => void;
-  controlGroupByDigitRef: MutableRefObject<ControlGroupMap>;
-  cycleIdleSelection: (direction: 1 | -1) => void;
-  cycleSelectedGroupFocus: (direction: 1 | -1) => void;
-  cycleSelection: (direction: 1 | -1) => void;
-  escapeTerminalFocus: () => boolean;
-  findMatchingShortcutIndexes: (bindings: ShortcutHotkeyBinding[], event: KeyboardEvent) => number[];
-  firstSummonEntryIndex: number | undefined;
-  focusRallyCommandInput: () => boolean;
-  focusedSelectedWorkerId: string | undefined;
-  inSelectedGroupView: boolean;
-  isEditableTarget: (target: EventTarget | null) => boolean;
-  isTerminalEscapeShortcut: (event: KeyboardEvent) => boolean;
-  isTerminalTarget: (target: EventTarget | null) => boolean;
-  killConfirmWorkerIds: string[];
-  restartConfirmWorkerIds: string[];
-  mapColumnRatioStep: number;
-  nudgeMapColumnRatio: (delta: number) => void;
-  onActivateRosterIndex: (index: number) => void;
-  onKillRosterActive: () => void;
-  onKillSelected: () => void;
-  onRestartRosterActive: () => void;
-  onRestartSelected: () => void;
-  onScatterSelected: () => void | Promise<void>;
-  onToggleMovementModeSelected: () => void | Promise<void>;
-  openRenameForWorkers: (workersToRename: Worker[]) => void;
-  batchSpawnDialogOpen: boolean;
-  paletteOpen: boolean;
-  parseControlGroupDigit: (event: KeyboardEvent) => number | undefined;
-  renameModalOpen: boolean;
-  requestTerminalFocus: () => void;
-  resetMapColumnRatio: () => void;
-  rosterActiveIndex: number;
-  rosterEntries: RosterEntry[];
-  runSpawn: (input: { shortcutIndex: number }) => void | Promise<void>;
-  selectedGroupActiveIndex: number;
-  selectedWorkerId: string | undefined;
-  selectedWorkerIds: string[];
-  selectedWorkers: Worker[];
-  setControlGroups: Dispatch<SetStateAction<ControlGroupMap>>;
-  setFocusedSelectedWorkerId: Dispatch<SetStateAction<string | undefined>>;
-  setBatchSpawnDialogOpen: Dispatch<SetStateAction<boolean>>;
-  setPaletteOpen: Dispatch<SetStateAction<boolean>>;
-  setRosterActiveIndex: Dispatch<SetStateAction<number>>;
-  setSelectedGroupActiveIndex: Dispatch<SetStateAction<number>>;
-  setShortcutsOverlayOpen: Dispatch<SetStateAction<boolean>>;
-  setSpawnDialogOpen: Dispatch<SetStateAction<boolean>>;
+// The hotkey layer reads all of its state and store actions directly from the store
+// (assembled in useAppHotkeys). These are the only inputs App still has to supply:
+// the worker-action callbacks that own their own flows, the rally-card / map focus
+// handles, and the config-derived summon + leave-terminal chords.
+export interface AppHotkeyDeps {
   shortcutHotkeyBindings: ShortcutHotkeyBinding[];
-  shortcutsOverlayOpen: boolean;
-  spawnDialogOpen: boolean;
+  confirmPending: () => void;
+  onKillSelected: () => void;
+  onKillRosterActive: () => void;
+  onRestartSelected: () => void;
+  onRestartRosterActive: () => void;
+  onRenameSelected: () => void;
+  onToggleMovementModeSelected: () => void | Promise<void>;
+  onActivateRosterIndex: (index: number) => void;
+  onScatterSelected: () => void;
+  runSpawn: (input: { shortcutIndex: number }) => void | Promise<void>;
+  focusRallyCommandInput: () => boolean;
+  escapeTerminalFocus: () => boolean;
+  isTerminalEscapeShortcut: (event: KeyboardEvent) => boolean;
 }

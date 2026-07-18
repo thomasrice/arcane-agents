@@ -2,8 +2,7 @@ import type { ShortcutConfig, Worker } from "../../shared/types";
 
 interface BottomBarProps {
   shortcuts: ShortcutConfig[];
-  selectedWorker?: Worker;
-  selectedWorkers?: Worker[];
+  selectedWorkers: Worker[];
   onSpawnShortcut: (shortcutIndex: number) => void;
   onOpenSpawnDialog: () => void;
   onOpenPalette: () => void;
@@ -17,8 +16,7 @@ interface BottomBarProps {
 
 export function BottomBar({
   shortcuts,
-  selectedWorker,
-  selectedWorkers = selectedWorker ? [selectedWorker] : [],
+  selectedWorkers,
   onSpawnShortcut,
   onOpenSpawnDialog,
   onOpenPalette,
