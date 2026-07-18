@@ -82,7 +82,8 @@ function createSignals(scenario: Scenario): WorkerSignals {
       prompt: scenario.runtimeSignals?.prompt ?? false,
       active: scenario.runtimeSignals?.active ?? false,
       activityText: scenario.runtimeSignals?.activityText,
-      activeTask: scenario.runtimeSignals?.activeTask
+      activeTask: scenario.runtimeSignals?.activeTask,
+      awaitingApproval: scenario.runtimeSignals?.awaitingApproval
     },
     activeRuntimeProcess: scenario.activeRuntimeProcess,
     transcriptHealth: scenario.transcriptSnapshot ? "ok" : "absent",
@@ -177,7 +178,9 @@ describe("decide", () => {
     const decision = run({
       runtime: codexAdapter,
       currentCommand: "bash",
-      runtimeSignals: { prompt: true, active: false, activityText: "Waiting for approval" }
+      // `awaitingApproval` marks the parked codex prompt as a genuine approval
+      // (vs the ordinary at-rest input prompt, which only classifies the pane).
+      runtimeSignals: { prompt: true, active: false, awaitingApproval: true, activityText: "Waiting for approval" }
     });
 
     expect(decision.status).toBe("attention");

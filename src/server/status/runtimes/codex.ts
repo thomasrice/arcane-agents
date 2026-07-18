@@ -11,8 +11,17 @@ const codexPromptFreshLineWindow = 24;
 const codexActiveFreshLineWindow = 12;
 
 interface CodexSignals {
-  prompt: boolean;
+  /** An approval / permission / question dialog — routes to attention. */
+  approval: boolean;
+  /** A live turn ("esc to interrupt") — routes to working. */
   active: boolean;
+  /**
+   * The codex UI parked at its input box (the "›" prompt plus the persistent
+   * status footer). This is the finished/at-rest state — distinct from an
+   * approval request — and is used to CLASSIFY the pane as codex without
+   * implying attention or work.
+   */
+  atInputPrompt: boolean;
 }
 
 const codexPromptMatchers: RegExp[] = [
@@ -42,6 +51,14 @@ const codexPromptStatusMatchers: RegExp[] = [
 
 const codexActiveMatchers: RegExp[] = [/\besc to interrupt\b/i];
 
+// At-rest markers of the current Codex UI. The "›" input box and the persistent
+// status footer (model · cwd · rate-limit · mode, e.g. "… · weekly 93% left ·
+// Main [default]") together identify a codex pane sitting at its prompt. Both
+// are required so an arbitrary "›" or footer-like line elsewhere can't
+// misclassify a pane; together they are strongly codex-specific.
+const codexInputPromptMatchers: RegExp[] = [/^›(?:\s|$)/];
+const codexFooterMatchers: RegExp[] = [/·\s*(?:weekly|daily|hourly|monthly)\s+\d+%\s+left\b/i, /\[default\]\s*$/i];
+
 export const codexAdapter: RuntimeAdapter = {
   id: "codex",
   displayName: "Codex",
@@ -54,10 +71,15 @@ export const codexAdapter: RuntimeAdapter = {
   detect(output): RuntimeSignals {
     const signals = detectCodexSignals(output);
     return {
-      prompt: signals.prompt,
+      // `prompt` means "codex is parked, not mid-turn" — an approval dialog OR the
+      // at-rest input prompt. Both classify the pane as codex; the decision layer
+      // distinguishes them via `awaitingApproval` (approval -> attention; at-rest
+      // -> falls through to idle).
+      prompt: signals.approval || signals.atInputPrompt,
       active: signals.active,
       activityText: extractCodexRuntimeActivityText(output, signals),
-      activeTask: undefined
+      activeTask: undefined,
+      awaitingApproval: signals.approval
     };
   }
 };
@@ -86,15 +108,19 @@ function detectCodexSignals(output: string): CodexSignals {
   const latestPromptIndex = findLastMatchingIndex(lines, (line) => isCodexPromptLine(line) || hasCodexPromptStatus(line));
   const latestActiveIndex = findLastMatchingIndex(lines, (line) => codexActiveMatchers.some((matcher) => matcher.test(line)));
 
+  const hasInputGlyph = lines.some((line) => codexInputPromptMatchers.some((matcher) => matcher.test(line)));
+  const hasFooter = lines.some((line) => codexFooterMatchers.some((matcher) => matcher.test(line)));
+
   return {
-    prompt:
+    approval:
       latestPromptIndex >= 0 &&
       newestIndex >= 0 &&
       newestIndex - latestPromptIndex <= codexPromptFreshLineWindow,
     active:
       latestActiveIndex >= 0 &&
       newestIndex >= 0 &&
-      newestIndex - latestActiveIndex <= codexActiveFreshLineWindow
+      newestIndex - latestActiveIndex <= codexActiveFreshLineWindow,
+    atInputPrompt: hasInputGlyph && hasFooter
   };
 }
 
@@ -163,7 +189,7 @@ function extractCodexRuntimeActivityText(output: string, signals: CodexSignals):
     return truncateWithEllipsis(statusText, 72);
   }
 
-  if (signals.prompt) {
+  if (signals.approval) {
     return "Waiting for approval";
   }
 

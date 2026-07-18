@@ -95,6 +95,7 @@ interface DecisionContext {
   hasOpenCodePromptSignal: boolean;
   hasOpenCodeActiveSignal: boolean;
   hasCodexPromptSignal: boolean;
+  hasCodexApprovalPrompt: boolean;
   hasCodexActiveSignal: boolean;
   isClaudeSession: boolean;
   isOpenCodeSession: boolean;
@@ -150,6 +151,7 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
     hasOpenCodePromptSignal: isOpenCodeSession && rs.prompt,
     hasOpenCodeActiveSignal: isOpenCodeSession && rs.active,
     hasCodexPromptSignal: isCodexSession && rs.prompt,
+    hasCodexApprovalPrompt: isCodexSession && Boolean(rs.awaitingApproval),
     hasCodexActiveSignal: isCodexSession && rs.active,
     isClaudeSession,
     isOpenCodeSession,
@@ -206,7 +208,11 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
     });
   }
 
-  if (context.hasCodexPromptSignal && !context.hasCodexActiveSignal && !isInteractiveCommand(context)) {
+  if (context.hasCodexApprovalPrompt && !context.hasCodexActiveSignal && !isInteractiveCommand(context)) {
+    // Only a genuine approval routes to attention. The codex `prompt` signal also
+    // covers the ordinary at-rest input prompt (which merely classifies the pane
+    // as codex); that bare input prompt is NOT an approval, so it falls through to
+    // the idle path and a finished codex reads idle, not attention.
     pushReason({ code: "codex-approval-prompt", message: "Codex is waiting on an approval or question response." });
     return finalizeDecision(context, {
       status: "attention",
@@ -497,7 +503,7 @@ function collectWorkingEvidence(context: DecisionContext, hasRecoverableParserEr
     activityToolCandidates.push("terminal");
   }
 
-  if (context.activeRuntimeProcess && !(context.activeRuntimeProcess.runtime === "claude" && context.hasClaudePromptSignal)) {
+  if (context.activeRuntimeProcess && !isRuntimeProcessAtRest(context)) {
     strongReasons.push({
       code: "agent-runtime-child-process",
       message: `${labelRuntime(context.activeRuntimeProcess.runtime)} is still running under the pane shell.`
@@ -596,6 +602,29 @@ function shouldKeepStickyWorking(context: DecisionContext, evidence: WorkingEvid
   }
 
   return hasAnyWorkingEvidence(evidence);
+}
+
+/**
+ * A live agent runtime process is working EVIDENCE only while the agent is
+ * mid-turn. For an interpreter-hosted CLI the runtime process is the pane's own
+ * long-lived process, so it stays alive while the agent sits idle at its prompt
+ * — counting it there would pin the worker to a permanent false "working".
+ * Suppress the child-process signal when the runtime is parked at its prompt
+ * (Claude's ❯; Codex's input box) with no active-turn signal. Codex approvals
+ * never reach here — they short-circuit to attention earlier.
+ */
+function isRuntimeProcessAtRest(context: DecisionContext): boolean {
+  const runtime = context.activeRuntimeProcess?.runtime;
+
+  if (runtime === "claude") {
+    return context.hasClaudePromptSignal;
+  }
+
+  if (runtime === "codex") {
+    return context.hasCodexPromptSignal && !context.hasCodexActiveSignal;
+  }
+
+  return false;
 }
 
 function labelRuntime(runtime: "claude" | "opencode" | "codex"): string {

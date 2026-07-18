@@ -589,6 +589,94 @@ describe("status decision — agent runtime wrapped under a shell", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Interpreter-hosted Codex (pane command reports "node")
+// ---------------------------------------------------------------------------
+
+describe("status decision — Codex hosted as a bare `node` pane", () => {
+  // Live pane text from the false-working bug: a Codex CLI whose tmux pane
+  // command reports `node` (Codex launched directly, so the interpreter is the
+  // pane's own process). Before the fix this fell through to the generic adapter
+  // and flapped on scrollback tool words.
+  const activeCodexNodePane = [
+    "• Working (4m 10s • esc to interrupt)",
+    "",
+    "",
+    "› Run /review on my current changes",
+    "",
+    "  gpt-5.6-terra medium fast · ~/code/personal-assistant · weekly 93% left · Main [default]"
+  ].join("\n");
+
+  const finishedCodexNodePane = [
+    "• Ran agent-browser --session s1 snapshot",
+    "  └ ok",
+    "• Ran git status",
+    "  └ nothing to commit",
+    "",
+    "› Run /review on my current changes",
+    "",
+    "  gpt-5.6-terra medium fast · ~/code/personal-assistant · weekly 93% left · Main [default]"
+  ].join("\n");
+
+  const codexRuntimeProcess: AgentRuntimeProcess = {
+    pid: 5150,
+    runtime: "codex",
+    command: "node",
+    args: "node /home/thomas/.local/share/npm/lib/node_modules/@openai/codex/bin/codex.js"
+  };
+
+  it("classifies the node pane as codex and reads an active turn as working (not parsed scrollback)", () => {
+    // classifyPaneProcess resolved the node pane to codex, so the pane is a codex
+    // agent runtime: the native active signal drives working, and scrollback
+    // tool/path words are demoted (no parsed-activity-signal).
+    const result = evaluate({
+      runtime: "shell",
+      output: activeCodexNodePane,
+      currentCommand: "node",
+      outputQuietForMs: 1_500,
+      runtimeProcess: codexRuntimeProcess
+    });
+
+    expect(result.status).toBe("working");
+    expect(reasonCodes(result)).toContain("codex-active-signal");
+    expect(reasonCodes(result)).not.toContain("parsed-activity-signal");
+  });
+
+  it("reads a finished node-hosted codex at its prompt as idle despite fresh scrollback tool words", () => {
+    // The flap-killer. The codex process is still alive (interpreter pane), but it
+    // is parked at its input prompt: the child-process signal is suppressed and
+    // the fresh "git"/"agent" scrollback words are demoted for the codex agent
+    // runtime, so a finished turn settles to idle instead of false-working.
+    const result = evaluate({
+      runtime: "shell",
+      output: finishedCodexNodePane,
+      currentCommand: "node",
+      outputQuietForMs: 3_000,
+      priorStatus: "idle",
+      runtimeProcess: codexRuntimeProcess
+    });
+
+    expect(result.status).toBe("idle");
+    expect(result.activityText).toBeUndefined();
+    expect(reasonCodes(result)).toContain("no-active-evidence");
+  });
+
+  it("sniffs the codex UI as codex when no runtime process is resolvable and reads active as working", () => {
+    // classification unavailable (ps missed the process): the output-sniff must
+    // still recognise the codex UI and route the active turn through the native
+    // codex signal rather than the generic parser.
+    const result = evaluate({
+      runtime: "shell",
+      output: activeCodexNodePane,
+      currentCommand: "node",
+      outputQuietForMs: 1_500
+    });
+
+    expect(result.status).toBe("working");
+    expect(reasonCodes(result)).toContain("codex-active-signal");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Freshness-window boundaries (deterministic via frozen clock)
 // ---------------------------------------------------------------------------
 

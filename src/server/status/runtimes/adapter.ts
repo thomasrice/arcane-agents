@@ -20,6 +20,13 @@ export interface RuntimeSignals {
   active: boolean;
   activityText: string | undefined;
   activeTask: string | undefined;
+  /**
+   * Codex-only extension: the parked prompt is specifically an approval /
+   * permission / question dialog (routes to attention), as opposed to the
+   * ordinary at-rest input prompt (which only classifies the pane as codex and
+   * otherwise falls through to idle). Every other adapter leaves it undefined.
+   */
+  awaitingApproval?: boolean;
 }
 
 /**
@@ -48,11 +55,11 @@ const agentAdapters: RuntimeAdapter[] = [claudeAdapter, openCodeAdapter, codexAd
  *
  * Definite classification (runtimeId / wrapped process / foreground command)
  * comes first. When `output` is supplied and nothing definite matched, the pane
- * output is sniffed as a last-resort tiebreak — this reproduces the old
- * `isOpenCode`/`isCodex` "|| signals.prompt || signals.active" additions for a
- * worker whose id/command give no runtime but whose pane shows an agent UI.
- * Capture-time resolution omits `output` (there is nothing captured yet), so it
- * only ever uses the definite classification.
+ * output is sniffed as a last-resort tiebreak for a worker whose id/command give
+ * no runtime but whose pane shows an agent UI (e.g. Claude Code or Codex running
+ * as a bare `node` pane with no resolvable runtime process). Capture-time
+ * resolution omits `output` (there is nothing captured yet), so it only ever
+ * uses the definite classification.
  */
 export function resolveRuntimeAdapter(
   worker: Worker,
@@ -67,11 +74,27 @@ export function resolveRuntimeAdapter(
   }
 
   if (output !== undefined) {
-    if (hasRuntimeSignal(openCodeAdapter.detect(output))) {
+    const claudeSignals = claudeAdapter.detect(output);
+    const openCodeSignals = openCodeAdapter.detect(output);
+    const codexSignals = codexAdapter.detect(output);
+
+    // Documented precedence is claude -> opencode -> codex, so Claude is tried
+    // first. But Claude's active detector is bullet-based ("• …") and Codex draws
+    // its rows with the same glyph, so Claude's detect() also fires on a Codex
+    // pane. Claude therefore only wins the sniff when it is the ONLY runtime that
+    // recognises the pane; a runtime-SPECIFIC Codex/OpenCode signal (esc-to-
+    // interrupt, the approval dialog, the status footer, the ctrl+t/ctrl+p hints)
+    // takes precedence so a Codex/OpenCode pane is never misread as Claude.
+    // (Claude's detect() is side-effect free, so calling it here to sniff is safe.)
+    if (hasRuntimeSignal(claudeSignals) && !hasRuntimeSignal(openCodeSignals) && !hasRuntimeSignal(codexSignals)) {
+      return claudeAdapter;
+    }
+
+    if (hasRuntimeSignal(openCodeSignals)) {
       return openCodeAdapter;
     }
 
-    if (hasRuntimeSignal(codexAdapter.detect(output))) {
+    if (hasRuntimeSignal(codexSignals)) {
       return codexAdapter;
     }
   }
