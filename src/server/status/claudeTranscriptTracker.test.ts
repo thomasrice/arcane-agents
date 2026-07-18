@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Worker } from "../../shared/types";
 import { ClaudeTranscriptTracker, failedSessionLookupRetryMs } from "./claudeTranscriptTracker";
+import { correlationMtimeWindowMs, correlationRequiredStreak } from "./claudeTranscript/constants";
 import { resolveTranscriptPath } from "./claudeTranscript/io";
 import { findClaudeSessionStartTimeMs } from "./claudeTranscript/process";
 
@@ -365,5 +366,164 @@ describe("ClaudeTranscriptTracker", () => {
     const a2 = await tracker.poll(workerA, "claude");
     expect(a2.snapshot).toBeUndefined();
     expect(a2.health).toBe("absent");
+  });
+
+  // --- Activity-correlation attachment (v1.4.1) ---
+  //
+  // Start-time matching is conservative: a known-but-old process start attaches
+  // ONLY a transcript whose first record lands in the session-start window. That
+  // overshoots for a long-lived pane — a claude PROCESS alive for days while the
+  // user runs /clear or starts new conversations. Each new conversation is a fresh
+  // session file whose first record is recent, so the days-old start never matches
+  // it and the worker could never re-attach (transcript "absent" through whole
+  // working turns). Correlation closes that gap: when the pane is actively
+  // streaming, adopt the one transcript moving in lockstep with it.
+
+  function pollChanged(
+    tracker: ClaudeTranscriptTracker,
+    worker: Worker,
+    panePid: number
+  ): Promise<{ snapshot: unknown; health: string }> {
+    return tracker.poll(worker, "claude", undefined, panePid, { paneOutputChanged: true });
+  }
+
+  it("attaches a lockstep transcript on a long-lived pane after N qualifying polls (the acta case)", async () => {
+    // Known process start three days old; the active conversation is a fresh file
+    // whose first record is recent, so start-time matching finds nothing.
+    const worker = createWorker({ createdAt: isoAgo(3 * DAY_MS) });
+    sessionStartMock.mockResolvedValue(Date.now() - 3 * DAY_MS);
+
+    const file = await writeTranscript(worker, "conversation.jsonl", [
+      assistantToolUse("t1", "Bash", { command: "npm test" })
+    ]);
+    const tracker = trackerForTemp();
+
+    // While the streak is building the worker stays unattached (health absent).
+    for (let poll = 0; poll < correlationRequiredStreak - 1; poll += 1) {
+      await setMtime(file, Date.now()); // the transcript moves in step with the pane
+      const building = await pollChanged(tracker, worker, 4242);
+      expect(building.snapshot).toBeUndefined();
+      expect(building.health).toBe("absent");
+    }
+
+    // The Nth consecutive qualifying poll meets the threshold -> attach, snapshot
+    // flows, health ok.
+    await setMtime(file, Date.now());
+    const attached = await pollChanged(tracker, worker, 4242);
+    expect(attached.health).toBe("ok");
+    expect((attached.snapshot as { status: string } | undefined)?.status).toBe("working");
+  });
+
+  it("never advances the streak while the pane is idle beside a hot foreign transcript", async () => {
+    // The exact v1.3.1 live bug, now blocked a second way: correlation requires the
+    // pane to be actively changing. An IDLE pane produces no qualifying poll, so no
+    // matter how hot the foreign transcript is, the streak never advances.
+    const worker = createWorker({ createdAt: nowIso() });
+    sessionStartMock.mockResolvedValue(Date.now() - 38 * DAY_MS);
+
+    const foreign = await writeTranscript(worker, "foreign.jsonl", [
+      assistantToolUse("t1", "Bash", { command: "npm test" }, isoAgo(6 * DAY_MS))
+    ]);
+    const tracker = trackerForTemp();
+
+    for (let poll = 0; poll < correlationRequiredStreak + 2; poll += 1) {
+      await setMtime(foreign, Date.now()); // foreign is hot every poll...
+      // ...but the pane never changed, so the poll does not qualify.
+      const result = await tracker.poll(worker, "claude", undefined, 4242, { paneOutputChanged: false });
+      expect(result.snapshot).toBeUndefined();
+      expect(result.health).toBe("absent");
+    }
+  });
+
+  it("does not attach when two candidates are both hot during the window (ambiguity)", async () => {
+    const worker = createWorker({ createdAt: isoAgo(3 * DAY_MS) });
+    sessionStartMock.mockResolvedValue(Date.now() - 3 * DAY_MS);
+
+    const fileA = await writeTranscript(worker, "a.jsonl", [assistantToolUse("t1", "Bash", { command: "run a" })]);
+    const fileB = await writeTranscript(worker, "b.jsonl", [assistantToolUse("t2", "Bash", { command: "run b" })]);
+    const tracker = trackerForTemp();
+
+    for (let poll = 0; poll < correlationRequiredStreak + 2; poll += 1) {
+      await setMtime(fileA, Date.now());
+      await setMtime(fileB, Date.now());
+      const result = await pollChanged(tracker, worker, 4242);
+      expect(result.snapshot).toBeUndefined();
+      expect(result.health).toBe("absent");
+    }
+  });
+
+  it("evicts a weak correlation holder when another worker's session start matches the file", async () => {
+    // Reuses the exclusivity/eviction model: a correlation attach is WEAK, so a
+    // genuine session-start match (strong) from another worker still wins the file.
+    const startMs = Date.now();
+    const workerA = createWorker({ id: "worker-A", createdAt: isoAgo(3 * DAY_MS) });
+    const workerB = createWorker({ id: "worker-B", createdAt: nowIso() }); // same shared project dir
+    const tracker = trackerForTemp();
+
+    // A's process is days old (cannot start-match); B's start matches the file's
+    // first record. Key the mock by pid so both resolve their own start.
+    sessionStartMock.mockImplementation(async (pid) => (pid === 1111 ? startMs - 3 * DAY_MS : startMs));
+
+    const shared = await writeTranscript(workerA, "shared.jsonl", [
+      assistantToolUse("t1", "Bash", { command: "run" }, new Date(startMs).toISOString())
+    ]);
+
+    // A adopts the file via activity correlation (weak).
+    let a: { snapshot: unknown; health: string } | undefined;
+    for (let poll = 0; poll < correlationRequiredStreak; poll += 1) {
+      await setMtime(shared, Date.now());
+      a = await pollChanged(tracker, workerA, 1111);
+    }
+    expect(a?.health).toBe("ok");
+    expect((a?.snapshot as { status: string } | undefined)?.status).toBe("working");
+
+    // B resolves the same file by session-start: strong beats weak, so B takes it...
+    const b1 = await tracker.poll(workerB, "claude", undefined, 2222);
+    expect(b1.health).toBe("ok");
+    expect(b1.snapshot?.status).toBe("working");
+
+    // ...and A is detached, reporting absent rather than a stale ok. A cannot
+    // re-grab the file either: it is now owned by B and excluded as a candidate.
+    const a2 = await pollChanged(tracker, workerA, 1111);
+    expect(a2.snapshot).toBeUndefined();
+    expect(a2.health).toBe("absent");
+  });
+
+  it("resets the correlation streak when a different candidate starts correlating", async () => {
+    const worker = createWorker({ createdAt: isoAgo(3 * DAY_MS) });
+    sessionStartMock.mockResolvedValue(Date.now() - 3 * DAY_MS);
+
+    const fileA = await writeTranscript(worker, "a.jsonl", [assistantToolUse("t1", "Bash", { command: "run a" })]);
+    const fileB = await writeTranscript(worker, "b.jsonl", [assistantToolUse("t2", "Bash", { command: "run b" })]);
+    const tracker = trackerForTemp();
+
+    const staleMs = correlationMtimeWindowMs + 5_000;
+
+    // fileA climbs to one below the threshold while fileB stays cold.
+    for (let poll = 0; poll < correlationRequiredStreak - 1; poll += 1) {
+      await setMtime(fileA, Date.now());
+      await setMtime(fileB, Date.now() - staleMs);
+      const building = await pollChanged(tracker, worker, 4242);
+      expect(building.snapshot).toBeUndefined();
+    }
+
+    // Switch to fileB. Had the streak NOT reset, this single-correlation poll would
+    // meet the threshold and attach; because it resets, fileB restarts at 1 and
+    // nothing attaches.
+    await setMtime(fileA, Date.now() - staleMs);
+    await setMtime(fileB, Date.now());
+    const switched = await pollChanged(tracker, worker, 4242);
+    expect(switched.snapshot).toBeUndefined();
+    expect(switched.health).toBe("absent");
+
+    // fileB now needs its own full streak before it attaches.
+    let final: { snapshot: unknown; health: string } | undefined;
+    for (let poll = 0; poll < correlationRequiredStreak - 1; poll += 1) {
+      await setMtime(fileA, Date.now() - staleMs);
+      await setMtime(fileB, Date.now());
+      final = await pollChanged(tracker, worker, 4242);
+    }
+    expect(final?.health).toBe("ok");
+    expect((final?.snapshot as { status: string } | undefined)?.status).toBe("working");
   });
 });

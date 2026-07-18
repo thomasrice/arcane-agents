@@ -4,13 +4,16 @@ import type { Worker } from "../../../shared/types";
 import {
   bootstrapTailBytes,
   claudeProjectRoot,
+  correlationMtimeWindowMs,
+  correlationRequiredStreak,
+  correlationStreakResetAfterQuietMs,
   maxRecentTranscriptAgeMs,
   transcriptFallbackCreatedAtSlackMs,
   transcriptFallbackFreshnessMs,
   transcriptLookupRetryMs
 } from "./constants";
-import { resetTranscriptState } from "./accumulator";
-import type { ClaudeTranscriptState } from "./types";
+import { resetCorrelationState, resetTranscriptState } from "./accumulator";
+import type { ClaudeTranscriptState, TranscriptCorrelationState } from "./types";
 
 interface ResolvedTranscriptPathInput {
   worker: Worker;
@@ -20,6 +23,13 @@ interface ResolvedTranscriptPathInput {
   /** Root under which Claude stores per-project transcripts. Defaults to
    * ~/.claude/projects; overridable so tests can resolve against a temp dir. */
   projectRoot?: string;
+  /** True when the pane produced fresh output since the previous poll. Gates
+   * activity correlation: only a "qualifying" (changed) poll can advance a
+   * correlation streak, which is what keeps an idle pane from ever attaching. */
+  paneOutputChanged: boolean;
+  /** Whether another worker already owns a given transcript path (the tracker's
+   * exclusivity check). Correlation excludes such files as candidates. */
+  isPathClaimedByOtherWorker: (transcriptPath: string) => boolean;
 }
 
 /**
@@ -29,8 +39,10 @@ interface ResolvedTranscriptPathInput {
  *   - "session-id"    exact file named by the pane's --session-id flag (strong)
  *   - "session-start" first record within the session-start window (strong)
  *   - "fallback"      bounded newest-mtime guess before start time is known (weak)
+ *   - "correlation"   one candidate moved in lockstep with the pane over N
+ *                     consecutive qualifying polls when no identity match applied (weak)
  */
-export type TranscriptResolutionKind = "existing" | "session-id" | "session-start" | "fallback";
+export type TranscriptResolutionKind = "existing" | "session-id" | "session-start" | "fallback" | "correlation";
 
 export interface ResolvedTranscript {
   path: string;
@@ -42,14 +54,19 @@ export async function resolveTranscriptPath({
   state,
   paneCurrentPath,
   nowMs,
-  projectRoot = claudeProjectRoot
+  projectRoot = claudeProjectRoot,
+  paneOutputChanged,
+  isPathClaimedByOtherWorker
 }: ResolvedTranscriptPathInput): Promise<ResolvedTranscript | undefined> {
   if (state.transcriptPath && (await isPathToFile(state.transcriptPath))) {
     state.nextTranscriptLookupAtMs = 0;
     return { path: state.transcriptPath, kind: "existing" };
   }
 
-  if (nowMs < state.nextTranscriptLookupAtMs) {
+  // The retry cooldown throttles identity resolution, but a qualifying (pane
+  // changed) poll is always let through so activity correlation can advance its
+  // streak in step with the pane rather than at the cooldown's cadence.
+  if (nowMs < state.nextTranscriptLookupAtMs && !paneOutputChanged) {
     return undefined;
   }
 
@@ -82,7 +99,121 @@ export async function resolveTranscriptPath({
     }
   }
 
+  // No positive identity match. On a qualifying poll, accumulate lockstep evidence
+  // and attach (weakly) once one candidate has moved with the pane for N polls.
+  const correlated = await resolveByActivityCorrelation({
+    correlation: state.correlation,
+    candidateDirs,
+    nowMs,
+    paneOutputChanged,
+    isPathClaimedByOtherWorker
+  });
+  if (correlated) {
+    state.nextTranscriptLookupAtMs = 0;
+    return correlated;
+  }
+
   state.nextTranscriptLookupAtMs = nowMs + transcriptLookupRetryMs;
+  return undefined;
+}
+
+interface ActivityCorrelationInput {
+  correlation: TranscriptCorrelationState;
+  candidateDirs: string[];
+  nowMs: number;
+  paneOutputChanged: boolean;
+  isPathClaimedByOtherWorker: (transcriptPath: string) => boolean;
+}
+
+/**
+ * Attach a transcript by correlating file activity with pane activity when no
+ * positive identity match resolves — the long-lived-pane case where a days-old
+ * Claude process keeps spawning fresh session files (via /clear or new
+ * conversations) that never match its old start time.
+ *
+ * Only a QUALIFYING poll (the pane produced fresh output since the previous poll)
+ * can advance the streak. This is the core protection: an idle worker beside a hot
+ * foreign transcript never advances, because its pane is not changing — so the
+ * v1.3.1 "no attach for a stale idle worker" guarantee holds without needing the
+ * start-time check here.
+ *
+ * On a qualifying poll a candidate CORRELATES when its mtime is within
+ * `correlationMtimeWindowMs` of now (just written, in step with the pane).
+ * Candidates owned by another worker are excluded first. The SAME single candidate
+ * must correlate on `correlationRequiredStreak` consecutive qualifying polls, with
+ * no other candidate correlating on any of them, before it attaches.
+ *
+ * Reset rules:
+ *   - a DIFFERENT single candidate correlates -> streak restarts at 1 on it;
+ *   - MORE THAN ONE candidate correlates at once -> ambiguous, streak dropped;
+ *   - the streak has not advanced within `correlationStreakResetAfterQuietMs`
+ *     (pane quiet, or changing without the transcript moving) -> dropped, checked
+ *     lazily on the next qualifying poll so short gaps are tolerated.
+ * A qualifying poll on which zero candidates correlate neither advances nor drops
+ * the streak (a single missed flush should not erase progress); the quiet-window
+ * rule still bounds how long a stalled streak may persist.
+ */
+async function resolveByActivityCorrelation({
+  correlation,
+  candidateDirs,
+  nowMs,
+  paneOutputChanged,
+  isPathClaimedByOtherWorker
+}: ActivityCorrelationInput): Promise<ResolvedTranscript | undefined> {
+  if (!paneOutputChanged) {
+    return undefined;
+  }
+
+  if (
+    correlation.candidatePath !== undefined &&
+    nowMs - correlation.lastQualifyingPollMs > correlationStreakResetAfterQuietMs
+  ) {
+    resetCorrelationState(correlation);
+  }
+
+  const correlating: string[] = [];
+  for (const transcriptDir of candidateDirs) {
+    if (!(await isPathToDirectory(transcriptDir))) {
+      continue;
+    }
+
+    const recent = await enumerateRecentTranscriptCandidates(transcriptDir, nowMs);
+    for (const candidate of recent) {
+      if (isPathClaimedByOtherWorker(candidate.fullPath)) {
+        continue;
+      }
+      if (Math.abs(nowMs - candidate.mtimeMs) <= correlationMtimeWindowMs) {
+        correlating.push(candidate.fullPath);
+      }
+    }
+  }
+
+  if (correlating.length > 1) {
+    resetCorrelationState(correlation);
+    return undefined;
+  }
+
+  if (correlating.length === 0) {
+    return undefined;
+  }
+
+  const candidatePath = correlating[0];
+  if (candidatePath === undefined) {
+    return undefined;
+  }
+
+  if (correlation.candidatePath === candidatePath) {
+    correlation.streak += 1;
+  } else {
+    correlation.candidatePath = candidatePath;
+    correlation.streak = 1;
+  }
+  correlation.lastQualifyingPollMs = nowMs;
+
+  if (correlation.streak >= correlationRequiredStreak) {
+    return { path: candidatePath, kind: "correlation" };
+  }
+
   return undefined;
 }
 
@@ -130,10 +261,41 @@ function buildTranscriptCandidateDirs(projectRoot: string, workerProjectPath: st
 
 const sessionMatchWindowMs = 10_000;
 
-interface TranscriptCandidate {
+interface RecentTranscriptCandidate {
   fullPath: string;
   mtimeMs: number;
+}
+
+interface TranscriptCandidate extends RecentTranscriptCandidate {
   firstRecordTimestampMs: number | undefined;
+}
+
+/**
+ * List `.jsonl` transcripts in a directory whose mtime is inside the 3-day
+ * recency window, with their mtimes. Shared by start-time matching (which then
+ * reads first-record timestamps) and activity correlation (which needs only the
+ * mtimes to judge lockstep with the pane).
+ */
+async function enumerateRecentTranscriptCandidates(
+  directoryPath: string,
+  nowMs: number
+): Promise<RecentTranscriptCandidate[]> {
+  const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+  const jsonlEntries = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"));
+
+  const candidates = await Promise.all(
+    jsonlEntries.map(async (entry) => {
+      const fullPath = path.join(directoryPath, entry.name);
+      const stats = await fs.stat(fullPath);
+      if (nowMs - stats.mtimeMs > maxRecentTranscriptAgeMs) {
+        return undefined;
+      }
+
+      return { fullPath, mtimeMs: stats.mtimeMs };
+    })
+  );
+
+  return candidates.filter((candidate): candidate is RecentTranscriptCandidate => candidate !== undefined);
 }
 
 async function findMatchingTranscriptFile(
@@ -142,30 +304,15 @@ async function findMatchingTranscriptFile(
   claudeSessionStartAtMs: number | undefined,
   workerCreatedAtMs: number | undefined
 ): Promise<ResolvedTranscript | undefined> {
-  const entries = await fs.readdir(directoryPath, { withFileTypes: true });
-  const jsonlEntries = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"));
-
-  if (jsonlEntries.length === 0) {
+  const recent = await enumerateRecentTranscriptCandidates(directoryPath, nowMs);
+  if (recent.length === 0) {
     return undefined;
   }
 
-  const candidates = (
-    await Promise.all(
-      jsonlEntries.map(async (entry) => {
-        const fullPath = path.join(directoryPath, entry.name);
-        const stats = await fs.stat(fullPath);
-        if (nowMs - stats.mtimeMs > maxRecentTranscriptAgeMs) {
-          return undefined;
-        }
-
-        return { fullPath, mtimeMs: stats.mtimeMs, firstRecordTimestampMs: undefined as number | undefined };
-      })
-    )
-  ).filter((c): c is TranscriptCandidate => c !== undefined);
-
-  if (candidates.length === 0) {
-    return undefined;
-  }
+  const candidates: TranscriptCandidate[] = recent.map((candidate) => ({
+    ...candidate,
+    firstRecordTimestampMs: undefined
+  }));
 
   // Both branches now need the first-record timestamp: the session-start match
   // uses it directly, and the bounded fallback uses it to reject transcripts that

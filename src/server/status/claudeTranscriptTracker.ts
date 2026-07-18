@@ -43,6 +43,14 @@ export interface ClaudeTranscriptTrackerOptions {
   projectRoot?: string;
 }
 
+/** Per-poll pane context the caller (collectSignals) threads in. */
+export interface ClaudeTranscriptPollContext {
+  /** True when the pane produced fresh output since the previous poll. Drives the
+   * activity-correlation attach for long-lived panes whose start time no longer
+   * matches any candidate transcript. */
+  paneOutputChanged: boolean;
+}
+
 export class ClaudeTranscriptTracker {
   private readonly states = new Map<string, ClaudeTranscriptState>();
   private readonly projectRoot: string;
@@ -55,7 +63,8 @@ export class ClaudeTranscriptTracker {
     worker: Worker,
     paneCurrentCommand: string,
     paneCurrentPath?: string,
-    panePid?: number
+    panePid?: number,
+    paneContext?: ClaudeTranscriptPollContext
   ): Promise<ClaudeTranscriptPollResult> {
     if (!isLikelyClaudeSession(worker, paneCurrentCommand.toLowerCase())) {
       this.states.delete(worker.id);
@@ -76,7 +85,10 @@ export class ClaudeTranscriptTracker {
         state,
         paneCurrentPath,
         nowMs,
-        projectRoot: this.projectRoot
+        projectRoot: this.projectRoot,
+        paneOutputChanged: paneContext?.paneOutputChanged ?? false,
+        isPathClaimedByOtherWorker: (transcriptPath) =>
+          this.findTranscriptHolder(transcriptPath, worker.id) !== undefined
       });
     } catch {
       return { snapshot: undefined, health: "error" };
@@ -142,8 +154,8 @@ export class ClaudeTranscriptTracker {
    *
    * Contest rule: a strong attachment (explicit --session-id, or a first-record
    * timestamp inside the session-start window) beats a weak one (the bounded mtime
-   * fallback). A strong challenger evicts a weak incumbent; otherwise the incumbent
-   * keeps the file and the challenger loses.
+   * fallback, or an activity-correlation match). A strong challenger evicts a weak
+   * incumbent; otherwise the incumbent keeps the file and the challenger loses.
    */
   private claimTranscript(
     workerId: string,
@@ -157,7 +169,8 @@ export class ClaudeTranscriptTracker {
       return true;
     }
 
-    const strength: TranscriptMatchStrength = resolved.kind === "fallback" ? "weak" : "strong";
+    const strength: TranscriptMatchStrength =
+      resolved.kind === "fallback" || resolved.kind === "correlation" ? "weak" : "strong";
     const incumbent = this.findTranscriptHolder(resolved.path, workerId);
 
     if (incumbent) {

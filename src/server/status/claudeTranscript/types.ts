@@ -38,10 +38,28 @@ export interface SessionStartLookupState {
  */
 export type TranscriptMatchStrength = "strong" | "weak";
 
+/**
+ * Evidence that one candidate transcript is moving in lockstep with this worker's
+ * pane, accumulated across polls when start-time matching cannot resolve a file
+ * (see io.ts `resolveByActivityCorrelation`). Kept deliberately tiny — a single
+ * candidate path, a streak count, and the wall-clock ms of the last qualifying
+ * (pane-changed) poll that advanced it.
+ */
+export interface TranscriptCorrelationState {
+  /** Candidate currently accumulating a streak, or undefined when none. */
+  candidatePath: string | undefined;
+  /** Consecutive qualifying polls this candidate has correlated on. */
+  streak: number;
+  /** Wall-clock ms of the last qualifying poll that advanced the streak. */
+  lastQualifyingPollMs: number;
+}
+
 export interface ClaudeTranscriptState {
   transcriptPath?: string;
   /** Strength of the current `transcriptPath` attachment; undefined when none. */
   transcriptMatchStrength?: TranscriptMatchStrength;
+  /** Activity-correlation streak used only while unattached. */
+  correlation: TranscriptCorrelationState;
   claudeSessionStartAtMs?: number;
   sessionStartLookup: SessionStartLookupState;
   nextTranscriptLookupAtMs: number;

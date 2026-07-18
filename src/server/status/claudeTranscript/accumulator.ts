@@ -6,11 +6,17 @@ import {
   textIdleDelayMs
 } from "./constants";
 import { readArray, readRecord, readString } from "./parser";
-import type { ActiveToolEntry, ClaudeTranscriptState, ParsedTranscriptRecord } from "./types";
+import type {
+  ActiveToolEntry,
+  ClaudeTranscriptState,
+  ParsedTranscriptRecord,
+  TranscriptCorrelationState
+} from "./types";
 
 export function createTranscriptState(): ClaudeTranscriptState {
   return {
     transcriptMatchStrength: undefined,
+    correlation: createCorrelationState(),
     sessionStartLookup: { status: "pending", nextRetryAtMs: 0 },
     nextTranscriptLookupAtMs: 0,
     fileOffset: 0,
@@ -41,6 +47,19 @@ export function resetTranscriptState(state: ClaudeTranscriptState): void {
   state.lastActivityPath = undefined;
   state.activeTools.clear();
   state.activeSubagentTools.clear();
+  // A fresh attach/detach cycle starts with no lockstep evidence: the streak was
+  // relevant only while this worker was hunting for a file to attach.
+  resetCorrelationState(state.correlation);
+}
+
+export function createCorrelationState(): TranscriptCorrelationState {
+  return { candidatePath: undefined, streak: 0, lastQualifyingPollMs: 0 };
+}
+
+export function resetCorrelationState(correlation: TranscriptCorrelationState): void {
+  correlation.candidatePath = undefined;
+  correlation.streak = 0;
+  correlation.lastQualifyingPollMs = 0;
 }
 
 export function applyParsedTranscriptRecords(

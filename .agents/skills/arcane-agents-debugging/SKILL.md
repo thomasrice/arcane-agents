@@ -48,6 +48,7 @@ Given "worker `<name>` shows the wrong status":
    - `parsed-activity-signal` as a working reason on a claude/codex/opencode runtime → should be impossible since v1.3.0; if seen, the worker was classified generic at that moment.
    - `transcript: "ok"` + `outputQuietForMs` in the minutes → pre-v1.3.1 transcript misattribution signature (sessions sharing a `~/.claude/projects` dir).
    - `transcript: "error"` → transcript resolution/IO broke; status falls back to pane heuristics (weaker for Claude).
+   - `transcript: "absent"` on a long-lived claude pane mid-turn (the process has been alive for days across `/clear`s or new conversations, and is actively streaming) → pre-v1.4.1 re-attach regression: the conservative session-start match only ever fit the original conversation's file, so a fresh session file could never re-attach. Fixed by activity-correlation attach (`claudeTranscript/io.ts` `resolveByActivityCorrelation`), which adopts the one transcript moving in lockstep with the pane after N qualifying (pane-changed) polls. If seen again, check the pane is genuinely producing fresh output (correlation only advances on changed polls) and that no other worker owns the file.
    - Correct-but-surprising: a generic shell streaming output (deploys, builds) legitimately flaps working↔idle with the output; that is by design.
    - Attention flickers on Claude (~12s after a tool starts, gone by ~45s) → orphaned transcript tool entry (known, documented in plan.md).
 

@@ -28,6 +28,33 @@ export const transcriptLookupRetryMs = 2_000;
 export const transcriptFallbackCreatedAtSlackMs = 2 * 60 * 1000;
 export const transcriptFallbackFreshnessMs = 10 * 60 * 1000;
 
+/**
+ * Activity-correlation attachment (see io.ts `resolveByActivityCorrelation`).
+ *
+ * When start-time matching fails — a known Claude process start with no candidate
+ * transcript whose first record lands in the session-start window — a long-lived
+ * pane (process alive for days while the user runs /clear or starts new
+ * conversations) can never re-attach: each new session file's first record is
+ * recent, so it never matches the days-old start. Rather than attach blindly, the
+ * tracker builds evidence over consecutive polls that exactly ONE candidate
+ * transcript is moving in lockstep with this pane, then attaches it weakly (a
+ * genuine session-start match from another worker can still evict it).
+ *
+ * - mtime window: on a poll where the pane output changed, a candidate CORRELATES
+ *   when its mtime is within this window of now — i.e. it was just written, in
+ *   step with the pane. Sized to cover one ~2.5s poll interval plus scheduling
+ *   slack.
+ * - required streak: the SAME single candidate must correlate on this many
+ *   consecutive qualifying (pane-changed) polls, with no other candidate
+ *   correlating on any of them, before it attaches.
+ * - reset-after-quiet: a partial streak survives short quiet gaps but is dropped
+ *   once the pane has produced no qualifying poll for this long (the lockstep
+ *   evidence has gone stale). Checked lazily on the next qualifying poll.
+ */
+export const correlationMtimeWindowMs = 5_000;
+export const correlationRequiredStreak = 3;
+export const correlationStreakResetAfterQuietMs = 15_000;
+
 export const bashCommandDisplayMaxLength = 72;
 export const taskDescriptionDisplayMaxLength = 56;
 

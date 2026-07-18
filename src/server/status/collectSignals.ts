@@ -136,12 +136,24 @@ export async function collectSignals({
   // Capture-time adapter uses the definite classification only (no output yet).
   const captureAdapter = resolveRuntimeAdapter(worker, commandLower, runtimeProcess?.runtime);
 
-  const [output, transcript] = await Promise.all([
-    tmux.capturePane(worker.tmuxRef, captureAdapter.captureLines),
-    claudeTranscript.poll(worker, paneState.currentCommand, paneState.currentPath, paneState.panePid)
-  ]);
-
+  // The transcript poll now consumes a pane-changed signal (for activity-
+  // correlation attach), so it can no longer run parallel to the capture: we must
+  // capture the pane and fold it into the observation first. `observePane` mutates
+  // one PaneObservation per worker in place, so read the prior change time before
+  // it updates.
+  const previousOutputChangeAtMs = paneObservation.get(worker.id)?.lastOutputChangeAtMs;
+  const output = await tmux.capturePane(worker.tmuxRef, captureAdapter.captureLines);
   const observation = observePane(paneObservation, worker.id, paneState.currentCommand, output);
+  const paneOutputChanged =
+    previousOutputChangeAtMs !== undefined && observation.lastOutputChangeAtMs !== previousOutputChangeAtMs;
+
+  const transcript = await claudeTranscript.poll(
+    worker,
+    paneState.currentCommand,
+    paneState.currentPath,
+    paneState.panePid,
+    { paneOutputChanged }
+  );
 
   return buildWorkerSignals({
     worker,
