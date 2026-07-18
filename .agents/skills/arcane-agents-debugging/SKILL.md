@@ -21,6 +21,8 @@ The safety net is `src/server/status/statusDecision.integration.test.ts`: pane t
 
 Given "worker `<name>` shows the wrong status":
 
+0. **Confirm the running server actually has the fix level you expect** — `curl -s localhost:7600/api/health` includes `version` (v1.4.2+). A freshly-shipped fix does nothing until the user restarts; check this before diagnosing "still broken".
+
 1. **Find the worker and its recent decisions** (read-only, live instance on port 7600 by default):
    ```bash
    curl -s localhost:7600/api/workers | jq '.workers[] | select(.displayName=="<name>")'

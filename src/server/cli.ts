@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
 import { getArcaneAgentsPaths } from "./config/loadConfig";
 import { runConfig } from "./cli/commands/config";
 import { runDoctor } from "./cli/commands/doctor";
@@ -8,7 +7,7 @@ import { runInit } from "./cli/commands/init";
 import { runSessions } from "./cli/commands/sessions";
 import { runSetup } from "./cli/commands/setup";
 import { runStart } from "./cli/commands/start";
-import { resolveAppPath, resolveAppRoot, setAppRoot } from "./utils/appRoot";
+import { readPackageVersion, resolveAppRoot, setAppRoot } from "./utils/appRoot";
 
 function extractSessionFlag(args: string[]): { sessionName: string | undefined; remainingArgs: string[] } {
   const remaining = [...args];
@@ -123,22 +122,6 @@ Config paths:
 
 function printVersion(): void {
   console.log(readPackageVersion());
-}
-
-function readPackageVersion(): string {
-  const packageJsonPath = resolveAppPath("package.json");
-
-  try {
-    const raw = fs.readFileSync(packageJsonPath, "utf8");
-    const parsed = JSON.parse(raw) as Partial<{ version: unknown }>;
-    if (typeof parsed.version === "string" && parsed.version.trim().length > 0) {
-      return parsed.version;
-    }
-  } catch {
-    // no-op
-  }
-
-  return "0.0.0";
 }
 
 void runCli()

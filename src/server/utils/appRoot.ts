@@ -36,3 +36,19 @@ export function setAppRoot(appRoot: string): string {
 export function resolveAppPath(...segments: string[]): string {
   return path.join(resolveAppRoot(), ...segments);
 }
+
+export function readPackageVersion(): string {
+  const packageJsonPath = resolveAppPath("package.json");
+
+  try {
+    const raw = fs.readFileSync(packageJsonPath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<{ version: unknown }>;
+    if (typeof parsed.version === "string" && parsed.version.trim().length > 0) {
+      return parsed.version;
+    }
+  } catch {
+    // Fall through to the sentinel below.
+  }
+
+  return "0.0.0";
+}

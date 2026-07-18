@@ -8,6 +8,7 @@ import type { StatusMonitor } from "../../status/statusMonitor";
 import type { VoiceLineCatalog, Worker } from "../../../shared/types";
 import { notFoundError } from "../appError";
 import { asyncRoute } from "../asyncRoute";
+import { readPackageVersion } from "../../utils/appRoot";
 import {
   broadcastInputSchema,
   movementModeSchema,
@@ -30,9 +31,12 @@ function respondWorker(res: Response, hub: RealtimeHub, worker: Worker): void {
 }
 
 export function registerApiRoutes(app: express.Express, { orchestrator, hub, statusMonitor }: RegisterApiRoutesDeps): void {
+  const packageVersion = readPackageVersion();
+
   app.get("/api/health", (_req, res) => {
     res.json({
       ok: true,
+      version: packageVersion,
       time: new Date().toISOString()
     });
   });
