@@ -97,6 +97,29 @@ export function isWasdKey(key: string): boolean {
   return normalized === "w" || normalized === "a" || normalized === "s" || normalized === "d";
 }
 
+export function panViewportToKeepWorldPointInside(
+  viewport: ViewportState,
+  worldPoint: { x: number; y: number },
+  canvasSize: { width: number; height: number },
+  padding: number
+): ViewportState {
+  const screenPoint = worldToScreen(worldPoint.x, worldPoint.y, viewport);
+  const horizontalPadding = clamp(padding, 0, canvasSize.width / 2);
+  const verticalPadding = clamp(padding, 0, canvasSize.height / 2);
+  const offsetX =
+    viewport.offsetX +
+    (clamp(screenPoint.x, horizontalPadding, canvasSize.width - horizontalPadding) - screenPoint.x);
+  const offsetY =
+    viewport.offsetY +
+    (clamp(screenPoint.y, verticalPadding, canvasSize.height - verticalPadding) - screenPoint.y);
+
+  if (offsetX === viewport.offsetX && offsetY === viewport.offsetY) {
+    return viewport;
+  }
+
+  return { ...viewport, offsetX, offsetY };
+}
+
 /**
  * Clamp a viewport so the map stays contained: scale never drops below a
  * contain-fit, and the offset keeps the map within the canvas (centring it on any

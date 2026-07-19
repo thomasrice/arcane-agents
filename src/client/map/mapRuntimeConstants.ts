@@ -14,6 +14,7 @@ export const pointerPanDragThreshold = 4;
 export const defaultZoomScale = 1.45;
 export const maxZoomScale = 2.4;
 export const recenterVisibilityPaddingPx = 56;
+export const cameraFollowPaddingPx = 96;
 export const commandFeedbackDurationMs = 900;
 export const blockedFeedbackDurationMs = 750;
 export const workerPersonalSpacePx = 26;

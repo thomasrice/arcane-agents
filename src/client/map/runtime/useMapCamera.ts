@@ -6,11 +6,17 @@ import {
   constrainViewportToContainMap,
   getBoundingCenter,
   isInsideViewport,
+  panViewportToKeepWorldPointInside,
   screenToWorld,
   worldToScreen,
   type ViewportState
 } from "../viewportMath";
-import { defaultZoomScale, maxZoomScale, recenterVisibilityPaddingPx } from "../mapRuntimeConstants";
+import {
+  cameraFollowPaddingPx,
+  defaultZoomScale,
+  maxZoomScale,
+  recenterVisibilityPaddingPx
+} from "../mapRuntimeConstants";
 
 export interface CanvasSize {
   width: number;
@@ -32,6 +38,8 @@ export interface MapCamera {
   zoomViewportByFactor: (factor: number) => void;
   /** Recentre the viewport on the given workers unless they are already fully visible. */
   centerOnWorkers: (workerIds: string[]) => void;
+  /** Pan only enough to keep the moving workers inside the camera's edge margin. */
+  keepWorkersInView: (workerIds: ReadonlySet<string>) => void;
 }
 
 /**
@@ -147,6 +155,22 @@ export function useMapCamera({ mapData, workers, resolveWorkerPosition }: UseMap
     [canvasSize.height, canvasSize.width, resolveWorkerPosition, setConstrainedViewport, viewport, workers]
   );
 
+  const keepWorkersInView = useCallback(
+    (workerIds: ReadonlySet<string>) => {
+      const positions = workers
+        .filter((worker) => workerIds.has(worker.id))
+        .map((worker) => resolveWorkerPosition(worker));
+      const center = getBoundingCenter(positions);
+      if (!center) {
+        return;
+      }
+      setConstrainedViewport((current) =>
+        panViewportToKeepWorldPointInside(current, center, canvasSize, cameraFollowPaddingPx)
+      );
+    },
+    [canvasSize, resolveWorkerPosition, setConstrainedViewport, workers]
+  );
+
   return {
     containerRef,
     canvasSize,
@@ -154,6 +178,7 @@ export function useMapCamera({ mapData, workers, resolveWorkerPosition }: UseMap
     setConstrainedViewport,
     zoomViewportAroundPoint,
     zoomViewportByFactor,
-    centerOnWorkers
+    centerOnWorkers,
+    keepWorkersInView
   };
 }

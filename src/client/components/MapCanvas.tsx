@@ -100,7 +100,8 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     setConstrainedViewport,
     zoomViewportAroundPoint,
     zoomViewportByFactor,
-    centerOnWorkers
+    centerOnWorkers,
+    keepWorkersInView
   } = useMapCamera({ mapData, workers, resolveWorkerPosition });
 
   const {
@@ -191,6 +192,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     setViewport: setConstrainedViewport,
     zoomViewportByFactor,
     nudgeSelectedWorkers,
+    keepWorkersInView,
     flushPendingKeyboardMoveCommits,
     keyboardPanSpeedPerSecond,
     keyboardMoveUnitsPerSecond

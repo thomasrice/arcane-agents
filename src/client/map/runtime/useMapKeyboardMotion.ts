@@ -12,6 +12,8 @@ interface UseMapKeyboardMotionInput {
   /** Zoom the viewport around the canvas centre by a scale factor. */
   zoomViewportByFactor: (factor: number) => void;
   nudgeSelectedWorkers: (deltaX: number, deltaY: number) => boolean;
+  /** Pan just enough to keep the keyboard-moved selection away from the viewport edges. */
+  keepWorkersInView: (workerIds: ReadonlySet<string>) => void;
   flushPendingKeyboardMoveCommits: () => void;
   keyboardPanSpeedPerSecond: number;
   keyboardMoveUnitsPerSecond: number;
@@ -117,7 +119,10 @@ export function useMapKeyboardMotion(input: UseMapKeyboardMotionInput): void {
       const vector = movementVector(pressed);
       if (vector) {
         const speed = inputRef.current.keyboardMoveUnitsPerSecond * deltaSeconds;
-        inputRef.current.nudgeSelectedWorkers(vector.x * speed, vector.y * speed);
+        const moved = inputRef.current.nudgeSelectedWorkers(vector.x * speed, vector.y * speed);
+        if (moved) {
+          inputRef.current.keepWorkersInView(inputRef.current.selectedWorkerIdsRef.current);
+        }
       }
 
       moveRafRef.current = requestAnimationFrame(moveStep);
@@ -201,7 +206,13 @@ export function useMapKeyboardMotion(input: UseMapKeyboardMotionInput): void {
           const vector = movementVector(pressed);
           if (vector) {
             const immediateDistance = inputRef.current.keyboardMoveUnitsPerSecond / 60;
-            inputRef.current.nudgeSelectedWorkers(vector.x * immediateDistance, vector.y * immediateDistance);
+            const moved = inputRef.current.nudgeSelectedWorkers(
+              vector.x * immediateDistance,
+              vector.y * immediateDistance
+            );
+            if (moved) {
+              inputRef.current.keepWorkersInView(inputRef.current.selectedWorkerIdsRef.current);
+            }
           }
         }
 
