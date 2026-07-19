@@ -369,17 +369,21 @@ export function buildFriendlyTmuxDefaults(options: FriendlyTmuxDefaultsOptions =
     ["set-option", "-g", "mouse", "on"],
     ["set-option", "-s", "escape-time", "0"],
     ["set-window-option", "-g", "history-limit", "100000"],
+    // Emit OSC 52 to the attached client on copy so the *viewer's* browser
+    // clipboard is set (handled client-side by ClipboardAddon), not only the
+    // server's. Set unconditionally — the browser-clipboard path must not
+    // depend on a server-side clipboard tool existing. "external" forwards
+    // outbound copies but ignores inbound OSC 52 from programs inside panes
+    // trying to overwrite tmux buffers.
+    ["set-option", "-s", "set-clipboard", "external"],
     ["bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", copyAction],
     ["bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane", "send-keys", "-X", copyAction]
   ];
 
   if (options.copyCommand) {
-    commands.splice(
-      3,
-      0,
-      ["set-option", "-s", "set-clipboard", "external"],
-      ["set-option", "-s", "copy-command", options.copyCommand]
-    );
+    // Also pipe the selection to the server-side clipboard tool, so copying
+    // still lands on the host's own clipboard when viewed locally.
+    commands.push(["set-option", "-s", "copy-command", options.copyCommand]);
   }
 
   return commands;

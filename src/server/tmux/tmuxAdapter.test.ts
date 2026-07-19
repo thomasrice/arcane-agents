@@ -31,20 +31,28 @@ describe("tmux argv builders", () => {
 });
 
 describe("buildFriendlyTmuxDefaults", () => {
-  it("bridges the system clipboard and pipes copies when a copy command is available", () => {
+  it("pipes copies to the system clipboard tool and switches the copy action when one is available", () => {
     const commands = buildFriendlyTmuxDefaults({ copyCommand: "wl-copy" });
 
-    // The copy-command branch adds clipboard bridging and switches the copy action.
-    expect(commands).toContainEqual(["set-option", "-s", "set-clipboard", "external"]);
     expect(commands).toContainEqual(["set-option", "-s", "copy-command", "wl-copy"]);
     expect(commands).toContainEqual(["bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-and-cancel"]);
   });
 
-  it("omits clipboard bridging and falls back to buffer copies when no copy command is available", () => {
+  it("always emits OSC 52 to the viewer so the browser clipboard is set regardless of a copy command", () => {
+    // set-clipboard external is the load-bearing part of the remote-clipboard
+    // fix: it must be present whether or not a server-side clipboard tool
+    // exists, so the OSC 52 escape reaches the browser's ClipboardAddon.
+    const withTool = buildFriendlyTmuxDefaults({ copyCommand: "wl-copy" });
+    const withoutTool = buildFriendlyTmuxDefaults();
+
+    expect(withTool).toContainEqual(["set-option", "-s", "set-clipboard", "external"]);
+    expect(withoutTool).toContainEqual(["set-option", "-s", "set-clipboard", "external"]);
+  });
+
+  it("falls back to buffer copies and pipes nothing when no copy command is available", () => {
     const commands = buildFriendlyTmuxDefaults();
 
     expect(commands.some((command) => command.includes("copy-command"))).toBe(false);
-    expect(commands.some((command) => command.includes("set-clipboard"))).toBe(false);
     expect(commands).toContainEqual(["bind-key", "-T", "copy-mode", "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection-and-cancel"]);
   });
 });

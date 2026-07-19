@@ -173,6 +173,14 @@ Default URLs:
 - `Ctrl+Alt+]` exits terminal focus back to selection focus.
 - Press `Ctrl+Alt+]` again in selection focus to clear selection.
 
+### Copying from a terminal
+
+Drag-select text in a terminal panel and it is copied to **your** clipboard — the machine viewing the app, not just the machine running it. This works whether you are on the host or reaching it remotely (e.g. a laptop hitting the desktop over Tailscale): tmux emits the selection as an OSC 52 escape, and the browser writes it to your local clipboard.
+
+- Over plain `http://<host>:7600`, the browser's async clipboard API is unavailable, so the copy uses a legacy fallback that runs within the mouse-drag gesture. It is reliable but occasionally a very fast release can miss — just re-select. For a native-clipboard experience without the fallback, expose the app over HTTPS (for a tailnet: `tailscale serve --bg https:443 http://localhost:7600`, then browse the `*.ts.net` URL).
+- Programs running inside a pane can never *read* your clipboard through this path — only selections you make flow outward, and only to the clipboard.
+- Hold `Shift` while dragging to make a normal browser text selection instead (bypasses tmux); then copy with your usual shortcut.
+
 ### Common shortcuts
 
 - `/`: open command palette.

@@ -1,6 +1,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
+import { ViewerClipboardProvider } from "../terminal/clipboardProvider";
 
 const shiftEnterSequence = "\n";
 const tokyoNightTheme = {
@@ -156,6 +158,10 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
+    // Deliver tmux's OSC 52 copies into the viewer's browser clipboard (see
+    // ViewerClipboardProvider). Default base64; custom provider so remote/http
+    // viewers work and pane programs can never read the clipboard back.
+    terminal.loadAddon(new ClipboardAddon(undefined, new ViewerClipboardProvider()));
     terminal.attachCustomKeyEventHandler((event) => {
       if (!isShiftEnterEvent(event)) {
         return true;
