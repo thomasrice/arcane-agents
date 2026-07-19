@@ -22,16 +22,12 @@ interface UseMapKeyboardMotionInput {
  * panning, selected-worker nudging, and +/- zoom, behind one editable-target guard.
  * The rAF pan/move loop bookkeeping refs are internal to this hook.
  */
-export function useMapKeyboardMotion({
-  workerFacingRef,
-  selectedWorkerIdsRef,
-  setViewport,
-  zoomViewportByFactor,
-  nudgeSelectedWorkers,
-  flushPendingKeyboardMoveCommits,
-  keyboardPanSpeedPerSecond,
-  keyboardMoveUnitsPerSecond
-}: UseMapKeyboardMotionInput): void {
+export function useMapKeyboardMotion(input: UseMapKeyboardMotionInput): void {
+  // Keep the listener and its pressed-key state alive for the component lifetime.
+  // Parent rerenders can replace input callbacks while a key is down; rebuilding
+  // this effect then cleared held keys and cancelled the active rAF loop before keyup.
+  const inputRef = useRef(input);
+  inputRef.current = input;
   const pressedPanKeysRef = useRef<Set<PanDirection>>(new Set());
   const panRafRef = useRef<number | null>(null);
   const lastPanFrameRef = useRef<number | null>(null);
@@ -93,11 +89,11 @@ export function useMapKeyboardMotion({
 
       if (xAxis !== 0 || yAxis !== 0) {
         const vectorLength = Math.hypot(xAxis, yAxis);
-        const speed = keyboardPanSpeedPerSecond * deltaSeconds;
+        const speed = inputRef.current.keyboardPanSpeedPerSecond * deltaSeconds;
         const deltaX = (xAxis / vectorLength) * speed;
         const deltaY = (yAxis / vectorLength) * speed;
 
-        setViewport((current) => ({
+        inputRef.current.setViewport((current) => ({
           ...current,
           offsetX: current.offsetX + deltaX,
           offsetY: current.offsetY + deltaY
@@ -120,8 +116,8 @@ export function useMapKeyboardMotion({
 
       const vector = movementVector(pressed);
       if (vector) {
-        const speed = keyboardMoveUnitsPerSecond * deltaSeconds;
-        nudgeSelectedWorkers(vector.x * speed, vector.y * speed);
+        const speed = inputRef.current.keyboardMoveUnitsPerSecond * deltaSeconds;
+        inputRef.current.nudgeSelectedWorkers(vector.x * speed, vector.y * speed);
       }
 
       moveRafRef.current = requestAnimationFrame(moveStep);
@@ -159,7 +155,7 @@ export function useMapKeyboardMotion({
       }
 
       event.preventDefault();
-      zoomViewportByFactor(zoomIn ? 1.1 : 0.9);
+      inputRef.current.zoomViewportByFactor(zoomIn ? 1.1 : 0.9);
       return true;
     };
 
@@ -185,6 +181,7 @@ export function useMapKeyboardMotion({
 
         event.preventDefault();
 
+        const { selectedWorkerIdsRef, workerFacingRef } = inputRef.current;
         if (selectedWorkerIdsRef.current.size === 0) {
           pressedPanKeysRef.current.add(direction);
           startPanLoop();
@@ -203,8 +200,8 @@ export function useMapKeyboardMotion({
         if (!alreadyPressed) {
           const vector = movementVector(pressed);
           if (vector) {
-            const immediateDistance = keyboardMoveUnitsPerSecond / 60;
-            nudgeSelectedWorkers(vector.x * immediateDistance, vector.y * immediateDistance);
+            const immediateDistance = inputRef.current.keyboardMoveUnitsPerSecond / 60;
+            inputRef.current.nudgeSelectedWorkers(vector.x * immediateDistance, vector.y * immediateDistance);
           }
         }
 
@@ -231,7 +228,7 @@ export function useMapKeyboardMotion({
         pressedMoveKeysRef.current.delete(direction);
         if (pressedMoveKeysRef.current.size === 0) {
           stopMoveLoop();
-          flushPendingKeyboardMoveCommits();
+          inputRef.current.flushPendingKeyboardMoveCommits();
         }
       }
 
@@ -246,7 +243,7 @@ export function useMapKeyboardMotion({
       pressedMoveKeysRef.current.clear();
       stopPanLoop();
       stopMoveLoop();
-      flushPendingKeyboardMoveCommits();
+      inputRef.current.flushPendingKeyboardMoveCommits();
     };
 
     const pressedPanKeys = pressedPanKeysRef.current;
@@ -264,18 +261,9 @@ export function useMapKeyboardMotion({
       stopMoveLoop();
       pressedPanKeys.clear();
       pressedMoveKeys.clear();
-      flushPendingKeyboardMoveCommits();
+      inputRef.current.flushPendingKeyboardMoveCommits();
     };
-  }, [
-    flushPendingKeyboardMoveCommits,
-    keyboardMoveUnitsPerSecond,
-    keyboardPanSpeedPerSecond,
-    nudgeSelectedWorkers,
-    selectedWorkerIdsRef,
-    setViewport,
-    workerFacingRef,
-    zoomViewportByFactor
-  ]);
+  }, []);
 }
 
 function panDirectionToFacing(direction: PanDirection): SpriteDirection {
