@@ -13,6 +13,8 @@ const codexActiveFreshLineWindow = 12;
 interface CodexSignals {
   /** An approval / permission / question dialog — routes to attention. */
   approval: boolean;
+  /** A completed response whose final line asks the user a question. */
+  question: boolean;
   /** A live turn ("esc to interrupt") — routes to working. */
   active: boolean;
   /**
@@ -71,14 +73,14 @@ export const codexAdapter: RuntimeAdapter = {
   detect(output): RuntimeSignals {
     const signals = detectCodexSignals(output);
     return {
-      // `prompt` means "codex is parked, not mid-turn" — an approval dialog OR the
-      // at-rest input prompt. Both classify the pane as codex; the decision layer
-      // distinguishes them via `awaitingApproval` (approval -> attention; at-rest
-      // -> falls through to idle).
-      prompt: signals.approval || signals.atInputPrompt,
+      // `prompt` means "codex is parked, not mid-turn" — an approval dialog, a
+      // response ending in a question, or the at-rest input prompt. The decision
+      // layer distinguishes the states through the dedicated waiting signals.
+      prompt: signals.approval || signals.question || signals.atInputPrompt,
       active: signals.active,
       activityText: extractCodexRuntimeActivityText(output, signals),
       activeTask: undefined,
+      awaitingInput: signals.question,
       awaitingApproval: signals.approval
     };
   }
@@ -108,19 +110,26 @@ function detectCodexSignals(output: string): CodexSignals {
   const latestPromptIndex = findLastMatchingIndex(lines, (line) => isCodexPromptLine(line) || hasCodexPromptStatus(line));
   const latestActiveIndex = findLastMatchingIndex(lines, (line) => codexActiveMatchers.some((matcher) => matcher.test(line)));
 
-  const hasInputGlyph = lines.some((line) => codexInputPromptMatchers.some((matcher) => matcher.test(line)));
+  const latestInputPromptIndex = findLastMatchingIndex(lines, (line) =>
+    codexInputPromptMatchers.some((matcher) => matcher.test(line))
+  );
   const hasFooter = lines.some((line) => codexFooterMatchers.some((matcher) => matcher.test(line)));
+  const atInputPrompt = latestInputPromptIndex >= 0 && hasFooter;
 
   return {
     approval:
       latestPromptIndex >= 0 &&
       newestIndex >= 0 &&
       newestIndex - latestPromptIndex <= codexPromptFreshLineWindow,
+    question:
+      atInputPrompt &&
+      latestInputPromptIndex > 0 &&
+      (lines[latestInputPromptIndex - 1]?.endsWith("?") ?? false),
     active:
       latestActiveIndex >= 0 &&
       newestIndex >= 0 &&
       newestIndex - latestActiveIndex <= codexActiveFreshLineWindow,
-    atInputPrompt: hasInputGlyph && hasFooter
+    atInputPrompt
   };
 }
 
@@ -191,6 +200,9 @@ function extractCodexRuntimeActivityText(output: string, signals: CodexSignals):
 
   if (signals.approval) {
     return "Waiting for approval";
+  }
+  if (signals.question) {
+    return "Waiting for input";
   }
 
   if (signals.active) {

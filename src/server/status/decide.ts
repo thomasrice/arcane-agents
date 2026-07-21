@@ -97,6 +97,7 @@ interface DecisionContext {
   hasOpenCodeActiveSignal: boolean;
   hasCodexPromptSignal: boolean;
   hasCodexApprovalPrompt: boolean;
+  hasCodexInputPrompt: boolean;
   hasCodexActiveSignal: boolean;
   hasOmpPromptSignal: boolean;
   hasOmpActiveSignal: boolean;
@@ -158,6 +159,7 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
     hasOpenCodeActiveSignal: isOpenCodeSession && rs.active,
     hasCodexPromptSignal: isCodexSession && rs.prompt,
     hasCodexApprovalPrompt: isCodexSession && Boolean(rs.awaitingApproval),
+    hasCodexInputPrompt: isCodexSession && Boolean(rs.awaitingInput),
     hasCodexActiveSignal: isCodexSession && rs.active,
     hasOmpPromptSignal: isOmpSession && rs.prompt,
     hasOmpActiveSignal: isOmpSession && rs.active,
@@ -219,6 +221,19 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
 
   if (context.hasClaudeInputPrompt && !context.hasClaudeProgressSignal && !isInteractiveCommand(context)) {
     pushReason({ code: "claude-input-prompt", message: "Claude is waiting for a question response." });
+    return finalizeDecision(context, {
+      status: "attention",
+      activityText: context.runtimeActivityText ?? "Waiting for input",
+      activityTool: "terminal",
+      activityPath: undefined,
+      confidence: 0.96,
+      reasons,
+      parsedStrongSignal: false
+    });
+  }
+
+  if (context.hasCodexInputPrompt && !context.hasCodexActiveSignal && !isInteractiveCommand(context)) {
+    pushReason({ code: "codex-input-prompt", message: "Codex is waiting for a question response." });
     return finalizeDecision(context, {
       status: "attention",
       activityText: context.runtimeActivityText ?? "Waiting for input",

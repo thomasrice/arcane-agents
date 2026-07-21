@@ -373,6 +373,24 @@ describe("status decision — Codex runtime", () => {
     expect(reasonCodes(result)).toContain("codex-approval-prompt");
   });
 
+  it("reads a completed Codex response ending in a question as attention", () => {
+    const output = [
+      '› Ask me exactly "Which colour do you choose: red or blue?" and wait for my answer.',
+      "",
+      "• Which colour do you choose: red or blue?",
+      "",
+      "› Find and fix a bug in @filename",
+      "",
+      "  gpt-5.6-sol low · ~/code/personal-assistant · weekly 98% left"
+    ].join("\n");
+
+    const result = evaluate({ runtime: "codex", output, outputQuietForMs: 15_000 });
+
+    expect(result.status).toBe("attention");
+    expect(result.activityText).toBe("Waiting for input");
+    expect(reasonCodes(result)).toContain("codex-input-prompt");
+  });
+
   it("reads a finished Codex at a quiet prompt as idle despite a git word in scrollback", () => {
     const output = [
       "• Ran git status",

@@ -57,6 +57,18 @@ describe("codexAdapter.detect", () => {
     "  gpt-5.6-terra medium fast · ~/code/personal-assistant · weekly 93% left · Main [default]"
   ].join("\n");
 
+  // Captured from codex-min v0.144.6 after the model ended its turn with a
+  // direct question and returned to the ordinary input box.
+  const questionCodexPane = [
+    '› Ask me exactly "Which colour do you choose: red or blue?" and wait for my answer.',
+    "",
+    "• Which colour do you choose: red or blue?",
+    "",
+    "› Find and fix a bug in @filename",
+    "",
+    "  gpt-5.6-sol low · ~/code/personal-assistant · weekly 98% left"
+  ].join("\n");
+
   it("reads the current Codex active pane as an active turn", () => {
     expect(codexAdapter.detect(activeCodexPane).active).toBe(true);
   });
@@ -67,7 +79,38 @@ describe("codexAdapter.detect", () => {
     expect(signals.active).toBe(false);
   });
 
-  it("does not treat the at-rest input prompt as an approval request", () => {
-    expect(codexAdapter.detect(finishedCodexPane).awaitingApproval).toBe(false);
+  it("detects a completed Codex response ending in a question as waiting for input", () => {
+    const signals = codexAdapter.detect(questionCodexPane);
+    expect(signals.prompt).toBe(true);
+    expect(signals.active).toBe(false);
+    expect(signals.awaitingInput).toBe(true);
+    expect(signals.awaitingApproval).toBe(false);
+    expect(signals.activityText).toBe("Waiting for input");
+  });
+
+  it("does not retain an earlier Codex question after the user answers it", () => {
+    const signals = codexAdapter.detect(
+      [
+        '› Ask me "Which colour?"',
+        "",
+        "• Which colour?",
+        "",
+        "› Red",
+        "",
+        "• You chose red.",
+        "",
+        "› Find and fix a bug in @filename",
+        "",
+        "  gpt-5.6-sol low · ~/code/personal-assistant · weekly 98% left"
+      ].join("\n")
+    );
+
+    expect(signals.awaitingInput).toBe(false);
+  });
+
+  it("does not treat an ordinary at-rest input prompt as waiting for a response", () => {
+    const signals = codexAdapter.detect(finishedCodexPane);
+    expect(signals.awaitingInput).toBe(false);
+    expect(signals.awaitingApproval).toBe(false);
   });
 });

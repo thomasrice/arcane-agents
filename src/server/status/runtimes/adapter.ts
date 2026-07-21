@@ -24,10 +24,9 @@ export interface RuntimeSignals {
   /** Runtime-native prompt that requires a user response before work can continue. */
   awaitingInput?: boolean;
   /**
-   * Codex-only extension: the parked prompt is specifically an approval /
-   * permission / question dialog (routes to attention), as opposed to the
-   * ordinary at-rest input prompt (which only classifies the pane as codex and
-   * otherwise falls through to idle). Every other adapter leaves it undefined.
+   * Codex-only extension: the parked prompt is specifically a native approval /
+   * permission dialog (routes to attention), as opposed to the ordinary at-rest
+   * input prompt. Every other adapter leaves it undefined.
    */
   awaitingApproval?: boolean;
 }
