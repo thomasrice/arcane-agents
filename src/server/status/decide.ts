@@ -92,6 +92,7 @@ interface DecisionContext {
   activeRuntimeProcess: AgentRuntimeProcess | undefined;
   hasClaudePromptSignal: boolean;
   hasClaudeProgressSignal: boolean;
+  hasClaudeInputPrompt: boolean;
   hasOpenCodePromptSignal: boolean;
   hasOpenCodeActiveSignal: boolean;
   hasCodexPromptSignal: boolean;
@@ -152,6 +153,7 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
     activeRuntimeProcess: signals.activeRuntimeProcess,
     hasClaudePromptSignal: isClaudeSession && rs.prompt,
     hasClaudeProgressSignal: isClaudeSession && rs.active,
+    hasClaudeInputPrompt: isClaudeSession && Boolean(rs.awaitingInput),
     hasOpenCodePromptSignal: isOpenCodeSession && rs.prompt,
     hasOpenCodeActiveSignal: isOpenCodeSession && rs.active,
     hasCodexPromptSignal: isCodexSession && rs.prompt,
@@ -209,6 +211,19 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
       activityText,
       activityTool: context.transcriptSnapshot?.activityTool ?? "terminal",
       activityPath: context.transcriptSnapshot?.activityPath,
+      confidence: 0.96,
+      reasons,
+      parsedStrongSignal: false
+    });
+  }
+
+  if (context.hasClaudeInputPrompt && !context.hasClaudeProgressSignal && !isInteractiveCommand(context)) {
+    pushReason({ code: "claude-input-prompt", message: "Claude is waiting for a question response." });
+    return finalizeDecision(context, {
+      status: "attention",
+      activityText: context.runtimeActivityText ?? "Waiting for input",
+      activityTool: "terminal",
+      activityPath: undefined,
       confidence: 0.96,
       reasons,
       parsedStrongSignal: false

@@ -225,6 +225,29 @@ describe("status decision — Claude runtime", () => {
     expect(reasonCodes(result)).toContain("parser-input-prompt");
   });
 
+  it("reads a live AskUserQuestion selector as attention before the transcript flushes", () => {
+    const output = [
+      " ☐ Shape",
+      "",
+      "Which do you choose?",
+      "",
+      "❯ 1. Circle",
+      "     Choose circle.",
+      "  2. Square",
+      "     Choose square.",
+      "  3. Type something.",
+      "────────────────────────────────────────────────────────────────────────────────",
+      "  4. Chat about this",
+      "",
+      "Enter to select · ↑/↓ to navigate · Esc to cancel"
+    ].join("\n");
+
+    const result = evaluate({ runtime: "claude", output, outputQuietForMs: 15_000 });
+
+    expect(result.status).toBe("attention");
+    expect(reasonCodes(result)).toContain("claude-input-prompt");
+  });
+
   it("reads the bypass-permissions footer at a quiet prompt as idle, not attention", () => {
     // pins current behaviour — the bypass-permissions mode footer is a *prompt*
     // signal, not an approval request. It never routes to attention on its own;

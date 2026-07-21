@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTranscriptState } from "./accumulator";
 import { bootstrapTailBytes } from "./constants";
-import { collectTranscriptInputLines } from "./io";
+import { collectTranscriptInputLines, findClaudeProjectRootInEnvironment } from "./io";
 import type { ClaudeTranscriptState } from "./types";
 
 // Golden safety-net for the incremental tail reader: byte-offset math, partial
@@ -37,6 +37,20 @@ async function fileSize(filePath: string): Promise<number> {
   const stats = await fs.stat(filePath);
   return stats.size;
 }
+
+describe("findClaudeProjectRootInEnvironment", () => {
+  it("uses the custom Claude config directory inherited by the live process", () => {
+    const environment = Buffer.from("HOME=/home/test\0CLAUDE_CONFIG_DIR=/home/test/.claude-min\0PATH=/usr/bin\0");
+
+    expect(findClaudeProjectRootInEnvironment(environment)).toBe("/home/test/.claude-min/projects");
+  });
+
+  it("ignores missing, empty, or relative config directories", () => {
+    expect(findClaudeProjectRootInEnvironment(Buffer.from("HOME=/home/test\0"))).toBeUndefined();
+    expect(findClaudeProjectRootInEnvironment(Buffer.from("CLAUDE_CONFIG_DIR=\0"))).toBeUndefined();
+    expect(findClaudeProjectRootInEnvironment(Buffer.from("CLAUDE_CONFIG_DIR=.claude-min\0"))).toBeUndefined();
+  });
+});
 
 describe("collectTranscriptInputLines", () => {
   it("returns nothing when no transcript path is set", async () => {

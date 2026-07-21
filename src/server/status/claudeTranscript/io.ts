@@ -15,6 +15,32 @@ import {
 import { resetCorrelationState, resetTranscriptState } from "./accumulator";
 import type { ClaudeTranscriptState, TranscriptCorrelationState } from "./types";
 
+export function findClaudeProjectRootInEnvironment(environment: Uint8Array): string | undefined {
+  const configEntry = Buffer.from(environment)
+    .toString("utf8")
+    .split("\0")
+    .find((entry) => entry.startsWith("CLAUDE_CONFIG_DIR="));
+  const configDir = configEntry?.slice("CLAUDE_CONFIG_DIR=".length).trim();
+  if (!configDir || !path.isAbsolute(configDir)) {
+    return undefined;
+  }
+
+  return path.join(configDir, "projects");
+}
+
+export async function resolveClaudeProjectRootForProcess(pid: number | undefined): Promise<string> {
+  if (!pid) {
+    return claudeProjectRoot;
+  }
+
+  try {
+    const environment = await fs.readFile(`/proc/${pid}/environ`);
+    return findClaudeProjectRootInEnvironment(environment) ?? claudeProjectRoot;
+  } catch {
+    return claudeProjectRoot;
+  }
+}
+
 interface ResolvedTranscriptPathInput {
   worker: Worker;
   state: ClaudeTranscriptState;

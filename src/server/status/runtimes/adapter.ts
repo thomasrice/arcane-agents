@@ -21,6 +21,8 @@ export interface RuntimeSignals {
   active: boolean;
   activityText: string | undefined;
   activeTask: string | undefined;
+  /** Runtime-native prompt that requires a user response before work can continue. */
+  awaitingInput?: boolean;
   /**
    * Codex-only extension: the parked prompt is specifically an approval /
    * permission / question dialog (routes to attention), as opposed to the

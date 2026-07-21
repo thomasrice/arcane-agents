@@ -83,7 +83,8 @@ function createSignals(scenario: Scenario): WorkerSignals {
       active: scenario.runtimeSignals?.active ?? false,
       activityText: scenario.runtimeSignals?.activityText,
       activeTask: scenario.runtimeSignals?.activeTask,
-      awaitingApproval: scenario.runtimeSignals?.awaitingApproval
+      awaitingApproval: scenario.runtimeSignals?.awaitingApproval,
+      awaitingInput: scenario.runtimeSignals?.awaitingInput
     },
     activeRuntimeProcess: scenario.activeRuntimeProcess,
     transcriptHealth: scenario.transcriptSnapshot ? "ok" : "absent",

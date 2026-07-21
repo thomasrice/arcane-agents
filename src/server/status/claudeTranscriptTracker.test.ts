@@ -146,6 +146,22 @@ describe("ClaudeTranscriptTracker", () => {
     expect(result.health).toBe("absent");
   });
 
+  it("resolves and caches a custom transcript root from the Claude process", async () => {
+    const sessionId = "custom-root-session";
+    const worker = createWorker({ command: ["claude", "--session-id", sessionId] });
+    await writeTranscript(worker, `${sessionId}.jsonl`, [assistantText("Finished")]);
+    const resolveProjectRoot = vi.fn().mockResolvedValue(projectRoot);
+    const tracker = new ClaudeTranscriptTracker({ resolveProjectRoot });
+
+    const first = await tracker.poll(worker, "claude", undefined, 4242);
+    const second = await tracker.poll(worker, "claude", undefined, 4242);
+
+    expect(first.health).toBe("ok");
+    expect(second.health).toBe("ok");
+    expect(resolveProjectRoot).toHaveBeenCalledOnce();
+    expect(resolveProjectRoot).toHaveBeenCalledWith(4242);
+  });
+
   it("reports transcript health 'error' when resolution throws, without a snapshot", async () => {
     // The worker still gets no transcript-derived snapshot (its status falls back
     // to pane heuristics downstream), but health now distinguishes a broken

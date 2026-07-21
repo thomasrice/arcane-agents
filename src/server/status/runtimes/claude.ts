@@ -18,6 +18,7 @@ const claudeActiveFreshLineWindow = 12;
 interface ClaudeSignals {
   prompt: boolean;
   active: boolean;
+  awaitingInput: boolean;
 }
 
 export const claudeAdapter: RuntimeAdapter = {
@@ -35,6 +36,7 @@ export const claudeAdapter: RuntimeAdapter = {
     return {
       prompt: signals.prompt,
       active: signals.active,
+      awaitingInput: signals.awaitingInput,
       activityText: extractClaudeRuntimeActivityText(output),
       activeTask: extractClaudeActiveTaskFromLines(lines)
     };
@@ -58,6 +60,7 @@ function detectClaudeSignalsFromLines(lines: string[]): ClaudeSignals {
   const newestIndex = lines.length - 1;
   const latestPromptIndex = findLastMatchingIndex(lines, isClaudePromptLine);
   const latestProgressIndex = findLastMatchingIndex(lines, isClaudeProgressLine);
+  const latestInputPromptIndex = findLastMatchingIndex(lines, isClaudeInputPromptLine);
   // The current Claude UI keeps the input box and mode footer on screen WHILE
   // working, so chrome lines can never gate the active signal (they are always
   // newer than the spinner). Ordering is instead anchored to the last ECHOED
@@ -70,6 +73,8 @@ function detectClaudeSignalsFromLines(lines: string[]): ClaudeSignals {
       latestPromptIndex >= 0 &&
       newestIndex >= 0 &&
       newestIndex - latestPromptIndex <= claudePromptFreshLineWindow,
+    awaitingInput:
+      latestInputPromptIndex >= 0 && latestInputPromptIndex > Math.max(latestPromptIndex, latestEchoIndex),
     active:
       latestProgressIndex >= 0 &&
       newestIndex >= 0 &&
@@ -139,6 +144,10 @@ function extractClaudeBulletText(line: string): string | undefined {
   const parentheticalMatch = line.match(/^(?:\*|•|·|✶|✻|✢|✽)\s+(.+?)\s+\((?:[^)]*(?:thinking|thought\s+for)[^)]*)\)\s*$/i);
   const plainProgressMatch = line.match(/^(?:\*|•|·|✶|✻|✢|✽)\s+(.+?)\s*$/);
   return parentheticalMatch?.[1]?.trim() ?? plainProgressMatch?.[1]?.trim();
+}
+
+function isClaudeInputPromptLine(line: string): boolean {
+  return /Enter to select.*Esc to cancel/i.test(line);
 }
 
 function isClaudePromptLine(line: string): boolean {

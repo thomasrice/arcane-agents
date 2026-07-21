@@ -105,4 +105,46 @@ describe("claudeAdapter.detect", () => {
     const signals = claudeAdapter.detect(output);
     expect(signals.active).toBe(false);
   });
+
+  it("detects the live AskUserQuestion selector as waiting for input (captured live)", () => {
+    const output = [
+      "────────────────────────────────────────────────────────────────────────────────",
+      " ☐ Shape",
+      "",
+      "Which do you choose?",
+      "",
+      "❯ 1. Circle",
+      "     Choose circle.",
+      "  2. Square",
+      "     Choose square.",
+      "  3. Type something.",
+      "────────────────────────────────────────────────────────────────────────────────",
+      "  4. Chat about this",
+      "",
+      "Enter to select · ↑/↓ to navigate · Esc to cancel"
+    ].join("\n");
+
+    const signals = claudeAdapter.detect(output);
+    expect(signals.awaitingInput).toBe(true);
+    expect(signals.active).toBe(false);
+  });
+
+  it("does not retain the question signal after Claude records the answer and returns to its prompt", () => {
+    const output = [
+      "Which do you choose?",
+      "❯ 1. Red",
+      "  2. Blue",
+      "Enter to select · ↑/↓ to navigate · Esc to cancel",
+      "",
+      "● User answered Claude's questions:",
+      "  ⎿ Which do you choose? → Red",
+      "",
+      "● You chose Red.",
+      "",
+      "❯"
+    ].join("\n");
+
+    const signals = claudeAdapter.detect(output);
+    expect(signals.awaitingInput).toBe(false);
+  });
 });

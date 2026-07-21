@@ -4,9 +4,10 @@ import {
   createTranscriptState,
   resetTranscriptState
 } from "./claudeTranscript/accumulator";
-import { claudeProjectRoot, transcriptLookupRetryMs } from "./claudeTranscript/constants";
+import { transcriptLookupRetryMs } from "./claudeTranscript/constants";
 import {
   collectTranscriptInputLines,
+  resolveClaudeProjectRootForProcess,
   resolveTranscriptPath,
   type ResolvedTranscript
 } from "./claudeTranscript/io";
@@ -41,6 +42,8 @@ export interface ClaudeTranscriptTrackerOptions {
   /** Root directory Claude stores transcripts under (default ~/.claude/projects).
    * Overridable so tests can resolve transcripts against a temp directory. */
   projectRoot?: string;
+  /** Resolve a worker's transcript root from its live Claude process environment. */
+  resolveProjectRoot?: (pid: number | undefined) => Promise<string>;
 }
 
 /** Per-poll pane context the caller (collectSignals) threads in. */
@@ -53,10 +56,13 @@ export interface ClaudeTranscriptPollContext {
 
 export class ClaudeTranscriptTracker {
   private readonly states = new Map<string, ClaudeTranscriptState>();
-  private readonly projectRoot: string;
+  private readonly projectRootOverride: string | undefined;
+  private readonly resolveProjectRoot: (pid: number | undefined) => Promise<string>;
+  private readonly projectRootsByWorker = new Map<string, { pid: number | undefined; path: string }>();
 
   constructor(options: ClaudeTranscriptTrackerOptions = {}) {
-    this.projectRoot = options.projectRoot ?? claudeProjectRoot;
+    this.projectRootOverride = options.projectRoot;
+    this.resolveProjectRoot = options.resolveProjectRoot ?? resolveClaudeProjectRootForProcess;
   }
 
   async poll(
@@ -68,6 +74,7 @@ export class ClaudeTranscriptTracker {
   ): Promise<ClaudeTranscriptPollResult> {
     if (!isLikelyClaudeSession(worker, paneCurrentCommand.toLowerCase())) {
       this.states.delete(worker.id);
+      this.projectRootsByWorker.delete(worker.id);
       return { snapshot: undefined, health: "absent" };
     }
 
@@ -80,12 +87,13 @@ export class ClaudeTranscriptTracker {
     const nowMs = Date.now();
     let resolved: ResolvedTranscript | undefined;
     try {
+      const projectRoot = await this.projectRootFor(worker.id, panePid, state);
       resolved = await resolveTranscriptPath({
         worker,
         state,
         paneCurrentPath,
         nowMs,
-        projectRoot: this.projectRoot,
+        projectRoot,
         paneOutputChanged: paneContext?.paneOutputChanged ?? false,
         isPathClaimedByOtherWorker: (transcriptPath) =>
           this.findTranscriptHolder(transcriptPath, worker.id) !== undefined
@@ -226,8 +234,31 @@ export class ClaudeTranscriptTracker {
     state.transcriptMatchStrength = undefined;
   }
 
+  private async projectRootFor(
+    workerId: string,
+    pid: number | undefined,
+    state: ClaudeTranscriptState
+  ): Promise<string> {
+    if (this.projectRootOverride) {
+      return this.projectRootOverride;
+    }
+
+    const cached = this.projectRootsByWorker.get(workerId);
+    if (cached && cached.pid === pid) {
+      return cached.path;
+    }
+
+    const projectRoot = await this.resolveProjectRoot(pid);
+    if (cached && cached.path !== projectRoot) {
+      this.releaseTranscript(state);
+    }
+    this.projectRootsByWorker.set(workerId, { pid, path: projectRoot });
+    return projectRoot;
+  }
+
   forget(workerId: string): void {
     this.states.delete(workerId);
+    this.projectRootsByWorker.delete(workerId);
   }
 
   private getState(workerId: string): ClaudeTranscriptState {
