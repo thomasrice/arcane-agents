@@ -29,6 +29,7 @@ export interface StatusDecisionFacts {
   runtimeActiveSignal: boolean;
   hasActiveClaudeTask: boolean;
   hasActiveRuntimeProcess: boolean;
+  hasLiveGenericProcess: boolean;
   hasRuntimeActivityText: boolean;
   hasParsedStrongSignal: boolean;
   hasParsedNeedsInput: boolean;
@@ -90,6 +91,7 @@ interface DecisionContext {
   runtimeActivityText: string | undefined;
   activeClaudeTask: string | undefined;
   activeRuntimeProcess: AgentRuntimeProcess | undefined;
+  hasLiveGenericProcess: boolean;
   hasClaudePromptSignal: boolean;
   hasClaudeProgressSignal: boolean;
   hasClaudeInputPrompt: boolean;
@@ -134,6 +136,11 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
   const isCodexSession = runtimeId === "codex";
   const isOmpSession = runtimeId === "omp";
   const rs = signals.runtimeSignals;
+  const hasLiveGenericProcess =
+    runtimeId === "generic" &&
+    signals.commandLower.length > 0 &&
+    !isShellCommand(signals.commandLower) &&
+    !signals.interactiveCommands.has(signals.commandLower);
 
   const createdAtMs = Date.parse(worker.createdAt);
   const workerAgeMs = Number.isFinite(createdAtMs) ? Math.max(0, nowMs - createdAtMs) : Number.POSITIVE_INFINITY;
@@ -152,6 +159,7 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
     runtimeActivityText: rs.activityText,
     activeClaudeTask: rs.activeTask,
     activeRuntimeProcess: signals.activeRuntimeProcess,
+    hasLiveGenericProcess,
     hasClaudePromptSignal: isClaudeSession && rs.prompt,
     hasClaudeProgressSignal: isClaudeSession && rs.active,
     hasClaudeInputPrompt: isClaudeSession && Boolean(rs.awaitingInput),
@@ -469,6 +477,7 @@ function finalizeDecision(
       runtimeActiveSignal: context.runtimeSignals.active,
       hasActiveClaudeTask: Boolean(context.activeClaudeTask),
       hasActiveRuntimeProcess: Boolean(context.activeRuntimeProcess),
+      hasLiveGenericProcess: context.hasLiveGenericProcess,
       hasRuntimeActivityText: Boolean(context.runtimeActivityText),
       hasParsedStrongSignal: partial.parsedStrongSignal,
       hasParsedNeedsInput: context.parsed.activity.needsInput,
@@ -571,6 +580,15 @@ function collectWorkingEvidence(context: DecisionContext, hasRecoverableParserEr
     pushMaybe(activityTextCandidates, context.parsed.activity.text);
     activityToolCandidates.push(context.parsed.activity.tool);
     pushMaybe(activityPathCandidates, context.parsed.activity.filePath);
+  }
+
+  if (context.hasLiveGenericProcess) {
+    strongReasons.push({
+      code: "generic-foreground-process",
+      message: "A non-interactive foreground process is still running in the pane."
+    });
+    activityTextCandidates.push(`${context.currentCommand} running`);
+    activityToolCandidates.push("terminal");
   }
 
   if (hasRecoverableParserError) {
@@ -759,7 +777,11 @@ function detectIdleBlocker(context: DecisionContext, evidence: WorkingEvidence):
   }
 
   const activeWindowMs = statusFreshnessWindowMs(context.runtime, context.runtimeFreshnessWindowMs);
-  if (context.outputQuietForMs > activeWindowMs && context.transcriptSnapshot?.status !== "working") {
+  if (
+    context.outputQuietForMs > activeWindowMs &&
+    context.transcriptSnapshot?.status !== "working" &&
+    !context.hasLiveGenericProcess
+  ) {
     return {
       reason: {
         code: "output-stale-idle",

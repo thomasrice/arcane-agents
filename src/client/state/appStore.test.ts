@@ -117,6 +117,40 @@ describe("applySelection", () => {
   });
 });
 
+describe("cycleAttentionSelection", () => {
+  it("cycles only attention workers forwards and backwards with wrapping", () => {
+    useAppStore.setState({
+      workers: [
+        worker("idle"),
+        worker("attention-a", { status: "attention" }),
+        worker("working", { status: "working" }),
+        worker("attention-b", { status: "attention" })
+      ]
+    });
+    const store = useAppStore.getState();
+
+    store.cycleAttentionSelection(1);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention-a"]);
+    store.cycleAttentionSelection(1);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention-b"]);
+    store.cycleAttentionSelection(1);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention-a"]);
+    store.cycleAttentionSelection(-1);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention-b"]);
+  });
+
+  it("leaves the current selection unchanged when no worker needs attention", () => {
+    useAppStore.setState({
+      workers: [worker("idle"), worker("working", { status: "working" })],
+      selectedWorkerIds: ["idle"]
+    });
+
+    useAppStore.getState().cycleAttentionSelection(1);
+
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["idle"]);
+  });
+});
+
 describe("selectActiveWorkers", () => {
   it("excludes stopped and respawning workers", () => {
     useAppStore.setState({

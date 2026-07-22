@@ -45,7 +45,7 @@ Arcane Agents gives each local agent a place on a shared map and keeps its real 
 - Select one agent, Shift-click several, or draw a marquee around a group.
 - Move selected agents with held `W/A/S/D` or the arrow keys; the camera follows near the map edge.
 - Right-click a destination to send selected agents there, right-drag to pan, and use `+` / `-` to zoom.
-- Switch agents from the map or roster, cycle only idle agents, and jump through populated control groups.
+- Switch agents from the map or roster, cycle workers that need attention or are idle, and jump through populated control groups.
 - Resize the map and terminal split by dragging the divider or using keyboard controls.
 
 ### Real terminals, not simulated chat panels
@@ -188,6 +188,7 @@ Press `?` in Arcane Agents for the live shortcut reference. The panel is generat
 | Keys | Action |
 |---|---|
 | `Tab` / `Shift+Tab` | Select the next or previous agent; inside a group, cycle focused members. |
+| `Space` / `Shift+Space` | Select and centre the next or previous agent that needs input. |
 | `.` / `Shift+.` / `,` | Cycle idle agents only. |
 | Backtick / `Shift+Backtick` | Cycle populated control groups forwards or backwards and open the first member. |
 | `Ctrl+1–0` | Assign selected agents to a control group. |

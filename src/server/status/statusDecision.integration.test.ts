@@ -555,6 +555,43 @@ describe("status decision — generic shell worker", () => {
     expect(reasonCodes(result)).toContain("parsed-activity-signal");
   });
 
+  it("keeps a quiet live ssh foreground process working beyond the generic freshness window", () => {
+    const output = [
+      "$ kamal deploy",
+      "INFO First web container is healthy",
+      "INFO Waiting for read-through-worker on taurient..."
+    ].join("\n");
+
+    const result = evaluate({
+      runtime: "shell",
+      output,
+      currentCommand: "ssh",
+      outputQuietForMs: 45_000,
+      commandQuietForMs: 120_000,
+      priorStatus: "working"
+    });
+
+    expect(result.status).toBe("working");
+    expect(reasonCodes(result)).toContain("generic-foreground-process");
+    expect(result.facts.hasLiveGenericProcess).toBe(true);
+  });
+
+  it("does not count configured interactive commands as live generic work", () => {
+    const result = evaluate({
+      runtime: "shell",
+      output: "top - 11:00:00 up 4 days",
+      currentCommand: "top",
+      outputQuietForMs: 45_000,
+      commandQuietForMs: 120_000,
+      priorStatus: "working",
+      interactiveCommands: new Set(["top"])
+    });
+
+    expect(result.status).toBe("idle");
+    expect(reasonCodes(result)).toContain("output-stale-idle");
+    expect(result.facts.hasLiveGenericProcess).toBe(false);
+  });
+
   it("reads a shell prompt as idle and ignores git/Read words in scrollback", () => {
     // Foreground command is a shell, so scrollback history signals are suppressed:
     // "git status" in the buffer must not read as working.

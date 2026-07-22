@@ -40,6 +40,7 @@ const defaultFacts: WorkerStatusDecision["facts"] = {
   runtimeActiveSignal: false,
   hasActiveClaudeTask: false,
   hasActiveRuntimeProcess: false,
+  hasLiveGenericProcess: false,
   hasRuntimeActivityText: false,
   hasParsedStrongSignal: false,
   hasParsedNeedsInput: false,

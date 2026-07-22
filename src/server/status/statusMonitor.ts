@@ -166,6 +166,7 @@ const defaultDecisionFacts: StatusDecisionFacts = {
   runtimeActiveSignal: false,
   hasActiveClaudeTask: false,
   hasActiveRuntimeProcess: false,
+  hasLiveGenericProcess: false,
   hasRuntimeActivityText: false,
   hasParsedStrongSignal: false,
   hasParsedNeedsInput: false,
@@ -613,7 +614,8 @@ export class StatusMonitor {
       `transcript=${evaluation.facts.transcript} ` +
       `prompt=${evaluation.facts.runtimePromptSignal ? 1 : 0} ` +
       `active=${evaluation.facts.runtimeActiveSignal ? 1 : 0} ` +
-      `runtimeProc=${evaluation.facts.hasActiveRuntimeProcess ? 1 : 0}`;
+      `runtimeProc=${evaluation.facts.hasActiveRuntimeProcess ? 1 : 0} ` +
+      `genericProc=${evaluation.facts.hasLiveGenericProcess ? 1 : 0}`;
 
     const timestamp = new Date().toLocaleTimeString("en-AU", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
     console.log(

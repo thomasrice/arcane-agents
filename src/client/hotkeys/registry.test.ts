@@ -44,6 +44,7 @@ function baseContext(overrides: Partial<HotkeyContext> = {}): HotkeyContext {
     applySelection: vi.fn(),
     cycleSelection: vi.fn(),
     cycleIdleSelection: vi.fn(),
+    cycleAttentionSelection: vi.fn(),
     cycleSelectedGroupFocus: vi.fn(),
     setControlGroups: vi.fn(),
     setRosterActiveIndex: vi.fn(),
@@ -107,6 +108,47 @@ function applySelectionInto(getContext: () => HotkeyContext) {
       options?.focusWorkerId && workerIds.length > 1 ? options.focusWorkerId : undefined;
   };
 }
+
+describe("attention navigation hotkeys", () => {
+  it("routes Space forwards and Shift+Space backwards", () => {
+    const cycleAttentionSelection = vi.fn();
+    const preventDefault = vi.fn();
+    const context = baseContext({ cycleAttentionSelection });
+
+    expect(runHotkeyRegistry(keydown({ key: " ", code: "Space", preventDefault }), context)).toBe(true);
+    expect(
+      runHotkeyRegistry(keydown({ key: " ", code: "Space", shiftKey: true, preventDefault }), context)
+    ).toBe(true);
+
+    expect(cycleAttentionSelection.mock.calls).toEqual([[1], [-1]]);
+    expect(preventDefault).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves Space untouched while the embedded terminal has focus", () => {
+    class TerminalElement {
+      readonly tagName = "DIV";
+      readonly isContentEditable = false;
+
+      closest(selector: string): TerminalElement | null {
+        return selector === ".terminal-panel" ? this : null;
+      }
+    }
+
+    vi.stubGlobal("HTMLElement", TerminalElement);
+    try {
+      const cycleAttentionSelection = vi.fn();
+      const preventDefault = vi.fn();
+      const target = new TerminalElement() as unknown as EventTarget;
+      const context = baseContext({ cycleAttentionSelection });
+
+      expect(runHotkeyRegistry(keydown({ key: " ", code: "Space", target, preventDefault }), context)).toBe(true);
+      expect(cycleAttentionSelection).not.toHaveBeenCalled();
+      expect(preventDefault).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("control-group navigation hotkeys", () => {
   it("requests map centering for every worker in a selected group", () => {

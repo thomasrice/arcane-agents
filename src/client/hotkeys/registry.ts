@@ -53,6 +53,7 @@ export interface HotkeyContext {
   ) => void;
   cycleSelection: (direction: 1 | -1) => void;
   cycleIdleSelection: (direction: 1 | -1) => void;
+  cycleAttentionSelection: (direction: 1 | -1) => void;
   cycleSelectedGroupFocus: (direction: 1 | -1) => void;
   setControlGroups: Dispatch<SetStateAction<ControlGroupMap>>;
   setRosterActiveIndex: Dispatch<SetStateAction<number>>;
@@ -279,6 +280,20 @@ export const hotkeyBindings: HotkeyBinding[] = [
         return true;
       }
       ctx.cycleSelection(event.shiftKey ? -1 : 1);
+      return true;
+    }
+  },
+  {
+    id: "cycle-attention",
+    scope: "global",
+    match: (event) => event.code === "Space" && noPlainModifiers(event) && !isEditableTarget(event.target),
+    doc: { section: "Selection & Groups", keys: "Space / Shift + Space", description: "Cycle agents needing input" },
+    run: (event, ctx) => {
+      if (isTerminalTarget(event.target)) {
+        return true;
+      }
+      event.preventDefault();
+      ctx.cycleAttentionSelection(event.shiftKey ? -1 : 1);
       return true;
     }
   },

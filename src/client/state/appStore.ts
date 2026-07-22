@@ -62,6 +62,7 @@ export interface AppActions {
   onActivateWorker: (workerId: string) => void;
   cycleSelection: (direction: 1 | -1) => void;
   cycleIdleSelection: (direction: 1 | -1) => void;
+  cycleAttentionSelection: (direction: 1 | -1) => void;
   cycleSelectedGroupFocus: (direction: 1 | -1) => void;
   setSelectedWorkerIds: (update: Updater<string[]>) => void;
   setRosterActiveIndex: (update: Updater<number>) => void;
@@ -111,6 +112,23 @@ function commitMapColumnRatio(current: number, next: number): Partial<AppState> 
 
   persistMapColumnRatio(clamped);
   return { mapColumnRatio: clamped };
+}
+
+function cycleWorkerSelection(state: AppStore, workers: readonly Worker[], direction: 1 | -1): void {
+  if (workers.length === 0) {
+    return;
+  }
+
+  const selectedWorkerId = selectSelectedWorkerId(state);
+  const currentIndex = workers.findIndex((worker) => worker.id === selectedWorkerId);
+  const startIndex = currentIndex >= 0 ? currentIndex : direction > 0 ? -1 : 0;
+  const nextIndex = (startIndex + direction + workers.length) % workers.length;
+  const nextWorker = workers[nextIndex];
+  if (!nextWorker) {
+    return;
+  }
+
+  state.applySelection([nextWorker.id], { center: true });
 }
 
 export const useAppStore = create<AppStore>()((set, get) => ({
@@ -171,40 +189,19 @@ export const useAppStore = create<AppStore>()((set, get) => ({
 
   cycleSelection: (direction) => {
     const state = get();
-    const activeWorkers = selectActiveWorkers(state);
-    if (activeWorkers.length === 0) {
-      return;
-    }
-
-    const selectedWorkerId = selectSelectedWorkerId(state);
-    const currentIndex = activeWorkers.findIndex((worker) => worker.id === selectedWorkerId);
-    const startIndex = currentIndex >= 0 ? currentIndex : direction > 0 ? -1 : 0;
-    const nextIndex = (startIndex + direction + activeWorkers.length) % activeWorkers.length;
-    const nextWorker = activeWorkers[nextIndex];
-    if (!nextWorker) {
-      return;
-    }
-
-    state.applySelection([nextWorker.id], { center: true });
+    cycleWorkerSelection(state, selectActiveWorkers(state), direction);
   },
 
   cycleIdleSelection: (direction) => {
     const state = get();
     const idleWorkers = selectActiveWorkers(state).filter((worker) => worker.status === "idle");
-    if (idleWorkers.length === 0) {
-      return;
-    }
+    cycleWorkerSelection(state, idleWorkers, direction);
+  },
 
-    const selectedWorkerId = selectSelectedWorkerId(state);
-    const currentIndex = idleWorkers.findIndex((worker) => worker.id === selectedWorkerId);
-    const startIndex = currentIndex >= 0 ? currentIndex : direction > 0 ? -1 : 0;
-    const nextIndex = (startIndex + direction + idleWorkers.length) % idleWorkers.length;
-    const nextWorker = idleWorkers[nextIndex];
-    if (!nextWorker) {
-      return;
-    }
-
-    state.applySelection([nextWorker.id], { center: true });
+  cycleAttentionSelection: (direction) => {
+    const state = get();
+    const attentionWorkers = selectActiveWorkers(state).filter((worker) => worker.status === "attention");
+    cycleWorkerSelection(state, attentionWorkers, direction);
   },
 
   cycleSelectedGroupFocus: (direction) => {
