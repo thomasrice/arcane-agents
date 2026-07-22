@@ -1,11 +1,12 @@
 import type { ShortcutHotkeyBinding } from "./shortcutHotkeys";
 
-// The hotkey layer reads all of its state and store actions directly from the store
-// (assembled in useAppHotkeys). These are the only inputs App still has to supply:
-// the worker-action callbacks that own their own flows, the rally-card / map focus
-// handles, and the config-derived summon + leave-terminal chords.
+// The hotkey layer reads store-owned state and actions directly from the store
+// (assembled in useAppHotkeys). App supplies the client-local completion IDs,
+// callbacks that own their own flows, command handles, and config-derived
+// summon + leave-terminal chords.
 export interface AppHotkeyDeps {
   shortcutHotkeyBindings: ShortcutHotkeyBinding[];
+  pendingCompletionWorkerIds: string[];
   confirmPending: () => void;
   onKillSelected: () => void;
   onKillRosterActive: () => void;

@@ -117,35 +117,50 @@ describe("applySelection", () => {
   });
 });
 
-describe("cycleAttentionSelection", () => {
-  it("cycles only attention workers forwards and backwards with wrapping", () => {
+describe("cycleReviewSelection", () => {
+  it("cycles gold-ready and attention workers with wrapping", () => {
     useAppStore.setState({
       workers: [
         worker("idle"),
-        worker("attention-a", { status: "attention" }),
-        worker("working", { status: "working" }),
-        worker("attention-b", { status: "attention" })
+        worker("ready"),
+        worker("attention", { status: "attention" }),
+        worker("working", { status: "working" })
       ]
     });
     const store = useAppStore.getState();
 
-    store.cycleAttentionSelection(1);
-    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention-a"]);
-    store.cycleAttentionSelection(1);
-    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention-b"]);
-    store.cycleAttentionSelection(1);
-    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention-a"]);
-    store.cycleAttentionSelection(-1);
-    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention-b"]);
+    store.cycleReviewSelection(1, ["ready"]);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
+    store.cycleReviewSelection(1, ["ready"]);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention"]);
+    store.cycleReviewSelection(1, ["ready"]);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
+    store.cycleReviewSelection(-1, ["ready"]);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention"]);
   });
 
-  it("leaves the current selection unchanged when no worker needs attention", () => {
+  it("starts at the first reviewable worker from no or unrelated selection", () => {
+    useAppStore.setState({
+      workers: [worker("unrelated"), worker("ready"), worker("attention", { status: "attention" })],
+      selectedWorkerIds: []
+    });
+    const store = useAppStore.getState();
+
+    store.cycleReviewSelection(1, ["ready"]);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
+
+    useAppStore.setState({ selectedWorkerIds: ["unrelated"] });
+    store.cycleReviewSelection(1, ["ready"]);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
+  });
+
+  it("ignores stale pending IDs and leaves the current selection unchanged without candidates", () => {
     useAppStore.setState({
       workers: [worker("idle"), worker("working", { status: "working" })],
       selectedWorkerIds: ["idle"]
     });
 
-    useAppStore.getState().cycleAttentionSelection(1);
+    useAppStore.getState().cycleReviewSelection(1, ["working"]);
 
     expect(useAppStore.getState().selectedWorkerIds).toEqual(["idle"]);
   });

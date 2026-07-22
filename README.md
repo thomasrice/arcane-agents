@@ -188,7 +188,7 @@ Press `?` in Arcane Agents for the live shortcut reference. The panel is generat
 | Keys | Action |
 |---|---|
 | `Tab` / `Shift+Tab` | Select the next or previous agent; inside a group, cycle focused members. |
-| `Space` / `Shift+Space` | Select and centre the next or previous agent that needs input. |
+| `Space` / `Shift+Space` | Select and centre the next or previous agent that is ready for review or needs input. |
 | `.` / `Shift+.` / `,` | Cycle idle agents only. |
 | Backtick / `Shift+Backtick` | Cycle populated control groups forwards or backwards and open the first member. |
 | `Ctrl+1–0` | Assign selected agents to a control group. |

@@ -62,7 +62,7 @@ export interface AppActions {
   onActivateWorker: (workerId: string) => void;
   cycleSelection: (direction: 1 | -1) => void;
   cycleIdleSelection: (direction: 1 | -1) => void;
-  cycleAttentionSelection: (direction: 1 | -1) => void;
+  cycleReviewSelection: (direction: 1 | -1, pendingCompletionWorkerIds: readonly string[]) => void;
   cycleSelectedGroupFocus: (direction: 1 | -1) => void;
   setSelectedWorkerIds: (update: Updater<string[]>) => void;
   setRosterActiveIndex: (update: Updater<number>) => void;
@@ -198,10 +198,15 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     cycleWorkerSelection(state, idleWorkers, direction);
   },
 
-  cycleAttentionSelection: (direction) => {
+  cycleReviewSelection: (direction, pendingCompletionWorkerIds) => {
     const state = get();
-    const attentionWorkers = selectActiveWorkers(state).filter((worker) => worker.status === "attention");
-    cycleWorkerSelection(state, attentionWorkers, direction);
+    const pendingCompletionWorkerIdSet = new Set(pendingCompletionWorkerIds);
+    const workersNeedingReview = selectActiveWorkers(state).filter(
+      (worker) =>
+        worker.status === "attention" ||
+        (worker.status === "idle" && pendingCompletionWorkerIdSet.has(worker.id))
+    );
+    cycleWorkerSelection(state, workersNeedingReview, direction);
   },
 
   cycleSelectedGroupFocus: (direction) => {

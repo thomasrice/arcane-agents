@@ -44,7 +44,7 @@ function baseContext(overrides: Partial<HotkeyContext> = {}): HotkeyContext {
     applySelection: vi.fn(),
     cycleSelection: vi.fn(),
     cycleIdleSelection: vi.fn(),
-    cycleAttentionSelection: vi.fn(),
+    cycleReviewSelection: vi.fn(),
     cycleSelectedGroupFocus: vi.fn(),
     setControlGroups: vi.fn(),
     setRosterActiveIndex: vi.fn(),
@@ -109,18 +109,18 @@ function applySelectionInto(getContext: () => HotkeyContext) {
   };
 }
 
-describe("attention navigation hotkeys", () => {
+describe("review navigation hotkeys", () => {
   it("routes Space forwards and Shift+Space backwards", () => {
-    const cycleAttentionSelection = vi.fn();
+    const cycleReviewSelection = vi.fn();
     const preventDefault = vi.fn();
-    const context = baseContext({ cycleAttentionSelection });
+    const context = baseContext({ cycleReviewSelection });
 
     expect(runHotkeyRegistry(keydown({ key: " ", code: "Space", preventDefault }), context)).toBe(true);
     expect(
       runHotkeyRegistry(keydown({ key: " ", code: "Space", shiftKey: true, preventDefault }), context)
     ).toBe(true);
 
-    expect(cycleAttentionSelection.mock.calls).toEqual([[1], [-1]]);
+    expect(cycleReviewSelection.mock.calls).toEqual([[1], [-1]]);
     expect(preventDefault).toHaveBeenCalledTimes(2);
   });
 
@@ -136,13 +136,13 @@ describe("attention navigation hotkeys", () => {
 
     vi.stubGlobal("HTMLElement", TerminalElement);
     try {
-      const cycleAttentionSelection = vi.fn();
+      const cycleReviewSelection = vi.fn();
       const preventDefault = vi.fn();
       const target = new TerminalElement() as unknown as EventTarget;
-      const context = baseContext({ cycleAttentionSelection });
+      const context = baseContext({ cycleReviewSelection });
 
       expect(runHotkeyRegistry(keydown({ key: " ", code: "Space", target, preventDefault }), context)).toBe(true);
-      expect(cycleAttentionSelection).not.toHaveBeenCalled();
+      expect(cycleReviewSelection).not.toHaveBeenCalled();
       expect(preventDefault).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();

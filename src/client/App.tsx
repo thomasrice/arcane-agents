@@ -124,6 +124,7 @@ export default function App(): JSX.Element {
   const { appShellRef, dragging: splitDividerDragging, dividerHandlers } = useSplitDivider();
 
   useAppHotkeys({
+    pendingCompletionWorkerIds,
     shortcutHotkeyBindings,
     confirmPending: workerActions.confirmPending,
     onKillSelected: workerActions.onKillSelected,

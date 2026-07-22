@@ -55,7 +55,8 @@ function buildHotkeyContext(deps: AppHotkeyDeps): HotkeyContext {
     applySelection: state.applySelection,
     cycleSelection: state.cycleSelection,
     cycleIdleSelection: state.cycleIdleSelection,
-    cycleAttentionSelection: state.cycleAttentionSelection,
+    cycleReviewSelection: (direction) =>
+      state.cycleReviewSelection(direction, deps.pendingCompletionWorkerIds),
     cycleSelectedGroupFocus: state.cycleSelectedGroupFocus,
     setControlGroups: state.setControlGroups,
     setRosterActiveIndex: state.setRosterActiveIndex,
