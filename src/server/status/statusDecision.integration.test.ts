@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Worker } from "../../shared/types";
+import type { StatusRule, Worker } from "../../shared/types";
 import type { ClaudeStatusSnapshot } from "./claudeTranscriptTracker";
 import type { PaneObservation } from "./paneObservation";
 import type { AgentRuntimeProcess } from "./runtimes/runtimeProcess";
 import { evaluateWorkerStatus } from "./decide";
+import { compileStatusRules } from "./customStatusRules";
 
 /**
  * End-to-end safety net for the status decision path:
@@ -70,6 +71,7 @@ interface EvaluateOptions {
   runtimeProcess?: AgentRuntimeProcess;
   interactiveCommands?: ReadonlySet<string>;
   runtimeFreshnessWindowMs?: number;
+  statusRules?: StatusRule[];
 }
 
 function makeWorker(runtime: RuntimeKind, opts: EvaluateOptions): Worker {
@@ -122,7 +124,8 @@ function evaluate(opts: EvaluateOptions) {
     transcriptSnapshot: opts.transcriptSnapshot,
     runtimeProcess: opts.runtimeProcess,
     interactiveCommands: opts.interactiveCommands ?? new Set<string>(),
-    runtimeFreshnessWindowMs: opts.runtimeFreshnessWindowMs
+    runtimeFreshnessWindowMs: opts.runtimeFreshnessWindowMs,
+    customStatusRules: opts.statusRules ? compileStatusRules(opts.statusRules) : undefined
   });
 }
 
@@ -574,6 +577,55 @@ describe("status decision — generic shell worker", () => {
     expect(result.status).toBe("working");
     expect(reasonCodes(result)).toContain("generic-foreground-process");
     expect(result.facts.hasLiveGenericProcess).toBe(true);
+  });
+
+  it("lets a name-agnostic current-screen rule mark Quest Board pollers idle", () => {
+    const waitingRule: StatusRule = {
+      id: "quest-board-pollers-waiting",
+      match: {
+        runtimeId: "shell",
+        command: "^python3$",
+        lastLine: "^No (?:available|AI review) quests for [^;]+; checking again in [0-9]+s\\.$"
+      },
+      set: { status: "idle" }
+    };
+    const result = evaluate({
+      runtime: "shell",
+      output: "No available quests for Any Agent Name; checking again in 47s.",
+      currentCommand: "python3",
+      outputQuietForMs: 1_000,
+      statusRules: [waitingRule]
+    });
+
+    expect(reasonCodes(result)).toEqual(["custom-status-rule"]);
+    expect(result.reasons[0]?.detail).toBe("quest-board-pollers-waiting");
+    expect(result.facts.hasLiveGenericProcess).toBe(true);
+  });
+
+  it("uses configured activity for a non-idle custom outcome", () => {
+    const result = evaluate({
+      runtime: "shell",
+      output: "Approval required",
+      currentCommand: "python3",
+      statusRules: [
+        {
+          id: "custom-approval",
+          match: { lastLine: "^Approval required$" },
+          set: {
+            status: "attention",
+            activityText: "Review the request",
+            activityTool: "terminal"
+          }
+        }
+      ]
+    });
+
+    expect(result).toMatchObject({
+      status: "attention",
+      activityText: "Review the request",
+      activityTool: "terminal"
+    });
+    expect(result.reasons[0]?.detail).toBe("custom-approval");
   });
 
   it("does not count configured interactive commands as live generic work", () => {

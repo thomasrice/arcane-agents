@@ -5,6 +5,11 @@ import { observePane, type PaneObservation } from "./paneObservation";
 import { ClaudeTranscriptTracker, type ClaudeStatusSnapshot, type TranscriptHealth } from "./claudeTranscriptTracker";
 import { resolveRuntimeAdapter, type RuntimeAdapter, type RuntimeSignals } from "./runtimes/adapter";
 import { classifyPaneProcess, findAgentRuntimeProcess, type AgentRuntimeProcess } from "./runtimes/runtimeProcess";
+import {
+  matchCustomStatusRule,
+  type CompiledStatusRules,
+  type CustomStatusRuleMatch
+} from "./customStatusRules";
 
 /**
  * Everything the decision step needs, derived from ONE pass over the captured
@@ -24,6 +29,7 @@ export interface WorkerSignals {
   transcriptHealth: TranscriptHealth;
   interactiveCommands: ReadonlySet<string>;
   runtimeFreshnessWindowMs: number | undefined;
+  customStatusRule: CustomStatusRuleMatch | undefined;
 }
 
 /** Raw pane inputs the pure signal-derivation and decision work over. */
@@ -38,6 +44,7 @@ export interface EvaluateWorkerStatusInput {
   runtimeProcess: AgentRuntimeProcess | undefined;
   interactiveCommands: ReadonlySet<string>;
   runtimeFreshnessWindowMs: number | undefined;
+  customStatusRules?: CompiledStatusRules;
 }
 
 interface CollectSignalsInput {
@@ -47,6 +54,7 @@ interface CollectSignalsInput {
   claudeTranscript: ClaudeTranscriptTracker;
   interactiveCommands: ReadonlySet<string>;
   runtimeFreshnessWindowMs: number | undefined;
+  customStatusRules: CompiledStatusRules;
 }
 
 const wrappedShellCommands = new Set(["bash", "zsh", "sh"]);
@@ -96,6 +104,13 @@ export function buildWorkerSignals(input: EvaluateWorkerStatusInput): WorkerSign
   const wrappedRuntime = input.runtimeProcess?.runtime;
   const runtime = resolveRuntimeAdapter(input.worker, commandLower, wrappedRuntime, input.output);
 
+  const customStatusRule = input.customStatusRules
+    ? matchCustomStatusRule(input.customStatusRules, {
+        worker: input.worker,
+        currentCommand: input.currentCommand,
+        output: input.output
+      })
+    : undefined;
   return {
     currentCommand: input.currentCommand,
     commandLower,
@@ -108,7 +123,8 @@ export function buildWorkerSignals(input: EvaluateWorkerStatusInput): WorkerSign
     activeRuntimeProcess: input.runtimeProcess,
     transcriptHealth: input.transcriptHealth ?? (input.transcriptSnapshot ? "ok" : "absent"),
     interactiveCommands: input.interactiveCommands,
-    runtimeFreshnessWindowMs: input.runtimeFreshnessWindowMs
+    runtimeFreshnessWindowMs: input.runtimeFreshnessWindowMs,
+    customStatusRule
   };
 }
 
@@ -123,7 +139,8 @@ export async function collectSignals({
   paneObservation,
   claudeTranscript,
   interactiveCommands,
-  runtimeFreshnessWindowMs
+  runtimeFreshnessWindowMs,
+  customStatusRules
 }: CollectSignalsInput): Promise<WorkerSignals | undefined> {
   const paneState = await tmux.getPaneState(worker.tmuxRef);
   if (paneState.isDead) {
@@ -164,6 +181,7 @@ export async function collectSignals({
     transcriptHealth: transcript.health,
     runtimeProcess,
     interactiveCommands,
-    runtimeFreshnessWindowMs
+    runtimeFreshnessWindowMs,
+    customStatusRules
   });
 }

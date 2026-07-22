@@ -89,7 +89,8 @@ function createSignals(scenario: Scenario): WorkerSignals {
     activeRuntimeProcess: scenario.activeRuntimeProcess,
     transcriptHealth: scenario.transcriptSnapshot ? "ok" : "absent",
     interactiveCommands: scenario.interactiveCommands ?? new Set<string>(),
-    runtimeFreshnessWindowMs: scenario.runtimeFreshnessWindowMs
+    runtimeFreshnessWindowMs: scenario.runtimeFreshnessWindowMs,
+    customStatusRule: undefined
   };
 }
 

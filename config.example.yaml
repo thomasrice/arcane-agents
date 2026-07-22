@@ -92,6 +92,27 @@ status:
   # extraInteractiveCommands:
   #   - my-custom-editor
   #   - my-other-tool
+  #
+  # Ordered custom rules override built-in inference when every supplied match
+  # field matches. displayName, command, and lastLine are JavaScript regexes;
+  # projectId and runtimeId are exact strings. lastLine is the current screen's
+  # last non-empty line, not a historical scrollback search. First match wins.
+  # Rules are trusted local configuration: keep them narrow because they may
+  # intentionally override built-in attention or error evidence. Restart after
+  # changing them.
+  #
+  # rules:
+  #   - id: polling-worker-waiting
+  #     match:
+  #       runtimeId: shell
+  #       command: '^python3$'
+  #       lastLine: '^No work for [^;]+; checking again in [0-9]+s\.$'
+  #     set:
+  #       status: idle
+  #
+  # Outcomes: idle, working, attention, or error. Non-idle outcomes may add:
+  #       activityText: Waiting for approval
+  #       activityTool: terminal
 
 # Audio playback settings.
 audio:

@@ -31,7 +31,8 @@ function createConfig(): ResolvedConfig {
       }
     },
     status: {
-      interactiveCommands: []
+      interactiveCommands: [],
+      rules: []
     },
     server: {
       host: "127.0.0.1",

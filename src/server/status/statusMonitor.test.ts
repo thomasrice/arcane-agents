@@ -27,7 +27,7 @@ interface TestRepository {
   deleteWorker: ReturnType<typeof vi.fn>;
 }
 
-const testConfig = { status: { interactiveCommands: [] }, runtimes: {} } as unknown as ResolvedConfig;
+const testConfig = { status: { interactiveCommands: [], rules: [] }, runtimes: {} } as unknown as ResolvedConfig;
 
 const defaultFacts: WorkerStatusDecision["facts"] = {
   command: "claude",
@@ -138,7 +138,8 @@ function createSignals(): WorkerSignals {
     activeRuntimeProcess: undefined,
     transcriptHealth: "absent",
     interactiveCommands: new Set<string>(),
-    runtimeFreshnessWindowMs: undefined
+    runtimeFreshnessWindowMs: undefined,
+    customStatusRule: undefined
   };
 }
 
@@ -298,6 +299,46 @@ describe("StatusMonitor", () => {
     const performance = monitor.getStatusPerformanceDebug();
     expect(performance.latestPoll?.workerCount).toBe(1);
     expect(performance.workers.some((timing) => timing.workerName === worker.name)).toBe(true);
+  });
+
+  it("passes precompiled configured rules into pane signal collection", async () => {
+    const worker = createWorker("worker-1", "idle");
+    const repository = createRepository([worker]);
+    const config: ResolvedConfig = {
+      ...testConfig,
+      status: {
+        ...testConfig.status,
+        rules: [
+          {
+            id: "configured-rule",
+            match: { lastLine: "^waiting$" },
+            set: { status: "idle" }
+          }
+        ]
+      }
+    };
+    const monitor = new StatusMonitor({
+      workers: repository.repo,
+      tmux: {
+        hasManagedSession: vi.fn(async () => true),
+        windowExists: vi.fn(async () => true)
+      } as unknown as TmuxAdapter,
+      pollIntervalMs: 1_000,
+      onWorkerUpdated: () => undefined,
+      onWorkerRemoved: () => undefined,
+      config
+    });
+
+    await monitor.pollOnce();
+
+    expect(collectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customStatusRules: {
+          rules: [expect.objectContaining({ id: "configured-rule" })],
+          usesLastLine: true
+        }
+      })
+    );
   });
 
   it("keeps worker records when the configured tmux session is unavailable", async () => {

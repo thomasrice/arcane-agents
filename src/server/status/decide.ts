@@ -3,6 +3,7 @@ import type { PaneObservation } from "./paneObservation";
 import type { ParsedActivity } from "./activityParser";
 import type { ClaudeStatusSnapshot, TranscriptHealth } from "./claudeTranscriptTracker";
 import type { AgentRuntimeProcess, KnownAgentRuntime } from "./runtimes/runtimeProcess";
+import type { CustomStatusRuleMatch } from "./customStatusRules";
 import type { RuntimeAdapter, RuntimeAdapterId, RuntimeSignals } from "./runtimes/adapter";
 import { preferOpenCodeSpecificActivityText } from "./runtimes/openCode";
 import { buildWorkerSignals, type EvaluateWorkerStatusInput, type WorkerSignals } from "./collectSignals";
@@ -112,6 +113,7 @@ interface DecisionContext {
   workerAgeMs: number;
   interactiveCommands: ReadonlySet<string>;
   runtimeFreshnessWindowMs: number | undefined;
+  customStatusRule: CustomStatusRuleMatch | undefined;
 }
 
 interface WorkingEvidence {
@@ -179,7 +181,8 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
     commandQuietForMs: Math.max(0, nowMs - signals.observation.lastCommandChangeAtMs),
     workerAgeMs,
     interactiveCommands: signals.interactiveCommands,
-    runtimeFreshnessWindowMs: signals.runtimeFreshnessWindowMs
+    runtimeFreshnessWindowMs: signals.runtimeFreshnessWindowMs,
+    customStatusRule: signals.customStatusRule
   };
 }
 
@@ -212,6 +215,25 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
   };
 
   const transcriptStatus = context.transcriptSnapshot?.status;
+  if (context.customStatusRule) {
+    const { ruleId, outcome } = context.customStatusRule;
+    pushReason({
+      code: "custom-status-rule",
+      message: `Custom status rule selected '${outcome.status}'.`,
+      detail: ruleId
+    });
+    const activityText =
+      outcome.status === "idle" ? undefined : outcome.activityText ?? defaultCustomRuleActivityText[outcome.status];
+    return finalizeDecision(context, {
+      status: outcome.status,
+      activityText,
+      activityTool: outcome.status === "idle" ? undefined : outcome.activityTool ?? "terminal",
+      activityPath: undefined,
+      confidence: 1,
+      reasons,
+      parsedStrongSignal: false
+    });
+  }
 
   if (transcriptStatus === "attention") {
     pushReason({ code: "transcript-attention", message: "Transcript reports attention." });
@@ -446,6 +468,12 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
     parsedStrongSignal: evidence.parsedStrongSignal
   });
 }
+
+const defaultCustomRuleActivityText = {
+  working: "Working",
+  attention: "Waiting for input",
+  error: "Error"
+} as const;
 
 function finalizeDecision(
   context: DecisionContext,

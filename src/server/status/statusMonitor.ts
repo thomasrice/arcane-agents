@@ -8,6 +8,7 @@ import { collectSignals, type WorkerSignals } from "./collectSignals";
 import { decide, type StatusDecisionFacts, type StatusReason, type WorkerStatusDecision } from "./decide";
 import type { RuntimeAdapterId, RuntimeSignals } from "./runtimes/adapter";
 import type { AgentRuntimeProcess } from "./runtimes/runtimeProcess";
+import { compileStatusRules, type CompiledStatusRules } from "./customStatusRules";
 
 type StatusTraceMode = "off" | "transitions" | "verbose";
 type WorkerPollOutcome = "unchanged" | "updated" | "removed" | "failed";
@@ -212,6 +213,7 @@ export class StatusMonitor {
   // (the set is config-level and never changes) rather than re-spreading per poll.
   private readonly interactiveCommandsSnapshot: readonly string[];
   private readonly runtimeFreshnessOverrides: ReadonlyMap<string, number>;
+  private readonly customStatusRules: CompiledStatusRules;
   private readonly workers: WorkerRepository;
   private readonly tmux: TmuxAdapter;
   private readonly pollIntervalMs: number;
@@ -228,6 +230,7 @@ export class StatusMonitor {
     const config = options.config;
     this.interactiveCommands = new Set(config.status.interactiveCommands.map((cmd) => cmd.toLowerCase()));
     this.interactiveCommandsSnapshot = [...this.interactiveCommands];
+    this.customStatusRules = compileStatusRules(config.status.rules);
 
     const freshnessOverrides = new Map<string, number>();
     for (const [id, runtime] of Object.entries(config.runtimes)) {
@@ -446,7 +449,8 @@ export class StatusMonitor {
         paneObservation: this.paneObservation,
         claudeTranscript: this.claudeTranscript,
         interactiveCommands: this.interactiveCommands,
-        runtimeFreshnessWindowMs: this.runtimeFreshnessOverrides.get(worker.runtimeId)
+        runtimeFreshnessWindowMs: this.runtimeFreshnessOverrides.get(worker.runtimeId),
+        customStatusRules: this.customStatusRules
       });
 
       if (!collected) {

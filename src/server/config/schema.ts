@@ -12,6 +12,87 @@ export const defaultInteractiveCommands = [
 ];
 
 const avatarSchema = z.string().trim().min(1);
+const activityToolSchema = z.enum([
+  "read",
+  "edit",
+  "write",
+  "bash",
+  "grep",
+  "glob",
+  "task",
+  "todo",
+  "web",
+  "terminal",
+  "unknown"
+]);
+
+const regexMatchFields = ["displayName", "command", "lastLine"] as const;
+
+const statusRuleMatchSchema = z
+  .object({
+    displayName: z.string().min(1).optional(),
+    projectId: z.string().min(1).optional(),
+    runtimeId: z.string().min(1).optional(),
+    command: z.string().min(1).optional(),
+    lastLine: z.string().min(1).optional()
+  })
+  .refine((match) => Object.values(match).some((value) => value !== undefined), {
+    message: "A status rule must define at least one match field."
+  });
+
+const statusRuleOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("idle")
+  }).strict(),
+  z.object({
+    status: z.enum(["working", "attention", "error"]),
+    activityText: z.string().min(1).optional(),
+    activityTool: activityToolSchema.optional()
+  }).strict()
+]);
+
+const statusRuleSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    match: statusRuleMatchSchema,
+    set: statusRuleOutcomeSchema
+  })
+  .superRefine((rule, context) => {
+    for (const field of regexMatchFields) {
+      const pattern = rule.match[field];
+      if (pattern === undefined) {
+        continue;
+      }
+
+      try {
+        new RegExp(pattern);
+      } catch (error) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["match", field],
+          message: `Status rule '${rule.id}' has invalid ${field} regex: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        });
+      }
+    }
+  });
+
+const statusRulesSchema = z.array(statusRuleSchema).superRefine((rules, context) => {
+  const firstIndexById = new Map<string, number>();
+  rules.forEach((rule, index) => {
+    const firstIndex = firstIndexById.get(rule.id);
+    if (firstIndex !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index, "id"],
+        message: `Status rule id '${rule.id}' duplicates rule at index ${firstIndex}.`
+      });
+      return;
+    }
+    firstIndexById.set(rule.id, index);
+  });
+});
 
 const projectSchema = z.object({
   path: z.string().min(1),
@@ -62,7 +143,8 @@ const serverSchema = z.object({
 });
 
 const statusSchema = z.object({
-  interactiveCommands: z.array(z.string().min(1))
+  interactiveCommands: z.array(z.string().min(1)),
+  rules: statusRulesSchema
 });
 
 const audioSchema = z.object({
@@ -144,7 +226,8 @@ export function createDefaultConfig(): ResolvedConfig {
       disabled: []
     },
     status: {
-      interactiveCommands: defaultInteractiveCommands
+      interactiveCommands: defaultInteractiveCommands,
+      rules: []
     },
     audio: {
       enableSound: true

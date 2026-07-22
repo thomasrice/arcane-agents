@@ -316,7 +316,7 @@ A complete starter file is available at `config.example.yaml`.
 | `shortcuts` | Saved project/runtime recipes, hotkeys, command overrides, and pinned avatars. |
 | `keybindings` | Configurable application keybindings. |
 | `discovery` | Automatic project discovery from directories, worktrees, or globs. |
-| `status` | Interactive-command filtering for status detection. |
+| `status` | Interactive-command filtering and optional custom status rules. |
 | `audio` | Client sound enablement. |
 | `avatars` | Avatar types excluded from random assignment. |
 | `backend.tmux` | Dedicated tmux socket, session, and polling interval. |
@@ -389,7 +389,7 @@ discovery:
     path: ~/code/playground/*
 ```
 
-### Status filtering
+### Status detection
 
 Interactive programs such as editors and process monitors change terminal output because of user input or screen refreshes. `interactiveCommands` replaces Arcane's default list; `extraInteractiveCommands` extends it.
 
@@ -400,6 +400,24 @@ status:
 ```
 
 The built-in list includes `nvim`, `vim`, `vi`, `nano`, `helix`, `hx`, `emacs`, `emacsclient`, `less`, `more`, `man`, `htop`, `btop`, `top`, `watch`, `lazygit`, `lazydocker`, `ranger`, `nnn`, `lf`, `yazi`, and `tmux`.
+
+Ordered `rules` can override status detection for a terminal state that Arcane cannot infer generically. This example marks any matching Python poller idle without depending on the worker's name:
+
+```yaml
+status:
+  rules:
+    - id: polling-worker-waiting
+      match:
+        runtimeId: shell
+        command: '^python3$'
+        lastLine: '^No work for [^;]+; checking again in [0-9]+s\.$'
+      set:
+        status: idle
+```
+
+`displayName`, `command`, and `lastLine` are JavaScript regular expressions; `projectId` and `runtimeId` are exact matches. All supplied match fields must match, rules run in order, and the first match wins. `lastLine` is the trimmed last non-empty line on the current captured screen, not a search through historical scrollback, so an old waiting message cannot override new work.
+
+A rule can set `idle`, `working`, `attention`, or `error`. Non-idle outcomes may also set `activityText` and `activityTool`; idle outcomes always clear activity. Rules are trusted local configuration and are authoritative, so a broad rule can intentionally override built-in attention or error evidence. Keep patterns narrow, use single-quoted YAML strings for regexes, and restart Arcane Agents after changing them. Matched decisions expose reason code `custom-status-rule` and the rule ID through the existing status-debug endpoints.
 
 ### tmux backend
 

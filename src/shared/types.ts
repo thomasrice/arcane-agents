@@ -15,6 +15,34 @@ export type ActivityTool =
   | "terminal"
   | "unknown";
 
+export type ConfigurableWorkerStatus = Exclude<WorkerStatus, "stopped">;
+
+export interface StatusRuleMatch {
+  displayName?: string;
+  projectId?: string;
+  runtimeId?: string;
+  command?: string;
+  lastLine?: string;
+}
+
+export type StatusRuleOutcome =
+  | {
+      status: "idle";
+      activityText?: never;
+      activityTool?: never;
+    }
+  | {
+      status: Exclude<ConfigurableWorkerStatus, "idle">;
+      activityText?: string;
+      activityTool?: ActivityTool;
+    };
+
+export interface StatusRule {
+  id: string;
+  match: StatusRuleMatch;
+  set: StatusRuleOutcome;
+}
+
 export type AvatarType = string;
 
 export interface ProjectConfig {
@@ -64,6 +92,7 @@ export interface ResolvedConfig {
   };
   status: {
     interactiveCommands: string[];
+    rules: StatusRule[];
   };
   backend: {
     tmux: {
