@@ -94,6 +94,7 @@ body.split-pane-dragging {
   height: 100%;
   display: block;
   cursor: pointer;
+  touch-action: none;
 }
 
 .map-canvas:focus {

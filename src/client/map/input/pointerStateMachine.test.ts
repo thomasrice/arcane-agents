@@ -110,6 +110,109 @@ describe("PointerInteraction pan vs marquee mode", () => {
   });
 });
 
+
+describe("PointerInteraction touch gestures", () => {
+  it("pans on a one-finger drag instead of starting a marquee", () => {
+    const machine = new PointerInteraction({ panDragThreshold: 4 });
+    expect(
+      machine.pointerDown({
+        pointerId: 10,
+        pointerType: "touch",
+        button: 0,
+        point: { x: 100, y: 100 },
+        modifiers: noModifiers,
+        hitWorkerId: "w1",
+        hasSelection: false
+      })
+    ).toEqual({ capture: true, preventDefault: true });
+
+    expect(machine.pointerMove({ pointerId: 10, point: { x: 120, y: 90 }, resolveHit: neverHit })).toEqual({
+      kind: "pan",
+      deltaX: 20,
+      deltaY: -10
+    });
+
+    const up = machine.pointerUp({
+      pointerId: 10,
+      primarySelectedWorkerId: undefined,
+      selectedWorkerIds: [],
+      resolveMarquee: () => ["should-not-select"]
+    });
+    expect(up.select).toBeUndefined();
+  });
+
+  it("retains tap selection when a touch does not become a drag", () => {
+    const machine = new PointerInteraction();
+    machine.pointerDown({
+      pointerId: 10,
+      pointerType: "touch",
+      button: 0,
+      point: { x: 20, y: 30 },
+      modifiers: noModifiers,
+      hitWorkerId: "w1",
+      hasSelection: false
+    });
+
+    const up = machine.pointerUp({
+      pointerId: 10,
+      primarySelectedWorkerId: undefined,
+      selectedWorkerIds: [],
+      resolveMarquee: () => []
+    });
+    expect(up.select).toEqual(["w1"]);
+  });
+
+  it("reports pinch midpoint and scale, then continues panning with the remaining finger", () => {
+    const machine = new PointerInteraction();
+    machine.pointerDown({
+      pointerId: 10,
+      pointerType: "touch",
+      button: 0,
+      point: { x: 100, y: 100 },
+      modifiers: noModifiers,
+      hitWorkerId: undefined,
+      hasSelection: false
+    });
+    machine.pointerDown({
+      pointerId: 11,
+      pointerType: "touch",
+      button: 0,
+      point: { x: 200, y: 100 },
+      modifiers: noModifiers,
+      hitWorkerId: undefined,
+      hasSelection: false
+    });
+
+    expect(machine.pointerMove({ pointerId: 10, point: { x: 90, y: 100 }, resolveHit: neverHit })).toEqual({
+      kind: "pinch",
+      midpoint: { x: 145, y: 100 },
+      deltaX: -5,
+      deltaY: 0,
+      zoomFactor: 1.1
+    });
+
+    const pinchUp = machine.pointerUp({
+      pointerId: 11,
+      primarySelectedWorkerId: undefined,
+      selectedWorkerIds: [],
+      resolveMarquee: () => []
+    });
+    expect(pinchUp).toEqual({ releaseCapture: true, clearMarquee: false });
+    expect(machine.pointerMove({ pointerId: 10, point: { x: 80, y: 95 }, resolveHit: neverHit })).toEqual({
+      kind: "pan",
+      deltaX: -10,
+      deltaY: -5
+    });
+
+    const finalUp = machine.pointerUp({
+      pointerId: 10,
+      primarySelectedWorkerId: undefined,
+      selectedWorkerIds: [],
+      resolveMarquee: () => ["should-not-select"]
+    });
+    expect(finalUp.select).toBeUndefined();
+  });
+});
 describe("PointerInteraction selection semantics", () => {
   it("activates a worker on second click when it is the sole selection", () => {
     const machine = new PointerInteraction();

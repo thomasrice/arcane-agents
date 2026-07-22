@@ -2,12 +2,11 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import type { Worker, WorkerPosition } from "../../../shared/types";
 import type { LoadedOutpostMap } from "../tileMapLoader";
 import {
-  clamp,
   constrainViewportToContainMap,
   getBoundingCenter,
   isInsideViewport,
   panViewportToKeepWorldPointInside,
-  screenToWorld,
+  transformViewportBetweenPoints,
   worldToScreen,
   type ViewportState
 } from "../viewportMath";
@@ -35,6 +34,11 @@ export interface MapCamera {
   viewport: ViewportState;
   setConstrainedViewport: Dispatch<SetStateAction<ViewportState>>;
   zoomViewportAroundPoint: (point: { x: number; y: number }, zoomDelta: number) => void;
+  panAndZoomViewport: (
+    fromPoint: { x: number; y: number },
+    toPoint: { x: number; y: number },
+    zoomFactor: number
+  ) => void;
   zoomViewportByFactor: (factor: number) => void;
   /** Recentre the viewport on the given workers unless they are already fully visible. */
   centerOnWorkers: (workerIds: string[]) => void;
@@ -66,19 +70,20 @@ export function useMapCamera({ mapData, workers, resolveWorkerPosition }: UseMap
     [canvasSize, mapData]
   );
 
-  const zoomViewportAroundPoint = useCallback(
-    (point: { x: number; y: number }, zoomDelta: number) => {
-      setConstrainedViewport((current) => {
-        const worldBeforeZoom = screenToWorld(point.x, point.y, current);
-        const nextScale = clamp(current.scale * zoomDelta, 0.05, maxZoomScale);
-        return {
-          scale: nextScale,
-          offsetX: point.x - worldBeforeZoom.x * nextScale,
-          offsetY: point.y - worldBeforeZoom.y * nextScale
-        };
-      });
+  const panAndZoomViewport = useCallback(
+    (fromPoint: { x: number; y: number }, toPoint: { x: number; y: number }, zoomFactor: number) => {
+      setConstrainedViewport((current) =>
+        transformViewportBetweenPoints(current, fromPoint, toPoint, zoomFactor, 0.05, maxZoomScale)
+      );
     },
     [setConstrainedViewport]
+  );
+
+  const zoomViewportAroundPoint = useCallback(
+    (point: { x: number; y: number }, zoomDelta: number) => {
+      panAndZoomViewport(point, point, zoomDelta);
+    },
+    [panAndZoomViewport]
   );
 
   const zoomViewportByFactor = useCallback(
@@ -177,6 +182,7 @@ export function useMapCamera({ mapData, workers, resolveWorkerPosition }: UseMap
     viewport,
     setConstrainedViewport,
     zoomViewportAroundPoint,
+    panAndZoomViewport,
     zoomViewportByFactor,
     centerOnWorkers,
     keepWorkersInView

@@ -99,6 +99,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     viewport,
     setConstrainedViewport,
     zoomViewportAroundPoint,
+    panAndZoomViewport,
     zoomViewportByFactor,
     centerOnWorkers,
     keepWorkersInView
@@ -124,6 +125,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
     drawStateRef,
     setConstrainedViewport,
     zoomViewportAroundPoint,
+    panAndZoomViewport,
     onSelectionChange,
     onActivateWorker,
     onMoveOrderIssued

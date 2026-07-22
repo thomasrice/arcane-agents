@@ -41,6 +41,11 @@ interface UseMapInteractionInput {
   drawStateRef: React.MutableRefObject<MapDrawState | null>;
   setConstrainedViewport: Dispatch<SetStateAction<ViewportState>>;
   zoomViewportAroundPoint: (point: { x: number; y: number }, zoomDelta: number) => void;
+  panAndZoomViewport: (
+    fromPoint: { x: number; y: number },
+    toPoint: { x: number; y: number },
+    zoomFactor: number
+  ) => void;
   onSelectionChange: (workerIds: string[]) => void;
   onActivateWorker?: (workerId: string) => void;
   onMoveOrderIssued?: (workerId: string) => void;
@@ -84,6 +89,7 @@ export function useMapInteraction({
   drawStateRef,
   setConstrainedViewport,
   zoomViewportAroundPoint,
+  panAndZoomViewport,
   onSelectionChange,
   onActivateWorker,
   onMoveOrderIssued
@@ -228,6 +234,7 @@ export function useMapInteraction({
     const point = readPointerOnCanvas(event);
     const result = pointer.pointerDown({
       pointerId: event.pointerId,
+      pointerType: event.pointerType,
       button: event.button,
       point,
       modifiers: { shift: event.shiftKey, ctrl: event.ctrlKey, meta: event.metaKey, alt: event.altKey },
@@ -251,6 +258,15 @@ export function useMapInteraction({
         offsetX: current.offsetX + result.deltaX,
         offsetY: current.offsetY + result.deltaY
       }));
+      setHover(null);
+    } else if (result.kind === "pinch") {
+      event.preventDefault();
+      const previousMidpoint = {
+        x: result.midpoint.x - result.deltaX,
+        y: result.midpoint.y - result.deltaY
+      };
+      panAndZoomViewport(previousMidpoint, result.midpoint, result.zoomFactor);
+      setMarqueeSelection(null);
       setHover(null);
     } else if (result.kind === "marquee") {
       setMarqueeSelection(result.box);

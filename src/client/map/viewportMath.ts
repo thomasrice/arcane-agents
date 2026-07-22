@@ -68,6 +68,27 @@ export function screenToWorld(screenX: number, screenY: number, viewport: Viewpo
   };
 }
 
+/**
+ * Keep the world point under `fromPoint` under `toPoint` while changing scale.
+ * Used by pinch gestures so midpoint translation and zoom remain one transform.
+ */
+export function transformViewportBetweenPoints(
+  viewport: ViewportState,
+  fromPoint: { x: number; y: number },
+  toPoint: { x: number; y: number },
+  scaleFactor: number,
+  minScale: number,
+  maxScale: number
+): ViewportState {
+  const worldAnchor = screenToWorld(fromPoint.x, fromPoint.y, viewport);
+  const scale = clamp(viewport.scale * scaleFactor, minScale, maxScale);
+  return {
+    scale,
+    offsetX: toPoint.x - worldAnchor.x * scale,
+    offsetY: toPoint.y - worldAnchor.y * scale
+  };
+}
+
 export function toPanDirection(key: string): PanDirection | undefined {
   const normalized = key.length === 1 ? key.toLowerCase() : key;
   switch (normalized) {

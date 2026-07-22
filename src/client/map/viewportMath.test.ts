@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getBoundingCenter, panViewportToKeepWorldPointInside } from "./viewportMath";
+import { getBoundingCenter, panViewportToKeepWorldPointInside, transformViewportBetweenPoints } from "./viewportMath";
 
 describe("getBoundingCenter", () => {
   it("centres a group between its outermost workers", () => {
@@ -21,6 +21,21 @@ describe("getBoundingCenter", () => {
   });
 });
 
+
+describe("transformViewportBetweenPoints", () => {
+  it("applies translated pinch zoom as one anchored viewport transform", () => {
+    expect(
+      transformViewportBetweenPoints(
+        { scale: 1, offsetX: 0, offsetY: 0 },
+        { x: 100, y: 100 },
+        { x: 110, y: 100 },
+        2,
+        0.05,
+        2.4
+      )
+    ).toEqual({ scale: 2, offsetX: -90, offsetY: -100 });
+  });
+});
 describe("panViewportToKeepWorldPointInside", () => {
   const canvasSize = { width: 800, height: 600 };
   const viewport = { scale: 2, offsetX: 100, offsetY: 50 };
