@@ -187,7 +187,7 @@ export function drawScene({
     }
   }
 
-  drawWorkerNameplates(context, scene.pendingNameplates, nowMs);
+  drawWorkerNameplates(context, scene.pendingNameplates, nowMs, viewport.scale);
 
   const isGroupSelection = selectedWorkerIds.length > 1;
   for (const selectedOutline of scene.selectedOutlines) {

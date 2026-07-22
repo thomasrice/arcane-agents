@@ -2,6 +2,7 @@ import type { Worker, WorkerPosition } from "../../../../shared/types";
 import type { ActivityOverlayRenderState, WorkerMotion } from "../../workerVisualState";
 import { getSpriteFrame, type CharacterSpriteSet } from "../../../sprites/spriteLoader";
 import { clamp, worldToScreen, type ViewportState } from "../../viewportMath";
+import { defaultZoomScale } from "../../mapRuntimeConstants";
 import { spriteBoundsAtGround, type SpriteBounds } from "../../hitTesting";
 import { drawDespawnEffect, drawSummonEffect } from "./effectsLayer";
 
@@ -137,6 +138,7 @@ export function drawWorker(scene: WorkerSceneContext, worker: Worker, options: D
   const ghostAlpha = options.ghostAlpha;
   const isFading = options.fadeProgress !== undefined;
   const fadeAlpha = isFading ? clamp(1 - (options.fadeProgress ?? 0), 0, 1) : 1;
+  const uiScale = Math.max(1, viewport.scale / defaultZoomScale);
 
   const worldPosition = scene.displayedPositions[worker.id] ?? worker.position;
   const screen = worldToScreen(worldPosition.x, worldPosition.y, viewport);
@@ -191,7 +193,7 @@ export function drawWorker(scene: WorkerSceneContext, worker: Worker, options: D
     const activityOverlay = scene.activityOverlayStateByWorker[worker.id];
     if (activityOverlay?.text) {
       const badgeY = spriteBounds ? spriteBounds.y - 14 * viewport.scale : screen.y - radius - 22 * viewport.scale;
-      drawActivityBadge(context, activityOverlay, screen.x, badgeY);
+      drawActivityBadge(context, activityOverlay, screen.x, badgeY, uiScale);
     }
 
     if (controlKeys.length > 0) {
@@ -345,20 +347,21 @@ function drawActivityBadge(
   context: CanvasRenderingContext2D,
   overlay: ActivityOverlayRenderState,
   centerX: number,
-  badgeTopY: number
+  badgeTopY: number,
+  scale: number
 ): void {
-  context.font = "10px 'Trebuchet MS', sans-serif";
+  context.font = `${Math.round(10 * scale)}px 'Trebuchet MS', sans-serif`;
   const badgeTextWidth = Math.ceil(context.measureText(overlay.text).width);
-  const badgeWidth = Math.max(44, Math.min(activityOverlayMaxBadgeWidth, badgeTextWidth + 16));
-  const badgeHeight = 16;
+  const badgeWidth = Math.max(44 * scale, Math.min(activityOverlayMaxBadgeWidth * scale, badgeTextWidth + 16 * scale));
+  const badgeHeight = 16 * scale;
 
   context.fillStyle = "rgba(14, 21, 18, 0.85)";
   context.fillRect(centerX - badgeWidth / 2, badgeTopY, badgeWidth, badgeHeight);
   context.strokeStyle = "rgba(237, 244, 210, 0.5)";
-  context.lineWidth = 1;
+  context.lineWidth = scale;
   context.strokeRect(centerX - badgeWidth / 2, badgeTopY, badgeWidth, badgeHeight);
 
-  drawActivityOverlayLabel(context, overlay, centerX, badgeTopY + 11);
+  drawActivityOverlayLabel(context, overlay, centerX, badgeTopY + 11 * scale);
 }
 
 function drawActivityOverlayLabel(
@@ -404,32 +407,34 @@ function drawActivityOverlayLabel(
 export function drawWorkerNameplates(
   context: CanvasRenderingContext2D,
   nameplates: WorkerNameplate[],
-  nowMs: number
+  nowMs: number,
+  viewportScale: number
 ): void {
   if (!nameplates.length) {
     return;
   }
 
+  const scale = Math.max(1, viewportScale / defaultZoomScale);
   context.save();
   context.textAlign = "center";
-  context.font = "12px 'Trebuchet MS', sans-serif";
+  context.font = `${Math.round(12 * scale)}px 'Trebuchet MS', sans-serif`;
 
   for (const nameplate of nameplates) {
-    const labelWidth = Math.max(90, context.measureText(nameplate.label).width + 18);
-    const labelHeight = 18;
+    const labelWidth = Math.max(90 * scale, context.measureText(nameplate.label).width + 18 * scale);
+    const labelHeight = 18 * scale;
     const left = nameplate.anchorX - labelWidth / 2;
 
     if (nameplate.completionKey !== undefined) {
       const seed = hashString(nameplate.completionKey);
       drawCompletionNameplate(context, left, nameplate.topY, labelWidth, labelHeight, nowMs, seed);
       context.fillStyle = completionPlaquePalette.textShadow;
-      context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 14);
+      context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 14 * scale);
       context.fillStyle = completionPlaquePalette.textFill;
     } else if (nameplate.attentionKey !== undefined) {
       const seed = hashString(nameplate.attentionKey);
       drawAttentionNameplate(context, left, nameplate.topY, labelWidth, labelHeight, nowMs, seed);
       context.fillStyle = attentionPlaquePalette.textShadow;
-      context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 14);
+      context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 14 * scale);
       context.fillStyle = attentionPlaquePalette.textFill;
     } else {
       context.fillStyle = "rgba(0, 0, 0, 0.56)";
@@ -437,7 +442,7 @@ export function drawWorkerNameplates(
       context.fillStyle = "#f8f7e5";
     }
 
-    context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 13);
+    context.fillText(nameplate.label, nameplate.anchorX, nameplate.topY + 13 * scale);
   }
 
   context.restore();
