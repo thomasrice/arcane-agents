@@ -63,4 +63,50 @@ describe("ompAdapter.detect", () => {
     expect(signals.active).toBe(false);
     expect(signals.activityText).toBeUndefined();
   });
+
+  it("reads a current Ask selector below the last spinner as waiting for input", () => {
+    const signals = ompAdapter.detect(
+      [
+        " ⠏ Grilling your mouse preferences ⟨esc⟩",
+        "╭─ Ask ───────────────────────────────────────────────╮",
+        "│ What type of mouse best fits your priorities?       │",
+        "│ Productivity-first                                  │",
+        "├─────────────────────────────────────────────────────┤",
+        "│ Enter select · n note · ↑/↓ move · Esc cancel       │",
+        "╰─────────────────────────────────────────────────────╯"
+      ].join("\n")
+    );
+
+    expect(signals.awaitingInput).toBe(true);
+    expect(signals.active).toBe(false);
+  });
+
+  it("ignores an old Ask selector once a newer live spinner appears", () => {
+    const signals = ompAdapter.detect(
+      [
+        "╭─ Ask ───────────────────────────────────────────────╮",
+        "│ Which option?                                       │",
+        "│ Enter select · n note · ↑/↓ move · Esc cancel       │",
+        "╰─────────────────────────────────────────────────────╯",
+        " ⠙ Applying the new request ⟨esc⟩"
+      ].join("\n")
+    );
+
+    expect(signals.awaitingInput).toBe(false);
+    expect(signals.active).toBe(true);
+    expect(signals.activityText).toBe("Applying the new request");
+  });
+
+  it("does not treat an Ask help hint outside an open Ask frame as input", () => {
+    const signals = ompAdapter.detect(
+      [
+        "Tool output copied this line:",
+        "│ Enter select · n note · ↑/↓ move · Esc cancel       │",
+        "╭── K3 · max · ~/code/personal-assistant · master · 27.5%/1M · (sub) ──╮"
+      ].join("\n")
+    );
+
+    expect(signals.awaitingInput).toBe(false);
+    expect(signals.active).toBe(false);
+  });
 });

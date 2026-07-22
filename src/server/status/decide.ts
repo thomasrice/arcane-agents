@@ -106,6 +106,7 @@ interface DecisionContext {
   hasCodexActiveSignal: boolean;
   hasOmpPromptSignal: boolean;
   hasOmpActiveSignal: boolean;
+  hasOmpInputPrompt: boolean;
   isClaudeSession: boolean;
   isOpenCodeSession: boolean;
   isCodexSession: boolean;
@@ -176,6 +177,7 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
     hasCodexActiveSignal: isCodexSession && rs.active,
     hasOmpPromptSignal: isOmpSession && rs.prompt,
     hasOmpActiveSignal: isOmpSession && rs.active,
+    hasOmpInputPrompt: isOmpSession && Boolean(rs.awaitingInput),
     isClaudeSession,
     isOpenCodeSession,
     isCodexSession,
@@ -278,6 +280,19 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
     });
   }
 
+
+  if (context.hasOmpInputPrompt && !context.hasOmpActiveSignal && !isInteractiveCommand(context)) {
+    pushReason({ code: "omp-input-prompt", message: "oh-my-pi is waiting for a question response." });
+    return finalizeDecision(context, {
+      status: "attention",
+      activityText: context.runtimeActivityText ?? "Waiting for input",
+      activityTool: "terminal",
+      activityPath: undefined,
+      confidence: 0.96,
+      reasons,
+      parsedStrongSignal: false
+    });
+  }
   if (context.hasCodexApprovalPrompt && !context.hasCodexActiveSignal && !isInteractiveCommand(context)) {
     // Only a genuine approval routes to attention. The codex `prompt` signal also
     // covers the ordinary at-rest input prompt (which merely classifies the pane

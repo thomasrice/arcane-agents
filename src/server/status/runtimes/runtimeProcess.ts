@@ -5,6 +5,9 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const maxProcessTreeDepth = 5;
 
+const wrappedShellCommands = new Set(["bash", "zsh", "sh"]);
+const interpreterHostCommands = new Set(["node", "bun", "deno", "python", "python3"]);
+
 export type KnownAgentRuntime = AgentRuntimeId;
 
 export interface AgentRuntimeProcess {
@@ -12,6 +15,42 @@ export interface AgentRuntimeProcess {
   runtime: KnownAgentRuntime;
   command: string;
   args: string;
+}
+
+/**
+ * Resolve the agent runtime backing the pane's foreground command.
+ *
+ * tmux reports the foreground executable (`bun`, for example), but `pane_pid`
+ * remains the shell that launched it. Interpreter commands therefore try the
+ * pane's own argv first, then descend from the pane pid when it is still a shell.
+ */
+export async function resolvePaneAgentRuntimeProcess(
+  panePid: number | undefined,
+  commandLower: string
+): Promise<AgentRuntimeProcess | undefined> {
+  if (!panePid) {
+    return undefined;
+  }
+
+  if (wrappedShellCommands.has(commandLower)) {
+    return findAgentRuntimeProcess(panePid);
+  }
+
+  if (!interpreterHostCommands.has(commandLower)) {
+    return undefined;
+  }
+
+  const details = await describeProcess(panePid);
+  if (!details) {
+    return undefined;
+  }
+
+  const runtimeProcess = toAgentRuntimeProcess(panePid, details);
+  if (runtimeProcess) {
+    return runtimeProcess;
+  }
+
+  return wrappedShellCommands.has(details.command.toLowerCase()) ? findAgentRuntimeProcess(panePid) : undefined;
 }
 
 export async function findAgentRuntimeProcess(panePid: number): Promise<AgentRuntimeProcess | undefined> {
@@ -35,21 +74,15 @@ export async function findAgentRuntimeProcess(panePid: number): Promise<AgentRun
  */
 export async function classifyPaneProcess(panePid: number): Promise<AgentRuntimeProcess | undefined> {
   const details = await describeProcess(panePid);
-  if (!details) {
-    return undefined;
-  }
+  return details ? toAgentRuntimeProcess(panePid, details) : undefined;
+}
 
+function toAgentRuntimeProcess(
+  pid: number,
+  details: { command: string; args: string }
+): AgentRuntimeProcess | undefined {
   const runtime = classifyAgentRuntime(details.command, details.args);
-  if (!runtime) {
-    return undefined;
-  }
-
-  return {
-    pid: panePid,
-    runtime,
-    command: details.command,
-    args: details.args
-  };
+  return runtime ? { pid, runtime, command: details.command, args: details.args } : undefined;
 }
 
 async function findAgentRuntimeProcessAtDepth(parentPid: number, depth: number): Promise<AgentRuntimeProcess | undefined> {

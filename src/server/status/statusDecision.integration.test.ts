@@ -907,6 +907,16 @@ describe("status decision — oh-my-pi (omp) hosted as a bare `node` pane", () =
     "╰─                                                                      ─╯"
   ].join("\n");
 
+  const waitingOmpAskPane = [
+    " ⠏ Grilling your mouse preferences ⟨esc⟩",
+    "╭─ Ask ───────────────────────────────────────────────╮",
+    "│ What type of mouse best fits your priorities?       │",
+    "│ Productivity-first                                  │",
+    "├─────────────────────────────────────────────────────┤",
+    "│ Enter select · n note · ↑/↓ move · Esc cancel       │",
+    "╰─────────────────────────────────────────────────────╯"
+  ].join("\n");
+
   const ompRuntimeProcess: AgentRuntimeProcess = {
     pid: 6161,
     runtime: "omp",
@@ -994,6 +1004,34 @@ describe("status decision — oh-my-pi (omp) hosted as a bare `node` pane", () =
     expect(result.facts.runtime).toBe("omp");
     expect(reasonCodes(result)).toContain("omp-prompt-idle");
     expect(reasonCodes(result)).not.toContain("generic-foreground-process");
+  });
+
+  it("reads a current OMP Ask selector as attention even when its spinner remains above it", () => {
+    const result = evaluate({
+      runtime: "shell",
+      output: waitingOmpAskPane,
+      currentCommand: "bun",
+      outputQuietForMs: 1_500
+    });
+
+    expect(result.status).toBe("attention");
+    expect(result.facts.runtime).toBe("omp");
+    expect(result.activityText).toBe("Waiting for input");
+    expect(reasonCodes(result)).toContain("omp-input-prompt");
+  });
+
+  it("keeps OMP working when a fresh spinner appears below an old Ask selector", () => {
+    const result = evaluate({
+      runtime: "shell",
+      output: [waitingOmpAskPane, " ⠙ Applying the new request ⟨esc⟩"].join("\n"),
+      currentCommand: "omp",
+      outputQuietForMs: 1_500,
+      runtimeProcess: ompRuntimeProcess
+    });
+
+    expect(result.status).toBe("working");
+    expect(reasonCodes(result)).toContain("omp-active-signal");
+    expect(reasonCodes(result)).not.toContain("omp-input-prompt");
   });
 });
 

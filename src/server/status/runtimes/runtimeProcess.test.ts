@@ -15,7 +15,7 @@ vi.mock("node:child_process", () => {
   return { execFile };
 });
 
-import { classifyPaneProcess } from "./runtimeProcess";
+import { classifyPaneProcess, resolvePaneAgentRuntimeProcess } from "./runtimeProcess";
 
 function psReturning(commAndArgsLine: string): void {
   execFileHook.mockResolvedValue({ stdout: `${commAndArgsLine}\n`, stderr: "" });
@@ -91,5 +91,39 @@ describe("classifyPaneProcess", () => {
     execFileHook.mockResolvedValue({ stdout: "\n", stderr: "" });
 
     expect(await classifyPaneProcess(9999)).toBeUndefined();
+  });
+});
+
+describe("resolvePaneAgentRuntimeProcess", () => {
+  it("finds an OMP child when tmux reports bun but the pane pid is still its shell", async () => {
+    execFileHook.mockImplementation(async (command, args) => {
+      if (command === "ps" && args.at(-1) === "4242") {
+        return { stdout: "bash bash\n", stderr: "" };
+      }
+      if (command === "pgrep" && args.at(-1) === "4242") {
+        return { stdout: "5252\n", stderr: "" };
+      }
+      if (command === "ps" && args.at(-1) === "5252") {
+        return { stdout: "bun /home/thomas/.cache/.bun/bin/omp\n", stderr: "" };
+      }
+      return { stdout: "\n", stderr: "" };
+    });
+
+    await expect(resolvePaneAgentRuntimeProcess(4242, "bun")).resolves.toMatchObject({
+      pid: 5252,
+      runtime: "omp",
+      command: "bun"
+    });
+  });
+
+  it("does not search descendants of an unrelated interpreter process", async () => {
+    execFileHook.mockResolvedValue({
+      stdout: "node node /home/thomas/code/project/build.js\n",
+      stderr: ""
+    });
+
+    await expect(resolvePaneAgentRuntimeProcess(4243, "node")).resolves.toBeUndefined();
+    expect(execFileHook).toHaveBeenCalledTimes(1);
+    expect(execFileHook).toHaveBeenCalledWith("ps", expect.arrayContaining(["-p", "4243"]));
   });
 });

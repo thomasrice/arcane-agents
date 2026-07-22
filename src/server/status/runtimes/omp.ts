@@ -24,6 +24,10 @@ const ompEscInterruptMarker = /⟨esc⟩/; // ⟨esc⟩
 const ompContextMeterMarker = /\d+(?:\.\d+)?%\/\d+(?:\.\d+)?[KMG]?/;
 const ompCostMarker = /\$\s?\d/;
 const ompPromptBarMarker = /^╭.*╮$/u;
+const ompAskHeader = /^╭─+\s*Ask\s*─+.*╮$/i;
+const ompAskInputHint = /^(?:│|\|)\s*Enter select\b.*\bEsc cancel\s*(?:│|\|)$/i;
+const ompFrameBottom = /^╰─+.*╯$/;
+const ompAskFrameMaxLines = 40;
 
 interface OmpSignals {
   /** A live turn — a fresh Braille spinner line ending in "⟨esc⟩". Routes to working. */
@@ -38,6 +42,8 @@ interface OmpSignals {
    * is not required.
    */
   atFooterPrompt: boolean;
+  /** A current Ask selector below the latest live spinner. Routes to attention. */
+  awaitingInput: boolean;
 }
 
 export const ompAdapter: RuntimeAdapter = {
@@ -52,13 +58,11 @@ export const ompAdapter: RuntimeAdapter = {
   detect(output): RuntimeSignals {
     const signals = detectOmpSignals(output);
     return {
-      // `prompt` means "omp is parked, not mid-turn" (footer chrome, no live
-      // spinner). It classifies the pane as omp; the decision layer treats it as
-      // at-rest (suppresses the child-process signal, falls through to idle).
       prompt: signals.atFooterPrompt,
       active: signals.active,
       activityText: extractOmpRuntimeActivityText(output, signals),
-      activeTask: undefined
+      activeTask: undefined,
+      awaitingInput: signals.awaitingInput
     };
   }
 };
@@ -88,19 +92,49 @@ function detectOmpSignals(output: string): OmpSignals {
 
   const newestIndex = lines.length - 1;
   const latestActiveIndex = findLastMatchingIndex(lines, isOmpActiveLine);
-  const active =
+  const latestInputIndex = findLatestOmpAskInputIndex(lines);
+  const activeIsFresh =
     latestActiveIndex >= 0 && newestIndex >= 0 && newestIndex - latestActiveIndex <= ompActiveFreshLineWindow;
+  const inputIsFresh =
+    latestInputIndex >= 0 && newestIndex >= 0 && newestIndex - latestInputIndex <= ompActiveFreshLineWindow;
+  const active = activeIsFresh && latestActiveIndex > latestInputIndex;
+  const awaitingInput = inputIsFresh && latestInputIndex > latestActiveIndex;
 
   const hasFooter = lines.some(isOmpFooterLine);
 
   return {
     active,
-    atFooterPrompt: hasFooter && !active
+    atFooterPrompt: hasFooter && !active && !awaitingInput,
+    awaitingInput
   };
 }
 
 function isOmpActiveLine(line: string): boolean {
   return ompBrailleSpinner.test(line) && ompEscInterruptMarker.test(line);
+}
+
+function isOmpAskInputLine(line: string): boolean {
+  return ompAskInputHint.test(line);
+}
+
+function findLatestOmpAskInputIndex(lines: string[]): number {
+  const inputIndex = findLastMatchingIndex(lines, isOmpAskInputLine);
+  if (inputIndex < 0) {
+    return -1;
+  }
+
+  const oldestPossibleHeaderIndex = Math.max(0, inputIndex - ompAskFrameMaxLines);
+  for (let index = inputIndex - 1; index >= oldestPossibleHeaderIndex; index -= 1) {
+    const line = lines[index];
+    if (!line || ompFrameBottom.test(line)) {
+      return -1;
+    }
+    if (ompAskHeader.test(line)) {
+      return inputIndex;
+    }
+  }
+
+  return -1;
 }
 
 function isOmpFooterLine(line: string): boolean {

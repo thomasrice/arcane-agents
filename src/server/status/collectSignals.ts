@@ -4,7 +4,7 @@ import { parseActivity, type ParsedActivity } from "./activityParser";
 import { observePane, type PaneObservation } from "./paneObservation";
 import { ClaudeTranscriptTracker, type ClaudeStatusSnapshot, type TranscriptHealth } from "./claudeTranscriptTracker";
 import { resolveRuntimeAdapter, type RuntimeAdapter, type RuntimeSignals } from "./runtimes/adapter";
-import { classifyPaneProcess, findAgentRuntimeProcess, type AgentRuntimeProcess } from "./runtimes/runtimeProcess";
+import { resolvePaneAgentRuntimeProcess, type AgentRuntimeProcess } from "./runtimes/runtimeProcess";
 import {
   matchCustomStatusRule,
   type CompiledStatusRules,
@@ -68,42 +68,6 @@ interface CollectSignalsInput {
   promptSignatures: CompiledPromptSignatures;
 }
 
-const wrappedShellCommands = new Set(["bash", "zsh", "sh"]);
-
-// Interpreters that HOST an agent CLI as the pane's own foreground process.
-// Codex / Claude Code launched directly (not via a shell wrapper) surface as
-// their interpreter binary (e.g. `node`), so the bare command name hides the
-// runtime. For these panes we read the pane process's OWN argv rather than
-// pgrep-ing its children.
-const interpreterHostCommands = new Set(["node", "bun", "deno", "python", "python3"]);
-
-/**
- * Resolve the agent runtime process backing a pane, if any.
- *
- * - A SHELL pane keeps the existing wrapped-process behaviour (pgrep its
- *   children for an agent runtime).
- * - An INTERPRETER pane (node/bun/deno/python…) is the agent's own process, so
- *   we classify the pane pid's own argv. One `ps` per poll for such panes only.
- * - Anything else gets no runtime process (unchanged).
- */
-async function resolvePaneRuntimeProcess(
-  panePid: number | undefined,
-  commandLower: string
-): Promise<AgentRuntimeProcess | undefined> {
-  if (!panePid) {
-    return undefined;
-  }
-
-  if (wrappedShellCommands.has(commandLower)) {
-    return findAgentRuntimeProcess(panePid);
-  }
-
-  if (interpreterHostCommands.has(commandLower)) {
-    return classifyPaneProcess(panePid);
-  }
-
-  return undefined;
-}
 
 /**
  * Pure: turn raw pane inputs into the decision-ready signal set. Resolves the
@@ -179,7 +143,7 @@ export async function collectSignals({
   }
 
   const commandLower = paneState.currentCommand.toLowerCase();
-  const runtimeProcess = await resolvePaneRuntimeProcess(paneState.panePid, commandLower);
+  const runtimeProcess = await resolvePaneAgentRuntimeProcess(paneState.panePid, commandLower);
 
   // Capture-time adapter uses the definite classification only (no output yet).
   const captureAdapter = resolveRuntimeAdapter(worker, commandLower, runtimeProcess?.runtime);

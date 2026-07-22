@@ -123,7 +123,7 @@ export function resolveRuntimeAdapter(
 }
 
 function hasRuntimeSignal(signals: RuntimeSignals): boolean {
-  return signals.prompt || signals.active;
+  return signals.prompt || signals.active || Boolean(signals.awaitingInput) || Boolean(signals.awaitingApproval);
 }
 
 export { claudeAdapter, codexAdapter, genericAdapter, ompAdapter, openCodeAdapter };
