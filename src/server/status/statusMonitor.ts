@@ -1,4 +1,4 @@
-import type { ResolvedConfig, Worker } from "../../shared/types";
+import type { PromptSignature, ResolvedConfig, Worker } from "../../shared/types";
 import { WorkerRepository } from "../persistence/workerRepository";
 import { TmuxAdapter } from "../tmux/tmuxAdapter";
 import type { PaneObservation } from "./paneObservation";
@@ -9,6 +9,7 @@ import { decide, type StatusDecisionFacts, type StatusReason, type WorkerStatusD
 import type { RuntimeAdapterId, RuntimeSignals } from "./runtimes/adapter";
 import type { AgentRuntimeProcess } from "./runtimes/runtimeProcess";
 import { compileStatusRules, type CompiledStatusRules } from "./customStatusRules";
+import { compilePromptSignatures, type CompiledPromptSignatures } from "./promptSignatures";
 
 type StatusTraceMode = "off" | "transitions" | "verbose";
 type WorkerPollOutcome = "unchanged" | "updated" | "removed" | "failed";
@@ -52,6 +53,7 @@ export interface WorkerStatusEvaluationSample {
   status: Worker["status"];
   adapterId: RuntimeAdapterId;
   runtimeSignals: { prompt: boolean; active: boolean };
+  promptSignatureId: string | undefined;
   transcriptHealth: TranscriptHealth;
   outputQuietForMs: number;
   reasonCodes: string[];
@@ -71,6 +73,7 @@ export interface CapturedDecisionInputs {
   toStatus: Worker["status"];
   adapterId: RuntimeAdapterId;
   output: string;
+  visibleOutput: string | undefined;
   currentCommand: string;
   outputQuietForMs: number;
   commandQuietForMs: number;
@@ -81,6 +84,7 @@ export interface CapturedDecisionInputs {
   observation: PaneObservation;
   runtimeProcess: AgentRuntimeProcess | undefined;
   interactiveCommands: readonly string[];
+  promptSignatures: readonly PromptSignature[];
   runtimeFreshnessWindowMs: number | undefined;
   decision: { status: Worker["status"]; reasons: StatusReason[]; confidence: number };
 }
@@ -95,12 +99,14 @@ export interface StatusFixturePayload {
   runtime: RuntimeAdapterId;
   output: string;
   outputQuietForMs: number;
+  visibleOutput?: string;
   commandQuietForMs: number;
   workerAgeMs: number;
   priorStatus: Worker["status"];
   currentCommand: string;
   interactiveCommands: readonly string[];
   transcriptSnapshot: ClaudeStatusSnapshot | null;
+  promptSignatures: readonly PromptSignature[];
   runtimeFreshnessWindowMs: number | null;
 }
 
@@ -164,6 +170,7 @@ const defaultDecisionFacts: StatusDecisionFacts = {
   runtime: "generic",
   transcript: "absent",
   runtimePromptSignal: false,
+  promptSignatureId: undefined,
   runtimeActiveSignal: false,
   hasActiveClaudeTask: false,
   hasActiveRuntimeProcess: false,
@@ -214,6 +221,8 @@ export class StatusMonitor {
   private readonly interactiveCommandsSnapshot: readonly string[];
   private readonly runtimeFreshnessOverrides: ReadonlyMap<string, number>;
   private readonly customStatusRules: CompiledStatusRules;
+  private readonly promptSignatures: CompiledPromptSignatures;
+  private readonly promptSignaturesSnapshot: readonly PromptSignature[];
   private readonly workers: WorkerRepository;
   private readonly tmux: TmuxAdapter;
   private readonly pollIntervalMs: number;
@@ -231,6 +240,11 @@ export class StatusMonitor {
     this.interactiveCommands = new Set(config.status.interactiveCommands.map((cmd) => cmd.toLowerCase()));
     this.interactiveCommandsSnapshot = [...this.interactiveCommands];
     this.customStatusRules = compileStatusRules(config.status.rules);
+    this.promptSignaturesSnapshot = config.status.promptSignatures.map((signature) => ({
+      ...signature,
+      all: [...signature.all]
+    }));
+    this.promptSignatures = compilePromptSignatures(this.promptSignaturesSnapshot);
 
     const freshnessOverrides = new Map<string, number>();
     for (const [id, runtime] of Object.entries(config.runtimes)) {
@@ -450,7 +464,8 @@ export class StatusMonitor {
         claudeTranscript: this.claudeTranscript,
         interactiveCommands: this.interactiveCommands,
         runtimeFreshnessWindowMs: this.runtimeFreshnessOverrides.get(worker.runtimeId),
-        customStatusRules: this.customStatusRules
+        customStatusRules: this.customStatusRules,
+        promptSignatures: this.promptSignatures
       });
 
       if (!collected) {
@@ -617,6 +632,7 @@ export class StatusMonitor {
       `runtime=${evaluation.facts.runtime} ` +
       `transcript=${evaluation.facts.transcript} ` +
       `prompt=${evaluation.facts.runtimePromptSignal ? 1 : 0} ` +
+      `signature=${JSON.stringify(evaluation.facts.promptSignatureId ?? "")} ` +
       `active=${evaluation.facts.runtimeActiveSignal ? 1 : 0} ` +
       `runtimeProc=${evaluation.facts.hasActiveRuntimeProcess ? 1 : 0} ` +
       `genericProc=${evaluation.facts.hasLiveGenericProcess ? 1 : 0}`;
@@ -675,6 +691,7 @@ export class StatusMonitor {
         prompt: evaluation.facts.runtimePromptSignal,
         active: evaluation.facts.runtimeActiveSignal
       },
+      promptSignatureId: evaluation.facts.promptSignatureId,
       transcriptHealth: evaluation.facts.transcript,
       outputQuietForMs: evaluation.facts.outputQuietForMs,
       reasonCodes: evaluation.reasons.map((reason) => reason.code)
@@ -721,6 +738,7 @@ export class StatusMonitor {
       adapterId: signals.runtime.id,
       output: signals.output,
       currentCommand: signals.currentCommand,
+      visibleOutput: signals.visibleOutput,
       outputQuietForMs: evaluation.facts.outputQuietForMs,
       commandQuietForMs: evaluation.facts.commandQuietForMs,
       workerAgeMs: evaluation.facts.workerAgeMs,
@@ -735,6 +753,7 @@ export class StatusMonitor {
       observation: { ...signals.observation },
       runtimeProcess: signals.activeRuntimeProcess ? { ...signals.activeRuntimeProcess } : undefined,
       interactiveCommands: this.interactiveCommandsSnapshot,
+      promptSignatures: this.promptSignaturesSnapshot,
       runtimeFreshnessWindowMs: signals.runtimeFreshnessWindowMs,
       decision: {
         status: evaluation.status,
@@ -791,12 +810,14 @@ function toStatusFixtureDocument(
     fixture: {
       runtime: captured.adapterId,
       output: captured.output,
+      visibleOutput: captured.visibleOutput,
       outputQuietForMs: captured.outputQuietForMs,
       commandQuietForMs: captured.commandQuietForMs,
       workerAgeMs: captured.workerAgeMs,
       priorStatus: captured.fromStatus,
       currentCommand: captured.currentCommand,
       interactiveCommands: captured.interactiveCommands,
+      promptSignatures: captured.promptSignatures,
       transcriptSnapshot: captured.transcriptSnapshot ?? null,
       runtimeFreshnessWindowMs: captured.runtimeFreshnessWindowMs ?? null
     },

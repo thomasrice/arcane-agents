@@ -10,6 +10,11 @@ import {
   type CompiledStatusRules,
   type CustomStatusRuleMatch
 } from "./customStatusRules";
+import {
+  matchPromptSignature,
+  type CompiledPromptSignatures,
+  type PromptSignatureMatch
+} from "./promptSignatures";
 
 /**
  * Everything the decision step needs, derived from ONE pass over the captured
@@ -20,11 +25,13 @@ export interface WorkerSignals {
   currentCommand: string;
   commandLower: string;
   output: string;
+  visibleOutput?: string;
   observation: PaneObservation;
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
   parsed: { activity: ParsedActivity };
   runtime: RuntimeAdapter;
   runtimeSignals: RuntimeSignals;
+  promptSignature: PromptSignatureMatch | undefined;
   activeRuntimeProcess: AgentRuntimeProcess | undefined;
   transcriptHealth: TranscriptHealth;
   interactiveCommands: ReadonlySet<string>;
@@ -37,6 +44,8 @@ export interface EvaluateWorkerStatusInput {
   worker: Worker;
   currentCommand: string;
   output: string;
+  /** Current visible tmux pane only; prompt signatures never inspect scrollback. */
+  visibleOutput?: string;
   observation: PaneObservation;
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
   /** Optional; defaults from whether a snapshot is present (test convenience). */
@@ -45,6 +54,7 @@ export interface EvaluateWorkerStatusInput {
   interactiveCommands: ReadonlySet<string>;
   runtimeFreshnessWindowMs: number | undefined;
   customStatusRules?: CompiledStatusRules;
+  promptSignatures?: CompiledPromptSignatures;
 }
 
 interface CollectSignalsInput {
@@ -55,6 +65,7 @@ interface CollectSignalsInput {
   interactiveCommands: ReadonlySet<string>;
   runtimeFreshnessWindowMs: number | undefined;
   customStatusRules: CompiledStatusRules;
+  promptSignatures: CompiledPromptSignatures;
 }
 
 const wrappedShellCommands = new Set(["bash", "zsh", "sh"]);
@@ -102,7 +113,24 @@ async function resolvePaneRuntimeProcess(
 export function buildWorkerSignals(input: EvaluateWorkerStatusInput): WorkerSignals {
   const commandLower = input.currentCommand.toLowerCase();
   const wrappedRuntime = input.runtimeProcess?.runtime;
-  const runtime = resolveRuntimeAdapter(input.worker, commandLower, wrappedRuntime, input.output);
+  const candidatePromptSignature =
+    input.promptSignatures && input.visibleOutput !== undefined
+      ? matchPromptSignature(input.promptSignatures, input.visibleOutput)
+      : undefined;
+  const runtime = resolveRuntimeAdapter(
+    input.worker,
+    commandLower,
+    wrappedRuntime,
+    input.output,
+    candidatePromptSignature?.runtime
+  );
+  const promptSignature =
+    candidatePromptSignature?.runtime === runtime.id ? candidatePromptSignature : undefined;
+  const nativeRuntimeSignals = runtime.detect(input.output);
+  const runtimeSignals =
+    promptSignature === undefined
+      ? nativeRuntimeSignals
+      : { ...nativeRuntimeSignals, prompt: true };
 
   const customStatusRule = input.customStatusRules
     ? matchCustomStatusRule(input.customStatusRules, {
@@ -117,9 +145,11 @@ export function buildWorkerSignals(input: EvaluateWorkerStatusInput): WorkerSign
     output: input.output,
     observation: input.observation,
     transcriptSnapshot: input.transcriptSnapshot,
+    visibleOutput: input.visibleOutput,
     parsed: parseActivity(input.currentCommand, input.output),
     runtime,
-    runtimeSignals: runtime.detect(input.output),
+    promptSignature,
+    runtimeSignals,
     activeRuntimeProcess: input.runtimeProcess,
     transcriptHealth: input.transcriptHealth ?? (input.transcriptSnapshot ? "ok" : "absent"),
     interactiveCommands: input.interactiveCommands,
@@ -140,7 +170,8 @@ export async function collectSignals({
   claudeTranscript,
   interactiveCommands,
   runtimeFreshnessWindowMs,
-  customStatusRules
+  customStatusRules,
+  promptSignatures
 }: CollectSignalsInput): Promise<WorkerSignals | undefined> {
   const paneState = await tmux.getPaneState(worker.tmuxRef);
   if (paneState.isDead) {
@@ -159,7 +190,10 @@ export async function collectSignals({
   // one PaneObservation per worker in place, so read the prior change time before
   // it updates.
   const previousOutputChangeAtMs = paneObservation.get(worker.id)?.lastOutputChangeAtMs;
-  const output = await tmux.capturePane(worker.tmuxRef, captureAdapter.captureLines);
+  const [output, visibleOutput] = await Promise.all([
+    tmux.capturePane(worker.tmuxRef, captureAdapter.captureLines),
+    promptSignatures.length > 0 ? tmux.captureVisiblePane(worker.tmuxRef) : Promise.resolve(undefined)
+  ]);
   const observation = observePane(paneObservation, worker.id, paneState.currentCommand, output);
   const paneOutputChanged =
     previousOutputChangeAtMs !== undefined && observation.lastOutputChangeAtMs !== previousOutputChangeAtMs;
@@ -177,11 +211,13 @@ export async function collectSignals({
     currentCommand: paneState.currentCommand,
     output,
     observation,
+    visibleOutput,
     transcriptSnapshot: transcript.snapshot,
     transcriptHealth: transcript.health,
     runtimeProcess,
     interactiveCommands,
     runtimeFreshnessWindowMs,
-    customStatusRules
+    customStatusRules,
+    promptSignatures
   });
 }

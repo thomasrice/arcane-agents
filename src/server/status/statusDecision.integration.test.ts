@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StatusRule, Worker } from "../../shared/types";
+import type { PromptSignature, StatusRule, Worker } from "../../shared/types";
 import type { ClaudeStatusSnapshot } from "./claudeTranscriptTracker";
 import type { PaneObservation } from "./paneObservation";
 import type { AgentRuntimeProcess } from "./runtimes/runtimeProcess";
 import { evaluateWorkerStatus } from "./decide";
 import { compileStatusRules } from "./customStatusRules";
+import { compilePromptSignatures } from "./promptSignatures";
 
 /**
  * End-to-end safety net for the status decision path:
@@ -56,6 +57,8 @@ const runtimeDefaults: Record<RuntimeKind, { runtimeId: string; runtimeLabel: st
 interface EvaluateOptions {
   runtime: RuntimeKind;
   output: string;
+  /** Current visible pane, excluding scrollback; required for configured prompt matching. */
+  visibleOutput?: string;
   /** ms since the pane output last changed (drives outputQuietForMs). */
   outputQuietForMs?: number;
   /** ms since the foreground command last changed (drives commandQuietForMs). */
@@ -72,6 +75,7 @@ interface EvaluateOptions {
   interactiveCommands?: ReadonlySet<string>;
   runtimeFreshnessWindowMs?: number;
   statusRules?: StatusRule[];
+  promptSignatures?: PromptSignature[];
 }
 
 function makeWorker(runtime: RuntimeKind, opts: EvaluateOptions): Worker {
@@ -120,12 +124,14 @@ function evaluate(opts: EvaluateOptions) {
     worker,
     currentCommand,
     output: opts.output,
+    visibleOutput: opts.visibleOutput ?? (opts.promptSignatures ? opts.output : undefined),
     observation,
     transcriptSnapshot: opts.transcriptSnapshot,
     runtimeProcess: opts.runtimeProcess,
     interactiveCommands: opts.interactiveCommands ?? new Set<string>(),
     runtimeFreshnessWindowMs: opts.runtimeFreshnessWindowMs,
-    customStatusRules: opts.statusRules ? compileStatusRules(opts.statusRules) : undefined
+    customStatusRules: opts.statusRules ? compileStatusRules(opts.statusRules) : undefined,
+    promptSignatures: opts.promptSignatures ? compilePromptSignatures(opts.promptSignatures) : undefined
   });
 }
 
@@ -1054,5 +1060,139 @@ describe("status decision — freshness boundaries", () => {
     expect(reasonCodes(justInside)).toContain("working-evidence-window");
     expect(justOutside.status).toBe("idle");
     expect(reasonCodes(justOutside)).toContain("output-stale-idle");
+  });
+});
+
+describe("configured prompt signatures", () => {
+  const promptSignatures: PromptSignature[] = [
+    {
+      id: "custom-codex",
+      runtime: "codex",
+      all: ["^›", "^gpt-5\\.6 · /tmp$"]
+    }
+  ];
+  const claudePromptSignatures: PromptSignature[] = [
+    {
+      id: "custom-claude",
+      runtime: "claude",
+      all: ["^❯", "^Context left:"]
+    }
+  ];
+
+
+  it("classifies an otherwise generic interpreter pane as idle at its configured prompt", () => {
+    const result = evaluate({
+      runtime: "shell",
+      currentCommand: "node",
+      output: "› ask anything\n\ngpt-5.6 · /tmp",
+      promptSignatures
+    });
+
+    expect(result.status).toBe("idle");
+    expect(reasonCodes(result)).toContain("codex-prompt-idle");
+    expect(result.facts.runtime).toBe("codex");
+    expect(result.facts.promptSignatureId).toBe("custom-codex");
+  });
+
+  it("keeps a native active turn working when persistent prompt chrome also matches", () => {
+    const result = evaluate({
+      runtime: "shell",
+      currentCommand: "node",
+      output: "• Searching repository\n  esc to interrupt\n› ask anything\n\ngpt-5.6 · /tmp",
+      promptSignatures
+    });
+
+    expect(result.status).toBe("working");
+    expect(result.facts.runtimeActiveSignal).toBe(true);
+    expect(result.facts.promptSignatureId).toBe("custom-codex");
+  });
+
+  it("keeps a native approval prompt in attention when prompt chrome also matches", () => {
+    const result = evaluate({
+      runtime: "shell",
+      currentCommand: "node",
+      output: [
+        "Would you like to run the following command?",
+        "1. Yes, just this once",
+        "2. No, and tell Codex what to do differently",
+        "› choose an option",
+        "gpt-5.6 · /tmp"
+      ].join("\n"),
+      promptSignatures
+    });
+
+    expect(result.status).toBe("attention");
+    expect(reasonCodes(result)).toContain("codex-approval-prompt");
+    expect(result.facts.promptSignatureId).toBe("custom-codex");
+  });
+
+  it("keeps a transcript-reported Claude turn working when prompt chrome matches", () => {
+    const output = "❯\nContext left: 76%";
+    const result = evaluate({
+      runtime: "claude",
+      output,
+      transcriptSnapshot: {
+        status: "working",
+        activityText: "Editing src/app.ts",
+        activityTool: "edit"
+      },
+      promptSignatures: claudePromptSignatures
+    });
+
+    expect(result.status).toBe("working");
+    expect(reasonCodes(result)).toContain("transcript-working");
+    expect(result.facts.promptSignatureId).toBe("custom-claude");
+  });
+
+  it("keeps a Claude task-summary turn working when prompt chrome matches", () => {
+    const output = "❯\n• Editing src/app.ts\nContext left: 76%";
+    const result = evaluate({
+      runtime: "claude",
+      output,
+      promptSignatures: claudePromptSignatures
+    });
+
+    expect(result.status).toBe("working");
+    expect(reasonCodes(result)).toContain("claude-active-task");
+    expect(result.facts.promptSignatureId).toBe("custom-claude");
+  });
+
+  it("does not match prompt fragments that exist only in scrollback", () => {
+    const result = evaluate({
+      runtime: "shell",
+      currentCommand: "node",
+      output: "› stale prompt\n\ngpt-5.6 · /tmp\n\nThinking: current work",
+      visibleOutput: "Thinking: current work",
+      promptSignatures
+    });
+
+    expect(result.facts.promptSignatureId).toBeUndefined();
+  });
+
+  it("does not let a broad signature override another runtime's native active signal", () => {
+    const result = evaluate({
+      runtime: "shell",
+      currentCommand: "node",
+      output: "Thinking: checking types\nesc interrupt\n+ prompt\ncontext 82%",
+      promptSignatures: [{ id: "broad-omp", runtime: "omp", all: ["^\\+", "context"] }]
+    });
+
+    expect(result.status).toBe("working");
+    expect(result.facts.runtime).toBe("opencode");
+    expect(result.facts.promptSignatureId).toBeUndefined();
+  });
+
+  it("keeps a recent fatal parser error authoritative over an at-rest prompt match", () => {
+    const result = evaluate({
+      runtime: "shell",
+      currentCommand: "node",
+      output: "fatal: disk unavailable\n› ask anything\n\ngpt-5.6 · /tmp",
+      outputQuietForMs: 1_000,
+      promptSignatures
+    });
+
+    expect(result.status).toBe("error");
+    expect(reasonCodes(result)).toContain("parser-error-signal");
+    expect(result.facts.promptSignatureId).toBe("custom-codex");
   });
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ResolvedConfig } from "../../shared/types";
+import { promptPatternSafetyError } from "../promptPatternSafety";
 
 export const defaultInteractiveCommands = [
   "nvim", "vim", "vi", "nano", "helix", "hx",
@@ -25,6 +26,73 @@ const activityToolSchema = z.enum([
   "terminal",
   "unknown"
 ]);
+
+const agentRuntimeSchema = z.enum(["claude", "codex", "opencode", "omp"]);
+
+const promptSignatureSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    runtime: agentRuntimeSchema,
+    all: z.array(z.string().min(1)).min(2)
+  })
+  .superRefine((signature, context) => {
+    const firstIndexByPattern = new Map<string, number>();
+    signature.all.forEach((pattern, index) => {
+      const firstIndex = firstIndexByPattern.get(pattern);
+      if (firstIndex !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["all", index],
+          message: `Prompt signature '${signature.id}' repeats pattern at index ${firstIndex}.`
+        });
+      } else {
+        firstIndexByPattern.set(pattern, index);
+      }
+
+      try {
+        const regex = new RegExp(pattern);
+        if (regex.test("")) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["all", index],
+            message: `Prompt signature '${signature.id}' has a pattern that matches empty text.`
+          });
+        }
+        const safetyError = promptPatternSafetyError(pattern);
+        if (safetyError) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["all", index],
+            message: `Prompt signature '${signature.id}' is unsafe: ${safetyError}.`
+          });
+        }
+      } catch (error) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["all", index],
+          message: `Prompt signature '${signature.id}' has invalid regex: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        });
+      }
+    });
+  });
+
+const promptSignaturesSchema = z.array(promptSignatureSchema).superRefine((signatures, context) => {
+  const firstIndexById = new Map<string, number>();
+  signatures.forEach((signature, index) => {
+    const firstIndex = firstIndexById.get(signature.id);
+    if (firstIndex !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index, "id"],
+        message: `Prompt signature id '${signature.id}' duplicates signature at index ${firstIndex}.`
+      });
+      return;
+    }
+    firstIndexById.set(signature.id, index);
+  });
+});
 
 const regexMatchFields = ["displayName", "command", "lastLine"] as const;
 
@@ -144,6 +212,7 @@ const serverSchema = z.object({
 
 const statusSchema = z.object({
   interactiveCommands: z.array(z.string().min(1)),
+  promptSignatures: promptSignaturesSchema,
   rules: statusRulesSchema
 });
 
@@ -164,7 +233,8 @@ export const partialConfigSchema = z
     discovery: z.array(discoveryRuleSchema).optional(),
     avatars: avatarsSchema.partial().optional(),
     status: statusSchema.partial().extend({
-      extraInteractiveCommands: z.array(z.string().min(1)).optional()
+      extraInteractiveCommands: z.array(z.string().min(1)).optional(),
+      extraPromptSignatures: promptSignaturesSchema.optional()
     }).optional(),
     audio: audioSchema.partial().optional(),
     backend: z
@@ -227,6 +297,7 @@ export function createDefaultConfig(): ResolvedConfig {
     },
     status: {
       interactiveCommands: defaultInteractiveCommands,
+      promptSignatures: [],
       rules: []
     },
     audio: {

@@ -86,6 +86,7 @@ function createSignals(scenario: Scenario): WorkerSignals {
       awaitingApproval: scenario.runtimeSignals?.awaitingApproval,
       awaitingInput: scenario.runtimeSignals?.awaitingInput
     },
+    promptSignature: undefined,
     activeRuntimeProcess: scenario.activeRuntimeProcess,
     transcriptHealth: scenario.transcriptSnapshot ? "ok" : "absent",
     interactiveCommands: scenario.interactiveCommands ?? new Set<string>(),

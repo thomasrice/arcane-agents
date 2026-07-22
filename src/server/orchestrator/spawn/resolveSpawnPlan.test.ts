@@ -40,6 +40,7 @@ function createConfig(): ResolvedConfig {
     },
     status: {
       interactiveCommands: [],
+      promptSignatures: [],
       rules: []
     },
     server: {

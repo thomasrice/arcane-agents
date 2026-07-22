@@ -1,4 +1,4 @@
-import type { Worker } from "../../../shared/types";
+import type { AgentRuntimeId, Worker } from "../../../shared/types";
 import { claudeAdapter } from "./claude";
 import { codexAdapter } from "./codex";
 import { genericAdapter } from "./generic";
@@ -56,18 +56,18 @@ const agentAdapters: RuntimeAdapter[] = [claudeAdapter, openCodeAdapter, codexAd
  * Resolve the single adapter that governs a worker.
  *
  * Definite classification (runtimeId / wrapped process / foreground command)
- * comes first. When `output` is supplied and nothing definite matched, the pane
- * output is sniffed as a last-resort tiebreak for a worker whose id/command give
- * no runtime but whose pane shows an agent UI (e.g. Claude Code or Codex running
- * as a bare `node` pane with no resolvable runtime process). Capture-time
- * resolution omits `output` (there is nothing captured yet), so it only ever
- * uses the definite classification.
+ * comes first. When `output` is supplied and nothing definite matched, native
+ * pane signals are sniffed next. A configured prompt-signature runtime is only
+ * the fallback after native signals, so an active harness cannot be reclassified
+ * by persistent custom prompt chrome. Capture-time resolution normally omits
+ * both `output` and `configuredRuntime`, so it uses definite classification.
  */
 export function resolveRuntimeAdapter(
   worker: Worker,
   commandLower: string,
   wrappedRuntime: KnownAgentRuntime | undefined,
-  output?: string
+  output?: string,
+  configuredRuntime?: AgentRuntimeId
 ): RuntimeAdapter {
   for (const adapter of agentAdapters) {
     if (adapter.matches(worker, commandLower, wrappedRuntime)) {
@@ -109,6 +109,13 @@ export function resolveRuntimeAdapter(
 
     if (hasRuntimeSignal(ompSignals)) {
       return ompAdapter;
+    }
+  }
+
+  if (configuredRuntime !== undefined) {
+    const configuredAdapter = agentAdapters.find((adapter) => adapter.id === configuredRuntime);
+    if (configuredAdapter) {
+      return configuredAdapter;
     }
   }
 

@@ -17,6 +17,14 @@ export type ActivityTool =
 
 export type ConfigurableWorkerStatus = Exclude<WorkerStatus, "stopped">;
 
+export type AgentRuntimeId = "claude" | "codex" | "opencode" | "omp";
+
+export interface PromptSignature {
+  id: string;
+  runtime: AgentRuntimeId;
+  all: string[];
+}
+
 export interface StatusRuleMatch {
   displayName?: string;
   projectId?: string;
@@ -93,6 +101,7 @@ export interface ResolvedConfig {
   status: {
     interactiveCommands: string[];
     rules: StatusRule[];
+    promptSignatures: PromptSignature[];
   };
   backend: {
     tmux: {

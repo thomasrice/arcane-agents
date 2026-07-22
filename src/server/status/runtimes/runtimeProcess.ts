@@ -1,10 +1,11 @@
+import type { AgentRuntimeId } from "../../../shared/types";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const maxProcessTreeDepth = 5;
 
-export type KnownAgentRuntime = "claude" | "opencode" | "codex" | "omp";
+export type KnownAgentRuntime = AgentRuntimeId;
 
 export interface AgentRuntimeProcess {
   pid: number;

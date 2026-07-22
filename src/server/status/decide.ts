@@ -28,6 +28,7 @@ export interface StatusDecisionFacts {
   transcript: TranscriptHealth;
   runtimePromptSignal: boolean;
   runtimeActiveSignal: boolean;
+  promptSignatureId: string | undefined;
   hasActiveClaudeTask: boolean;
   hasActiveRuntimeProcess: boolean;
   hasLiveGenericProcess: boolean;
@@ -89,6 +90,7 @@ interface DecisionContext {
   parsed: { activity: ParsedActivity };
   runtime: RuntimeAdapter;
   runtimeSignals: RuntimeSignals;
+  promptSignatureId: string | undefined;
   runtimeActivityText: string | undefined;
   activeClaudeTask: string | undefined;
   activeRuntimeProcess: AgentRuntimeProcess | undefined;
@@ -158,6 +160,7 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
     parsed: signals.parsed,
     runtime: signals.runtime,
     runtimeSignals: rs,
+    promptSignatureId: signals.promptSignature?.id,
     runtimeActivityText: rs.activityText,
     activeClaudeTask: rs.activeTask,
     activeRuntimeProcess: signals.activeRuntimeProcess,
@@ -318,19 +321,6 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
     });
   }
 
-  const promptIdleReason = detectPromptDominantIdle(context);
-  if (promptIdleReason) {
-    pushReason(promptIdleReason);
-    return finalizeDecision(context, {
-      status: "idle",
-      activityText: undefined,
-      activityTool: undefined,
-      activityPath: undefined,
-      confidence: 0.9,
-      reasons,
-      parsedStrongSignal: false
-    });
-  }
 
   const parserErrorClassification = isInteractiveCommand(context) ? "none" : classifyParserError(context);
   if (parserErrorClassification === "fatal" && transcriptStatus !== "working") {
@@ -355,6 +345,20 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
       code: "parser-recoverable-error",
       message: "Tool-level error detected but considered recoverable.",
       detail: `${Math.round(context.outputQuietForMs)}ms since output change`
+    });
+  }
+
+  const promptIdleReason = detectPromptDominantIdle(context);
+  if (promptIdleReason) {
+    pushReason(promptIdleReason);
+    return finalizeDecision(context, {
+      status: "idle",
+      activityText: undefined,
+      activityTool: undefined,
+      activityPath: undefined,
+      confidence: 0.9,
+      reasons,
+      parsedStrongSignal: false
     });
   }
 
@@ -500,6 +504,7 @@ function finalizeDecision(
       runtime: context.runtime.id,
       transcript: context.transcriptHealth,
       runtimePromptSignal: context.runtimeSignals.prompt,
+      promptSignatureId: context.promptSignatureId,
       runtimeActiveSignal: context.runtimeSignals.active,
       hasActiveClaudeTask: Boolean(context.activeClaudeTask),
       hasActiveRuntimeProcess: Boolean(context.activeRuntimeProcess),
@@ -736,24 +741,44 @@ function labelRuntime(runtime: KnownAgentRuntime): string {
 // ---------------------------------------------------------------------------
 
 function detectPromptDominantIdle(context: DecisionContext): StatusReason | undefined {
+  if (context.transcriptSnapshot?.status === "working" || context.activeClaudeTask) {
+    return undefined;
+  }
+
+  if (
+    context.promptSignatureId !== undefined &&
+    context.isClaudeSession &&
+    context.hasClaudePromptSignal &&
+    !context.hasClaudeProgressSignal
+  ) {
+    return {
+      code: "claude-prompt-idle",
+      message: "Claude prompt is visible without a fresh active execution signal.",
+      detail: context.promptSignatureId
+    };
+  }
+
   if (context.isOpenCodeSession && context.hasOpenCodePromptSignal && !context.hasOpenCodeActiveSignal) {
     return {
       code: "opencode-prompt-idle",
-      message: "OpenCode prompt is visible without a fresh active execution signal."
+      message: "OpenCode prompt is visible without a fresh active execution signal.",
+      detail: context.promptSignatureId
     };
   }
 
   if (context.isCodexSession && context.hasCodexPromptSignal && !context.hasCodexActiveSignal) {
     return {
       code: "codex-prompt-idle",
-      message: "Codex prompt is visible without a fresh active execution signal."
+      message: "Codex prompt is visible without a fresh active execution signal.",
+      detail: context.promptSignatureId
     };
   }
 
   if (context.isOmpSession && context.hasOmpPromptSignal && !context.hasOmpActiveSignal) {
     return {
       code: "omp-prompt-idle",
-      message: "oh-my-pi prompt is visible without a fresh active execution signal."
+      message: "oh-my-pi prompt is visible without a fresh active execution signal.",
+      detail: context.promptSignatureId
     };
   }
 

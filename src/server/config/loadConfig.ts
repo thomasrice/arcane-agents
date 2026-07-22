@@ -67,7 +67,7 @@ export function loadResolvedConfig(paths = getArcaneAgentsPaths()): ResolvedConf
   const localOverride = readConfigFile(paths.localOverridePath);
 
   const merged = deepMerge(deepMerge(defaults as unknown as JsonObject, userConfig), localOverride);
-  applyExtraInteractiveCommands(merged as JsonObject);
+  applyStatusExtensions(merged as JsonObject);
   const parsed = resolvedConfigSchema.parse(merged) as ResolvedConfig;
 
   const normalizedProjects = Object.fromEntries(
@@ -184,18 +184,23 @@ function normalizeShortcutProjectReferences(config: ResolvedConfig): ResolvedCon
   };
 }
 
-function applyExtraInteractiveCommands(merged: JsonObject): void {
+function applyStatusExtensions(merged: JsonObject): void {
   const status = merged.status;
   if (!isRecord(status)) {
     return;
   }
 
-  const extra = status.extraInteractiveCommands;
-  if (!Array.isArray(extra) || extra.length === 0) {
-    return;
+  const extraInteractiveCommands = status.extraInteractiveCommands;
+  if (Array.isArray(extraInteractiveCommands)) {
+    const base = Array.isArray(status.interactiveCommands) ? status.interactiveCommands : [];
+    status.interactiveCommands = [...new Set([...base, ...extraInteractiveCommands])];
   }
-
-  const base = Array.isArray(status.interactiveCommands) ? status.interactiveCommands : [];
-  status.interactiveCommands = [...new Set([...base, ...extra])];
   delete status.extraInteractiveCommands;
+
+  const extraPromptSignatures = status.extraPromptSignatures;
+  if (Array.isArray(extraPromptSignatures)) {
+    const base = Array.isArray(status.promptSignatures) ? status.promptSignatures : [];
+    status.promptSignatures = [...base, ...extraPromptSignatures];
+  }
+  delete status.extraPromptSignatures;
 }

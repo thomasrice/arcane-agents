@@ -264,6 +264,10 @@ export class TmuxAdapter {
     return this.runTmux(["capture-pane", "-t", this.target(ref), "-p", "-S", `-${Math.max(1, lines)}`]);
   }
 
+  async captureVisiblePane(ref: TmuxRef): Promise<string> {
+    return this.runTmux(["capture-pane", "-t", this.target(ref), "-p"]);
+  }
+
   async getPaneState(ref: TmuxRef): Promise<PaneState> {
     const output = await this.runTmux([
       "list-panes",

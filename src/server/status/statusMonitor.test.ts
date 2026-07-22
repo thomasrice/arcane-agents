@@ -27,7 +27,15 @@ interface TestRepository {
   deleteWorker: ReturnType<typeof vi.fn>;
 }
 
-const testConfig = { status: { interactiveCommands: [], rules: [] }, runtimes: {} } as unknown as ResolvedConfig;
+const testPromptSignature = {
+  id: "custom-claude",
+  runtime: "claude",
+  all: ["^❯", "^Claude · /tmp$"]
+} as const;
+const testConfig = {
+  status: { interactiveCommands: [], promptSignatures: [testPromptSignature], rules: [] },
+  runtimes: {}
+} as unknown as ResolvedConfig;
 
 const defaultFacts: WorkerStatusDecision["facts"] = {
   command: "claude",
@@ -37,6 +45,7 @@ const defaultFacts: WorkerStatusDecision["facts"] = {
   runtime: "claude",
   transcript: "ok",
   runtimePromptSignal: false,
+  promptSignatureId: undefined,
   runtimeActiveSignal: false,
   hasActiveClaudeTask: false,
   hasActiveRuntimeProcess: false,
@@ -135,6 +144,7 @@ function createSignals(): WorkerSignals {
     },
     runtime: genericAdapter,
     runtimeSignals: { prompt: false, active: false, activityText: undefined, activeTask: undefined },
+    promptSignature: undefined,
     activeRuntimeProcess: undefined,
     transcriptHealth: "absent",
     interactiveCommands: new Set<string>(),
@@ -301,7 +311,7 @@ describe("StatusMonitor", () => {
     expect(performance.workers.some((timing) => timing.workerName === worker.name)).toBe(true);
   });
 
-  it("passes precompiled configured rules into pane signal collection", async () => {
+  it("passes precompiled configured rules and prompt signatures into pane signal collection", async () => {
     const worker = createWorker("worker-1", "idle");
     const repository = createRepository([worker]);
     const config: ResolvedConfig = {
@@ -336,7 +346,14 @@ describe("StatusMonitor", () => {
         customStatusRules: {
           rules: [expect.objectContaining({ id: "configured-rule" })],
           usesLastLine: true
-        }
+        },
+        promptSignatures: [
+          expect.objectContaining({
+            id: "custom-claude",
+            runtime: "claude",
+            patterns: expect.arrayContaining([expect.any(RegExp)])
+          })
+        ]
       })
     );
   });
@@ -435,6 +452,7 @@ describe("StatusMonitor", () => {
     expect(doc.fixture?.priorStatus).toBe("idle");
     expect(doc.fixture?.currentCommand).toBe("claude");
     expect(doc.fixture?.runtimeFreshnessWindowMs).toBe(9_000);
+    expect(doc.fixture?.promptSignatures).toEqual([testPromptSignature]);
     expect(doc.decision).toMatchObject({ status: "working", confidence: 0.88 });
     expect(doc.decision?.reasons.map((reason) => reason.code)).toContain("claude-progress-signal");
   });
