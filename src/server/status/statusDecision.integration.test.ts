@@ -661,6 +661,31 @@ describe("status decision — generic shell worker", () => {
     expect(reasonCodes(result)).toContain("shell-command-idle");
   });
 
+  it("ignores a completed input prompt once the shell prompt returns", () => {
+    const output = [
+      "Update available",
+      "Press enter to continue",
+      "Updating Codex...",
+      "Update ran successfully",
+      "Please restart Codex.",
+      "thomas@asterion ~/code ➜"
+    ].join("\n");
+
+    const result = evaluate({ runtime: "shell", output, currentCommand: "bash", outputQuietForMs: 3_000 });
+
+    expect(result.status).toBe("idle");
+    expect(reasonCodes(result)).toContain("shell-command-idle");
+  });
+
+  it("keeps a current generic input prompt in attention", () => {
+    const output = ["$ deploy", "Press enter to continue"].join("\n");
+
+    const result = evaluate({ runtime: "shell", output, currentCommand: "bash", outputQuietForMs: 3_000 });
+
+    expect(result.status).toBe("attention");
+    expect(reasonCodes(result)).toContain("parser-input-prompt");
+  });
+
   it("reads a fatal traceback on a non-agent foreground command as error", () => {
     const output = [
       "$ python app.py",

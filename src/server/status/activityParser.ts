@@ -96,13 +96,12 @@ export function parseActivity(currentCommand: string, output: string): {
 
 function hasInputPromptSignal(linesNewestFirst: string[]): boolean {
   const latest = linesNewestFirst[0] ?? "";
-  const secondLatest = linesNewestFirst[1] ?? "";
 
-  if (isInputPromptLine(latest)) {
-    return true;
+  if (isShellPromptLine(latest)) {
+    return false;
   }
 
-  if (isShellPromptLine(latest) && isInputPromptLine(secondLatest)) {
+  if (isInputPromptLine(latest)) {
     return true;
   }
 
@@ -154,7 +153,7 @@ function isInputPromptLine(line: string): boolean {
 }
 
 function isShellPromptLine(line: string): boolean {
-  return /[$#>]\s*$/.test(line.trimEnd());
+  return /[$#>➜]\s*$/.test(line.trimEnd());
 }
 
 function findTool(linesNewestFirst: string[]): ToolMatch | undefined {
