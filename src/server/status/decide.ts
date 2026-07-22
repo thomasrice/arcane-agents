@@ -318,11 +318,9 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
     });
   }
 
-  if (isPromptDominantOpenCodeIdle(context)) {
-    pushReason({
-      code: "opencode-prompt-idle",
-      message: "OpenCode prompt is visible without a fresh active execution signal."
-    });
+  const promptIdleReason = detectPromptDominantIdle(context);
+  if (promptIdleReason) {
+    pushReason(promptIdleReason);
     return finalizeDecision(context, {
       status: "idle",
       activityText: undefined,
@@ -737,8 +735,22 @@ function labelRuntime(runtime: KnownAgentRuntime): string {
 // Idle blockers
 // ---------------------------------------------------------------------------
 
-function isPromptDominantOpenCodeIdle(context: DecisionContext): boolean {
-  return context.isOpenCodeSession && context.hasOpenCodePromptSignal && !context.hasOpenCodeActiveSignal;
+function detectPromptDominantIdle(context: DecisionContext): StatusReason | undefined {
+  if (context.isOpenCodeSession && context.hasOpenCodePromptSignal && !context.hasOpenCodeActiveSignal) {
+    return {
+      code: "opencode-prompt-idle",
+      message: "OpenCode prompt is visible without a fresh active execution signal."
+    };
+  }
+
+  if (context.isOmpSession && context.hasOmpPromptSignal && !context.hasOmpActiveSignal) {
+    return {
+      code: "omp-prompt-idle",
+      message: "oh-my-pi prompt is visible without a fresh active execution signal."
+    };
+  }
+
+  return undefined;
 }
 
 function detectIdleBlocker(context: DecisionContext, evidence: WorkingEvidence): IdleBlocker | undefined {

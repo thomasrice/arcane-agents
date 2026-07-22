@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ompAdapter } from "./omp";
 
-// Fixtures marked "captured live" are verbatim pane tails from a real oh-my-pi
-// (`omp`) session (July 2026 UI): a live turn draws a Braille spinner line
-// ("⠧ <task> ⟨esc⟩") above the persistent footer (model · context% · $cost);
-// tool results render in │-bordered boxes. omp's own subprocess output (e.g. an
-// AttributeError in a tool-result box) is content it is handling, not a pane
-// error.
+// Fixtures marked "captured live" are verbatim pane tails from real oh-my-pi
+// (`omp`) sessions (July 2026 UI): a live turn draws a Braille spinner line
+// ("⠧ <task> ⟨esc⟩") above persistent prompt chrome; tool results render in
+// │-bordered boxes. omp's own subprocess output (e.g. an AttributeError in a
+// tool-result box) is content it is handling, not a pane error.
 
 describe("ompAdapter.detect", () => {
   // Active capture 1 — transition to working.
@@ -35,16 +34,13 @@ describe("ompAdapter.detect", () => {
     "╰─                                                                                                                  ─╯"
   ].join("\n");
 
-  // Synthetic AT-REST pane. NOTE: a real at-rest omp capture is not yet available
-  // (a watcher is collecting one). This pins the current approximation — footer
-  // chrome present AND no live spinner => prompt, not active. Replace/augment with
-  // the verbatim at-rest capture once it lands.
+  // Captured live at rest from the Kioxia session. Current omp prompt chrome
+  // keeps the model/context bar but no longer includes a running dollar cost.
   const atRestOmpPane = [
-    "│ Committed the airline evaluation fix.                                                                              │",
-    "╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯",
+    "Plan is current and the remaining reachable work is done.",
     "",
-    "╭──     GPT-5.6-Sol · 󰪣 high   ~/code/personal-assistant   master *1   39.1%/272K 󰁨  $351.02 (sub) ──────────────────╮",
-    "╰─                                                                                                                  ─╯"
+    "╭── K3 · max · ~/code/personal-assistant · master *1 · 27.5%/1M · (sub) ──╮",
+    "╰─                                                                      ─╯"
   ].join("\n");
 
   it("reads active capture 1 (Braille spinner + ⟨esc⟩) as an active turn with the task text", () => {
@@ -61,8 +57,7 @@ describe("ompAdapter.detect", () => {
     expect(signals.activityText).toBe("Evaluating recovered airline response");
   });
 
-  it("reads a footer-only pane (no live spinner) as an at-rest prompt, not an active turn", () => {
-    // Marked APPROXIMATION — awaiting the real at-rest fixture (see omp.ts).
+  it("reads the current cost-free prompt chrome as at rest, not an active turn", () => {
     const signals = ompAdapter.detect(atRestOmpPane);
     expect(signals.prompt).toBe(true);
     expect(signals.active).toBe(false);

@@ -17,12 +17,13 @@ const ompActiveFreshLineWindow = 12;
 // else in the corpus draws it.
 const ompBrailleSpinner = /[⠀-⣿]/;
 const ompEscInterruptMarker = /⟨esc⟩/; // ⟨esc⟩
-// The persistent footer: a box-drawing line carrying the model name, the context
-// meter (e.g. "39.3%/272K") and the running $ cost. Requiring BOTH the context
-// meter and the cost marker on one line makes it strongly omp-specific, so a
-// stray "$" or "%" elsewhere can't misclassify a pane.
-const ompContextMeterMarker = /\d+(?:\.\d+)?%\/\d+/;
+// OMP's prompt bar always carries a context meter. Older releases also showed a
+// running dollar cost; the current July 2026 UI may omit it, but retains the
+// distinctive ╭…╮ box-drawing bar. Context + either marker is runtime-specific
+// without depending on optional cost display.
+const ompContextMeterMarker = /\d+(?:\.\d+)?%\/\d+(?:\.\d+)?[KMG]?/;
 const ompCostMarker = /\$\s?\d/;
+const ompPromptBarMarker = /^╭.*╮$/u;
 
 interface OmpSignals {
   /** A live turn — a fresh Braille spinner line ending in "⟨esc⟩". Routes to working. */
@@ -32,11 +33,9 @@ interface OmpSignals {
    * finished/at-rest state, used to CLASSIFY the pane as omp (and suppress the
    * live child-process signal in the decision) without implying work.
    *
-   * APPROXIMATION: a real AT-REST omp capture is not yet available (a watcher is
-   * collecting one). Until then the at-rest prompt is inferred as "footer chrome
-   * present AND no live spinner in the fresh window". TODO: once the at-rest
-   * fixture lands in omp.test.ts, tighten this against the real parked UI (e.g. a
-   * dedicated input-box glyph) if it differs.
+   * Current captured at-rest UI: the context-bearing prompt bar is present and
+   * no live spinner appears in the fresh window. The optional dollar-cost field
+   * is not required.
    */
   atFooterPrompt: boolean;
 }
@@ -105,7 +104,7 @@ function isOmpActiveLine(line: string): boolean {
 }
 
 function isOmpFooterLine(line: string): boolean {
-  return ompContextMeterMarker.test(line) && ompCostMarker.test(line);
+  return ompContextMeterMarker.test(line) && (ompCostMarker.test(line) || ompPromptBarMarker.test(line));
 }
 
 function extractOmpRuntimeActivityText(output: string, signals: OmpSignals): string | undefined {

@@ -863,16 +863,16 @@ describe("status decision — oh-my-pi (omp) hosted as a bare `node` pane", () =
     "╰─  ─╯"
   ].join("\n");
 
-  // Footer chrome present, NO live spinner, and fresh scrollback tool words that
-  // WOULD flap a generic worker to working. As an omp agent runtime the scrollback
-  // is demoted and the parked child process is suppressed, so it settles to idle.
+  // Current at-rest chrome captured from Kioxia: no live spinner and no dollar
+  // cost in the prompt bar. Fresh scrollback tool words WOULD flap a generic
+  // worker to working; native OMP classification must demote them.
   const finishedOmpNodePane = [
     "│ Read src/app.ts │",
     "│ Ran git status → nothing to commit │",
     "╰──────────────────────────────────────────────╯",
     "",
-    "╭──     GPT-5.6-Sol · 󰪣 high   ~/code/personal-assistant   master *1   39.1%/272K 󰁨  $351.02 (sub) ──╮",
-    "╰─  ─╯"
+    "╭── K3 · max · ~/code/personal-assistant · master *1 · 27.5%/1M · (sub) ──╮",
+    "╰─                                                                      ─╯"
   ].join("\n");
 
   const ompRuntimeProcess: AgentRuntimeProcess = {
@@ -945,8 +945,23 @@ describe("status decision — oh-my-pi (omp) hosted as a bare `node` pane", () =
 
     expect(result.status).toBe("idle");
     expect(result.activityText).toBeUndefined();
-    expect(reasonCodes(result)).toContain("no-active-evidence");
+    expect(reasonCodes(result)).toContain("omp-prompt-idle");
     expect(reasonCodes(result)).not.toContain("parsed-activity-signal");
+  });
+
+  it("sniffs a finished bun-hosted omp pane as idle when process classification misses it", () => {
+    const result = evaluate({
+      runtime: "shell",
+      output: finishedOmpNodePane,
+      currentCommand: "bun",
+      outputQuietForMs: 3_000,
+      priorStatus: "working"
+    });
+
+    expect(result.status).toBe("idle");
+    expect(result.facts.runtime).toBe("omp");
+    expect(reasonCodes(result)).toContain("omp-prompt-idle");
+    expect(reasonCodes(result)).not.toContain("generic-foreground-process");
   });
 });
 
