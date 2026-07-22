@@ -1,4 +1,4 @@
-import { activeToolStaleAfterMs, permissionExemptTools, permissionIdleDelayMs } from "./constants";
+import { activeToolStaleAfterMs } from "./constants";
 import { normalizeToolName } from "./accumulator";
 import type { ActiveToolEntry, ClaudeStatusSnapshot, ClaudeTranscriptState } from "./types";
 
@@ -21,13 +21,11 @@ export function buildSnapshot(state: ClaudeTranscriptState, nowMs: number): Clau
   }, undefined);
 
   const hasAskUserQuestion = activeTools.some((entry) => normalizeToolName(entry.toolName) === "askuserquestion");
-  const hasNonExemptActiveTools = activeTools.some((entry) => !permissionExemptTools.has(normalizeToolName(entry.toolName)));
 
-  const isPermissionWait = hasNonExemptActiveTools && nowMs - state.lastEventAtMs >= permissionIdleDelayMs;
   const isActivelyWorking = activeTools.length > 0 || nowMs <= state.busyUntilMs;
 
   let status: ClaudeStatusSnapshot["status"] = "idle";
-  if (hasAskUserQuestion || isPermissionWait) {
+  if (hasAskUserQuestion) {
     status = "attention";
   } else if (isActivelyWorking && !state.waiting) {
     status = "working";
@@ -42,9 +40,6 @@ export function buildSnapshot(state: ClaudeTranscriptState, nowMs: number): Clau
   if (hasAskUserQuestion) {
     activityText = "Waiting for your answer";
     activityTool = "terminal";
-  } else if (isPermissionWait) {
-    activityText = activityText ?? "Waiting for approval";
-    activityTool = activityTool ?? "terminal";
   }
 
   if (status === "idle" && activityText === "Waiting for approval") {

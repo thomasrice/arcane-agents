@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityTool } from "../../../shared/types";
 import { createTranscriptState } from "./accumulator";
-import { activeToolStaleAfterMs, permissionIdleDelayMs } from "./constants";
+import { activeToolStaleAfterMs } from "./constants";
 import { buildSnapshot } from "./snapshot";
 import type { ActiveToolEntry, ClaudeTranscriptState } from "./types";
 
 // Golden safety-net for snapshot derivation: working vs idle vs attention, plus
-// the busyUntil / permission / staleness time windows. Windows are probed
-// relative to the exported threshold constants and to state values set directly,
-// so the tests stay valid if those thresholds are re-tuned by the refactor.
+// the busyUntil and active-tool staleness windows. Windows are probed relative
+// to the exported threshold constants and to state values set directly, so the
+// tests stay valid if those thresholds are re-tuned by the refactor.
 
 const NOW = 1_000_000_000;
 
@@ -100,29 +100,17 @@ describe("buildSnapshot", () => {
     });
   });
 
-  describe("permission-wait detection", () => {
-    it("flips a lingering non-exempt tool from working to attention at the permission delay", () => {
+  describe("explicit attention detection", () => {
+    it("keeps a long-running Bash tool working while its transcript entry is fresh", () => {
       const state = seenState();
       state.lastEventAtMs = NOW;
       state.activeTools.set("b1", activeTool("Bash", NOW, { activityTool: "bash" }));
 
-      // Just inside the delay -> still working.
-      expect(buildSnapshot(state, NOW + permissionIdleDelayMs - 1)?.status).toBe("working");
-
-      // At the delay boundary (inclusive) -> attention / waiting for approval.
-      const waiting = buildSnapshot(state, NOW + permissionIdleDelayMs);
-      expect(waiting?.status).toBe("attention");
-      expect(waiting?.activityTool).toBe("bash");
-    });
-
-    it("does not treat exempt tools (Task) as permission waits even past the delay", () => {
-      const state = seenState();
-      state.lastEventAtMs = NOW;
-      state.activeTools.set("task1", activeTool("Task", NOW, { activityTool: "task" }));
-
-      // Well past the permission delay but still within the staleness window.
-      const snapshot = buildSnapshot(state, NOW + permissionIdleDelayMs + 5_000);
+      // The transcript cannot distinguish a running tool from a parked
+      // permission dialog. Native pane signals own permission detection.
+      const snapshot = buildSnapshot(state, NOW + activeToolStaleAfterMs);
       expect(snapshot?.status).toBe("working");
+      expect(snapshot?.activityTool).toBe("bash");
     });
 
     it("reports attention immediately when an AskUserQuestion tool is active", () => {
@@ -137,8 +125,7 @@ describe("buildSnapshot", () => {
   });
 
   describe("staleness filtering", () => {
-    it("drops an exempt tool once the transcript has been quiet beyond the stale window -> idle", () => {
-      // Task is exempt so it does not trip permission-wait, isolating the staleness path.
+    it("drops an active tool once the transcript has been quiet beyond the stale window -> idle", () => {
       const state = seenState();
       state.lastEventAtMs = NOW;
       state.busyUntilMs = 0;
