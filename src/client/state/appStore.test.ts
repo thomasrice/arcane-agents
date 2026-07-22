@@ -31,6 +31,7 @@ beforeEach(() => {
     workersHydrated: false,
     errorText: undefined,
     selectedWorkerIds: [],
+    reviewSessionWorkerIds: null,
     focusedSelectedWorkerId: undefined,
     rosterActiveIndex: 0,
     selectedGroupActiveIndex: 0,
@@ -118,40 +119,102 @@ describe("applySelection", () => {
 });
 
 describe("cycleReviewSelection", () => {
-  it("cycles gold-ready and attention workers with wrapping", () => {
+  it("keeps acknowledged workers in forward and reverse review history", () => {
     useAppStore.setState({
-      workers: [
-        worker("idle"),
-        worker("ready"),
-        worker("attention", { status: "attention" }),
-        worker("working", { status: "working" })
-      ]
+      workers: [worker("ready"), worker("attention", { status: "attention" })]
     });
     const store = useAppStore.getState();
 
     store.cycleReviewSelection(1, ["ready"]);
     expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
-    store.cycleReviewSelection(1, ["ready"]);
+    expect(useAppStore.getState().reviewSessionWorkerIds).toEqual(["ready", "attention"]);
+
+    useAppStore.setState({
+      workers: [worker("ready"), worker("attention")]
+    });
+    store.cycleReviewSelection(1, []);
     expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention"]);
-    store.cycleReviewSelection(1, ["ready"]);
+
+    store.cycleReviewSelection(-1, []);
     expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
-    store.cycleReviewSelection(-1, ["ready"]);
-    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention"]);
   });
 
-  it("starts at the first reviewable worker from no or unrelated selection", () => {
+  it("appends newly ready workers once without reordering the session", () => {
+    useAppStore.setState({
+      workers: [worker("ready"), worker("later")]
+    });
+    const store = useAppStore.getState();
+
+    store.syncReviewSession(["ready"]);
+    expect(useAppStore.getState().reviewSessionWorkerIds).toBeNull();
+
+    store.cycleReviewSelection(1, ["ready"]);
+    useAppStore.setState({
+      workers: [worker("ready"), worker("later", { status: "attention" })]
+    });
+    store.syncReviewSession(["ready"]);
+    expect(useAppStore.getState().reviewSessionWorkerIds).toEqual(["ready", "later"]);
+
+    useAppStore.setState({
+      workers: [worker("ready"), worker("later")]
+    });
+    store.syncReviewSession(["ready"]);
+    store.cycleReviewSelection(1, ["ready"]);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["later"]);
+
+    store.cycleReviewSelection(1, ["ready"]);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
+    expect(useAppStore.getState().reviewSessionWorkerIds).toEqual(["ready", "later"]);
+  });
+
+  it("starts forwards at the first worker and backwards at the last worker", () => {
     useAppStore.setState({
       workers: [worker("unrelated"), worker("ready"), worker("attention", { status: "attention" })],
-      selectedWorkerIds: []
+      selectedWorkerIds: ["unrelated"]
+    });
+
+    useAppStore.getState().cycleReviewSelection(-1, ["ready"]);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["attention"]);
+
+    useAppStore.getState().applySelection(["unrelated"]);
+    useAppStore.getState().cycleReviewSelection(1, ["ready"]);
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
+  });
+
+  it("resets the session after manual selection or deselection", () => {
+    useAppStore.setState({
+      workers: [worker("ready"), worker("attention", { status: "attention" }), worker("manual")]
     });
     const store = useAppStore.getState();
 
     store.cycleReviewSelection(1, ["ready"]);
-    expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
+    store.applySelection(["manual"]);
+    expect(useAppStore.getState().reviewSessionWorkerIds).toBeNull();
 
-    useAppStore.setState({ selectedWorkerIds: ["unrelated"] });
+    useAppStore.setState({
+      workers: [worker("ready"), worker("attention"), worker("manual")]
+    });
     store.cycleReviewSelection(1, ["ready"]);
     expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
+
+    store.applySelection([]);
+    expect(useAppStore.getState().reviewSessionWorkerIds).toBeNull();
+  });
+
+  it("prunes workers that are no longer active", () => {
+    useAppStore.setState({
+      workers: [worker("ready"), worker("attention", { status: "attention" })]
+    });
+    const store = useAppStore.getState();
+
+    store.cycleReviewSelection(1, ["ready"]);
+    useAppStore.setState({
+      workers: [worker("ready"), worker("attention", { status: "stopped" })]
+    });
+    store.cycleReviewSelection(1, []);
+
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
+    expect(useAppStore.getState().reviewSessionWorkerIds).toEqual(["ready"]);
   });
 
   it("ignores stale pending IDs and leaves the current selection unchanged without candidates", () => {
@@ -163,6 +226,7 @@ describe("cycleReviewSelection", () => {
     useAppStore.getState().cycleReviewSelection(1, ["working"]);
 
     expect(useAppStore.getState().selectedWorkerIds).toEqual(["idle"]);
+    expect(useAppStore.getState().reviewSessionWorkerIds).toBeNull();
   });
 });
 

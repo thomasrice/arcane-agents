@@ -36,6 +36,7 @@ export default function App(): JSX.Element {
   const rosterActiveIndex = useAppStore((state) => state.rosterActiveIndex);
   const selectedGroupActiveIndex = useAppStore((state) => state.selectedGroupActiveIndex);
   const mapColumnRatio = useAppStore((state) => state.mapColumnRatio);
+  const syncReviewSession = useAppStore((state) => state.syncReviewSession);
 
   const terminalActions = useAppStore(
     useShallow((state) => ({
@@ -80,6 +81,10 @@ export default function App(): JSX.Element {
     workers: activeWorkers,
     reviewedWorkerId: terminalWorkerId
   });
+
+  useEffect(() => {
+    syncReviewSession(pendingCompletionWorkerIds);
+  }, [activeWorkers, pendingCompletionWorkerIds, syncReviewSession]);
 
   const summonShortcuts = useMemo(() => config?.shortcuts ?? [], [config]);
   const shortcutHotkeyBindings = useMemo(() => buildShortcutHotkeyBindings(summonShortcuts), [summonShortcuts]);

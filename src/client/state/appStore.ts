@@ -19,6 +19,7 @@ export interface ApplySelectionOptions {
   center?: boolean;
   focusTerminal?: boolean;
   focusWorkerId?: string;
+  preserveReviewSession?: boolean;
 }
 
 export interface AppState {
@@ -30,6 +31,7 @@ export interface AppState {
 
   // Selection
   selectedWorkerIds: string[];
+  reviewSessionWorkerIds: string[] | null;
   focusedSelectedWorkerId: string | undefined;
   rosterActiveIndex: number;
   selectedGroupActiveIndex: number;
@@ -63,6 +65,7 @@ export interface AppActions {
   cycleSelection: (direction: 1 | -1) => void;
   cycleIdleSelection: (direction: 1 | -1) => void;
   cycleReviewSelection: (direction: 1 | -1, pendingCompletionWorkerIds: readonly string[]) => void;
+  syncReviewSession: (pendingCompletionWorkerIds: readonly string[]) => void;
   cycleSelectedGroupFocus: (direction: 1 | -1) => void;
   setSelectedWorkerIds: (update: Updater<string[]>) => void;
   setRosterActiveIndex: (update: Updater<number>) => void;
@@ -114,7 +117,47 @@ function commitMapColumnRatio(current: number, next: number): Partial<AppState> 
   return { mapColumnRatio: clamped };
 }
 
-function cycleWorkerSelection(state: AppStore, workers: readonly Worker[], direction: 1 | -1): void {
+function collectReadyWorkerIds(
+  activeWorkers: readonly Worker[],
+  pendingCompletionWorkerIds: readonly string[]
+): string[] {
+  const pendingCompletionWorkerIdSet = new Set(pendingCompletionWorkerIds);
+  return activeWorkers
+    .filter(
+      (worker) =>
+        worker.status === "attention" ||
+        (worker.status === "idle" && pendingCompletionWorkerIdSet.has(worker.id))
+    )
+    .map((worker) => worker.id);
+}
+
+function reconcileReviewSessionWorkerIds(
+  currentWorkerIds: readonly string[],
+  activeWorkers: readonly Worker[],
+  readyWorkerIds: readonly string[]
+): string[] {
+  const activeWorkerIds = new Set(activeWorkers.map((worker) => worker.id));
+  const nextWorkerIds = currentWorkerIds.filter((workerId) => activeWorkerIds.has(workerId));
+  const nextWorkerIdSet = new Set(nextWorkerIds);
+  for (const workerId of readyWorkerIds) {
+    if (!nextWorkerIdSet.has(workerId)) {
+      nextWorkerIds.push(workerId);
+      nextWorkerIdSet.add(workerId);
+    }
+  }
+  return nextWorkerIds;
+}
+
+function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function cycleWorkerSelection(
+  state: AppStore,
+  workers: readonly Worker[],
+  direction: 1 | -1,
+  preserveReviewSession = false
+): void {
   if (workers.length === 0) {
     return;
   }
@@ -128,7 +171,7 @@ function cycleWorkerSelection(state: AppStore, workers: readonly Worker[], direc
     return;
   }
 
-  state.applySelection([nextWorker.id], { center: true });
+  state.applySelection([nextWorker.id], { center: true, preserveReviewSession });
 }
 
 export const useAppStore = create<AppStore>()((set, get) => ({
@@ -138,6 +181,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   errorText: undefined,
 
   selectedWorkerIds: [],
+  reviewSessionWorkerIds: null,
   focusedSelectedWorkerId: undefined,
   rosterActiveIndex: 0,
   selectedGroupActiveIndex: 0,
@@ -163,6 +207,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
 
     set({
       selectedWorkerIds: deduped,
+      reviewSessionWorkerIds: options?.preserveReviewSession ? get().reviewSessionWorkerIds : null,
       // Focusing a member swaps the group page for that member's terminal, so
       // it only sticks once the selection is actually a group.
       focusedSelectedWorkerId:
@@ -198,15 +243,57 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     cycleWorkerSelection(state, idleWorkers, direction);
   },
 
+  syncReviewSession: (pendingCompletionWorkerIds) =>
+    set((state) => {
+      if (state.reviewSessionWorkerIds === null) {
+        return state;
+      }
+
+      const activeWorkers = selectActiveWorkers(state);
+      const readyWorkerIds = collectReadyWorkerIds(activeWorkers, pendingCompletionWorkerIds);
+      const reviewSessionWorkerIds = reconcileReviewSessionWorkerIds(
+        state.reviewSessionWorkerIds,
+        activeWorkers,
+        readyWorkerIds
+      );
+      return arraysEqual(reviewSessionWorkerIds, state.reviewSessionWorkerIds)
+        ? state
+        : { reviewSessionWorkerIds };
+    }),
+
   cycleReviewSelection: (direction, pendingCompletionWorkerIds) => {
     const state = get();
-    const pendingCompletionWorkerIdSet = new Set(pendingCompletionWorkerIds);
-    const workersNeedingReview = selectActiveWorkers(state).filter(
-      (worker) =>
-        worker.status === "attention" ||
-        (worker.status === "idle" && pendingCompletionWorkerIdSet.has(worker.id))
+    const activeWorkers = selectActiveWorkers(state);
+    const readyWorkerIds = collectReadyWorkerIds(activeWorkers, pendingCompletionWorkerIds);
+    const startingSession = state.reviewSessionWorkerIds === null;
+    if (startingSession && readyWorkerIds.length === 0) {
+      return;
+    }
+
+    const reviewSessionWorkerIds = reconcileReviewSessionWorkerIds(
+      state.reviewSessionWorkerIds ?? [],
+      activeWorkers,
+      readyWorkerIds
     );
-    cycleWorkerSelection(state, workersNeedingReview, direction);
+    set({ reviewSessionWorkerIds });
+
+    const workersById = new Map(activeWorkers.map((worker) => [worker.id, worker]));
+    const reviewSessionWorkers = reviewSessionWorkerIds
+      .map((workerId) => workersById.get(workerId))
+      .filter((worker): worker is Worker => worker !== undefined);
+
+    if (startingSession) {
+      const firstWorker =
+        direction > 0
+          ? reviewSessionWorkers[0]
+          : reviewSessionWorkers[reviewSessionWorkers.length - 1];
+      if (firstWorker) {
+        state.applySelection([firstWorker.id], { center: true, preserveReviewSession: true });
+      }
+      return;
+    }
+
+    cycleWorkerSelection(state, reviewSessionWorkers, direction, true);
   },
 
   cycleSelectedGroupFocus: (direction) => {
@@ -287,6 +374,13 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       const prunedSelection = state.selectedWorkerIds.filter((workerId) => activeIdSet.has(workerId));
       if (prunedSelection.length !== state.selectedWorkerIds.length) {
         next.selectedWorkerIds = prunedSelection;
+      }
+
+      if (state.reviewSessionWorkerIds !== null) {
+        const prunedReviewSession = state.reviewSessionWorkerIds.filter((workerId) => activeIdSet.has(workerId));
+        if (prunedReviewSession.length !== state.reviewSessionWorkerIds.length) {
+          next.reviewSessionWorkerIds = prunedReviewSession;
+        }
       }
 
       if (state.pendingConfirm && !state.pendingConfirm.workerIds.some((workerId) => activeIdSet.has(workerId))) {
