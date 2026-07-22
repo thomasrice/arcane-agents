@@ -319,7 +319,7 @@ A complete starter file is available at `config.example.yaml`.
 | `shortcuts` | Saved project/runtime recipes, hotkeys, command overrides, and pinned avatars. |
 | `keybindings` | Configurable application keybindings. |
 | `discovery` | Automatic project discovery from directories, worktrees, or globs. |
-| `status` | Interactive-command filtering and optional custom status rules. |
+| `status` | Interactive-command filtering, runtime prompt signatures, and optional custom status rules. |
 | `audio` | Client sound enablement. |
 | `avatars` | Avatar types excluded from random assignment. |
 | `backend.tmux` | Dedicated tmux socket, session, and polling interval. |
@@ -421,6 +421,14 @@ status:
 `displayName`, `command`, and `lastLine` are JavaScript regular expressions; `projectId` and `runtimeId` are exact matches. All supplied match fields must match, rules run in order, and the first match wins. `lastLine` is the trimmed last non-empty line on the current captured screen, not a search through historical scrollback, so an old waiting message cannot override new work.
 
 A rule can set `idle`, `working`, `attention`, or `error`. Non-idle outcomes may also set `activityText` and `activityTool`; idle outcomes always clear activity. Rules are trusted local configuration and are authoritative, so a broad rule can intentionally override built-in attention or error evidence. Keep patterns narrow, use single-quoted YAML strings for regexes, and restart Arcane Agents after changing them. Matched decisions expose reason code `custom-status-rule` and the rule ID through the existing status-debug endpoints.
+
+### Prompt signatures
+
+`status.promptSignatures` is an ordered, named list of runtime-scoped all-of signatures. Each signature has a unique `id`, a supported `runtime` (`claude`, `codex`, `opencode`, or `omp`), and an `all` array of at least two distinct JavaScript regular-expression strings. A signature matches only when every pattern matches a line in the currently visible tmux pane after terminal-control sequences are stripped, whitespace is normalised, and each line is bounded to 1,024 characters; scrollback is never searched. Patterns that match empty text, use backreferences or lookaround, or contain ambiguous nested high-cardinality repetition are rejected so status polling cannot be blocked by pathological backtracking. The first matching signature wins.
+
+Use `status.extraPromptSignatures` in `config.local.yaml` for additive machine-specific signatures. `promptSignatures` otherwise follows normal replacement semantics: defining it replaces the configured list, while `extraPromptSignatures` extends it. Native approval, question, error, and active-state detection remains authoritative over prompt signatures. When a signature matches, its ID is available as `decision.facts.promptSignatureId` in `status-debug`.
+
+To calibrate a worker from its current screen, run `arcane-agents status learn-prompt "Worker"`; use `--runtime`, `--id`, `--dry-run`, `--yes`, or `--json` to select the runtime, name the signature, preview without writing, skip confirmation, or emit machine-readable output. The command writes only `status.extraPromptSignatures` in `config.local.yaml`, preserves unrelated YAML, and requires a server restart before the override is used. It confirms before writing; without a TTY, mutation requires `--yes`. It refuses to write when it cannot infer safe structural patterns (and never prints captured pane content).
 
 ### tmux backend
 

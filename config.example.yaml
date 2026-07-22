@@ -114,6 +114,26 @@ status:
   #       activityText: Waiting for approval
   #       activityTool: terminal
 
+  #
+  # Named prompt signatures are ordered runtime-scoped all-of regexes. Each
+  # signature needs a unique id, a supported runtime (claude, codex, opencode,
+  # or omp), and at least two distinct patterns; every pattern must match a
+  # normalised line in the currently visible pane, never scrollback. Empty-text,
+  # backreference, lookaround, and ambiguous nested-repeat patterns are rejected.
+  # Add machine-specific signatures in config.local.yaml with
+  # extraPromptSignatures so the base promptSignatures list is not replaced.
+  # Native approval, question, error, and active detection takes precedence.
+  #
+  # promptSignatures:
+  #   - id: custom-codex-footer
+  #     runtime: codex
+  #     all:
+  #       - '^›(?:\s|$)'
+  #       - '^[^·]{1,80} · (?:~/|/).+$'
+  #
+  # Calibration writes only status.extraPromptSignatures:
+  #   arcane-agents status learn-prompt "Worker" --runtime claude
+
 # Audio playback settings.
 audio:
   enableSound: true

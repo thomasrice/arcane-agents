@@ -5,6 +5,7 @@ import { runConfig } from "./cli/commands/config";
 import { runDoctor } from "./cli/commands/doctor";
 import { runInit } from "./cli/commands/init";
 import { runSessions } from "./cli/commands/sessions";
+import { runStatus } from "./cli/commands/status";
 import { runSetup } from "./cli/commands/setup";
 import { runStart } from "./cli/commands/start";
 import { readPackageVersion, resolveAppRoot, setAppRoot } from "./utils/appRoot";
@@ -71,6 +72,8 @@ async function runCli(): Promise<number> {
       return runDoctor();
     case "sessions":
       return runSessions(commandArgs);
+    case "status":
+      return runStatus(commandArgs, sessionName);
     case "help":
       printHelp();
       return 0;
@@ -95,6 +98,7 @@ Usage:
   arcane-agents setup
   arcane-agents config [path|show|edit]
   arcane-agents sessions [list|delete <name>]
+  arcane-agents status learn-prompt <worker> [options]
   arcane-agents doctor
   arcane-agents --help
   arcane-agents --version
@@ -105,6 +109,7 @@ Commands:
   setup      Guided first-run setup for tmux, config, and dependency checks
   config     Print, show, or edit config files
   sessions   List or delete named sessions
+  status     Inspect or calibrate worker status detection
   doctor     Check dependencies and runtime command availability
   help       Show this help message
   version    Print CLI version
