@@ -772,6 +772,17 @@ describe("status decision — Codex hosted as a bare `node` pane", () => {
     "  gpt-5.6-terra medium fast · ~/code/personal-assistant · weekly 93% left · Main [default]"
   ].join("\n");
 
+  const currentFinishedCodexNodePane = [
+    "• Ran cd ~/minotaur/taurient && ./kamal app details -d peons",
+    "  └ all five peon roles are running",
+    "",
+    "─ Worked for 14m 15s ─",
+    "",
+    "› Find and fix a bug in @filename",
+    "",
+    "  gpt-5.5 medium fast · ~/code/personal-assistant"
+  ].join("\n");
+
   const codexRuntimeProcess: AgentRuntimeProcess = {
     pid: 5150,
     runtime: "codex",
@@ -812,7 +823,7 @@ describe("status decision — Codex hosted as a bare `node` pane", () => {
 
     expect(result.status).toBe("idle");
     expect(result.activityText).toBeUndefined();
-    expect(reasonCodes(result)).toContain("no-active-evidence");
+    expect(reasonCodes(result)).toContain("codex-prompt-idle");
   });
 
   it("sniffs the codex UI as codex when no runtime process is resolvable and reads active as working", () => {
@@ -828,6 +839,21 @@ describe("status decision — Codex hosted as a bare `node` pane", () => {
 
     expect(result.status).toBe("working");
     expect(reasonCodes(result)).toContain("codex-active-signal");
+  });
+
+  it("sniffs a current shell-hosted Codex prompt as immediately idle", () => {
+    const result = evaluate({
+      runtime: "shell",
+      output: currentFinishedCodexNodePane,
+      currentCommand: "node",
+      outputQuietForMs: 3_000,
+      priorStatus: "working"
+    });
+
+    expect(result.status).toBe("idle");
+    expect(result.facts.runtime).toBe("codex");
+    expect(reasonCodes(result)).toContain("codex-prompt-idle");
+    expect(reasonCodes(result)).not.toContain("generic-foreground-process");
   });
 });
 

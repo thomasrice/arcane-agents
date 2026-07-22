@@ -53,13 +53,17 @@ const codexPromptStatusMatchers: RegExp[] = [
 
 const codexActiveMatchers: RegExp[] = [/\besc to interrupt\b/i];
 
-// At-rest markers of the current Codex UI. The "›" input box and the persistent
-// status footer (model · cwd · rate-limit · mode, e.g. "… · weekly 93% left ·
-// Main [default]") together identify a codex pane sitting at its prompt. Both
-// are required so an arbitrary "›" or footer-like line elsewhere can't
-// misclassify a pane; together they are strongly codex-specific.
+// At rest, Codex shows a "›" input box and a persistent model · cwd footer.
+// Legacy builds append rate-limit / [default] fields; current builds may stop
+// after the working directory or add Goal state instead. Prompt + footer are
+// both required so neither an arbitrary "›" nor a generic path line can
+// classify a pane alone.
 const codexInputPromptMatchers: RegExp[] = [/^›(?:\s|$)/];
-const codexFooterMatchers: RegExp[] = [/·\s*(?:weekly|daily|hourly|monthly)\s+\d+%\s+left\b/i, /\[default\]\s*$/i];
+const codexFooterMatchers: RegExp[] = [
+  /^(?:gpt-|o\d(?:\b|-)|codex\b)[^·\n]*·\s*(?:~\/|\/)\S+/i,
+  /·\s*(?:weekly|daily|hourly|monthly)\s+\d+%\s+left\b/i,
+  /\[default\]\s*$/i
+];
 
 export const codexAdapter: RuntimeAdapter = {
   id: "codex",

@@ -69,6 +69,27 @@ describe("codexAdapter.detect", () => {
     "  gpt-5.6-sol low · ~/code/personal-assistant · weekly 98% left"
   ].join("\n");
 
+  // Captured live from current shell-hosted Codex sessions. These builds omit
+  // the legacy rate-limit / [default] suffix but retain the › input box and
+  // model · working-directory footer.
+  const currentFinishedCodexPane = [
+    "• ~/bin/deploy-peons completed successfully.",
+    "",
+    "─ Worked for 14m 15s ─",
+    "",
+    "› Find and fix a bug in @filename",
+    "",
+    "  gpt-5.5 medium fast · ~/code/personal-assistant"
+  ].join("\n");
+
+  const currentGoalPausedCodexPane = [
+    "■ Conversation interrupted - tell the model what to do differently.",
+    "",
+    "› Run /review on my current changes",
+    "",
+    "  gpt-5.5 high · ~/minotaur/taurient-worktrees/security-master · Goal paused (/goal resume)"
+  ].join("\n");
+
   it("reads the current Codex active pane as an active turn", () => {
     expect(codexAdapter.detect(activeCodexPane).active).toBe(true);
   });
@@ -76,6 +97,24 @@ describe("codexAdapter.detect", () => {
   it("reads the current Codex finished pane as an at-rest prompt, not an active turn", () => {
     const signals = codexAdapter.detect(finishedCodexPane);
     expect(signals.prompt).toBe(true);
+    expect(signals.active).toBe(false);
+  });
+
+  it("reads the current compact footer as an at-rest prompt", () => {
+    const signals = codexAdapter.detect(currentFinishedCodexPane);
+    expect(signals.prompt).toBe(true);
+    expect(signals.active).toBe(false);
+  });
+
+  it("reads the current Goal-paused footer as an at-rest prompt", () => {
+    const signals = codexAdapter.detect(currentGoalPausedCodexPane);
+    expect(signals.prompt).toBe(true);
+    expect(signals.active).toBe(false);
+  });
+
+  it("does not classify arbitrary prompt and path text as Codex", () => {
+    const signals = codexAdapter.detect(["› choose an option", "", "Task · ~/code/project"].join("\n"));
+    expect(signals.prompt).toBe(false);
     expect(signals.active).toBe(false);
   });
 

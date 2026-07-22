@@ -743,6 +743,13 @@ function detectPromptDominantIdle(context: DecisionContext): StatusReason | unde
     };
   }
 
+  if (context.isCodexSession && context.hasCodexPromptSignal && !context.hasCodexActiveSignal) {
+    return {
+      code: "codex-prompt-idle",
+      message: "Codex prompt is visible without a fresh active execution signal."
+    };
+  }
+
   if (context.isOmpSession && context.hasOmpPromptSignal && !context.hasOmpActiveSignal) {
     return {
       code: "omp-prompt-idle",
