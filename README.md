@@ -45,7 +45,7 @@ Arcane Agents gives each local agent a place on a shared map and keeps its real 
 - Select one agent, Shift-click several, or draw a marquee around a group.
 - Move selected agents with held `W/A/S/D` or the arrow keys; the camera follows near the map edge.
 - Right-click a destination to send selected agents there, right-drag to pan, and use `+` / `-` to zoom.
-- Switch agents from the map or roster, cycle workers that need attention or are idle, and jump through populated control groups.
+- Switch agents from the map or roster, work through a stable keyboard review queue, cycle idle workers, and jump through populated control groups.
 - Resize the map and terminal split by dragging the divider or using keyboard controls.
 
 ### Real terminals, not simulated chat panels
@@ -78,6 +78,7 @@ Arcane Agents gives each local agent a place on a shared map and keeps its real 
 - Arcane distinguishes active work from an idle prompt, native approvals, questions that need an answer, runtime errors, and stopped processes.
 - Claude transcript correlation and live pane signals reduce false working/idle transitions in long-lived sessions.
 - Completed but unreviewed agents receive a `READY` badge, making finished work easy to scan.
+- Press `Space` to start a review session containing every agent currently ready or needing input. The queue keeps handled agents available for backwards navigation, appends newly ready agents, and resets after manual selection, deselection, or `Esc`.
 - Optional character voice lines and sound effects announce arrival, movement, attention, completion, and death.
 - Transition history, evaluation facts, flap counts, and exportable status fixtures make incorrect classifications reproducible.
 
@@ -188,7 +189,7 @@ Press `?` in Arcane Agents for the live shortcut reference. The panel is generat
 | Keys | Action |
 |---|---|
 | `Tab` / `Shift+Tab` | Select the next or previous agent; inside a group, cycle focused members. |
-| `Space` / `Shift+Space` | Select and centre the next or previous agent that is ready for review or needs input. |
+| `Space` / `Shift+Space` | Cycle forwards or backwards through the current review session, centring each agent. |
 | `.` / `Shift+.` / `,` | Cycle idle agents only. |
 | Backtick / `Shift+Backtick` | Cycle populated control groups forwards or backwards and open the first member. |
 | `Ctrl+1–0` | Assign selected agents to a control group. |
@@ -196,6 +197,8 @@ Press `?` in Arcane Agents for the live shortcut reference. The panel is generat
 | `J` / `K` | Move the selection cursor through group and roster lists. |
 | `N` | Jump to the summon list in the roster. |
 | `C` | Focus the Rally Command input on a selected group page. |
+
+The first `Space` snapshots every agent currently ready for review or needing input; the first `Shift+Space` starts from the end of that snapshot. Acknowledging an agent does not remove it from the session, and newly ready agents are appended. Manual selection, deselection, or `Esc` ends the session, so the next Space gesture builds a fresh queue.
 
 ### Movement and layout
 
