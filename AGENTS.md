@@ -1,8 +1,12 @@
 # Arcane Agents
 
-Arcane Agents is a local-first visual control room for managing terminal-backed AI coding agents. Each agent is a pixel-art fantasy character on a top-down map. Clicking a character opens its live terminal in an embedded browser terminal panel (xterm.js). Workers are backed by tmux windows.
+Arcane Agents is a local-first visual control room for managing terminal-backed coding workflows on a top-down pixel-art map.
 
 `plan.md` is the in-progress structural refactor plan (approved 17/07/2026) — read it for the refactor's phased task lists, findings, and rationale.
+
+## Domain Context
+
+Read [[docs/contexts/characters/CONTEXT]] before introducing or changing language for Characters, their presentation assets, or their terminal lifecycle.
 
 ## Tech Stack
 
