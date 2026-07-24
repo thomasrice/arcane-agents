@@ -11,7 +11,19 @@ interface BottomBarProps {
   onKillSelected: () => void;
   onRenameSelected: () => void;
   onToggleMovementMode: () => void;
+  onToggleSilenced: () => void;
   onScatterSelected: () => void;
+}
+
+function SilenceIcon({ crossedOut }: { crossedOut: boolean }): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 10v4h3l4 3V7l-4 3H4Z" />
+      <path d="M14 9.5c1 .75 1.5 1.6 1.5 2.5s-.5 1.75-1.5 2.5" />
+      <path className="silence-icon-wave" d="M16.5 7c1.7 1.35 2.5 3.05 2.5 5s-.8 3.65-2.5 5" />
+      {crossedOut ? <path className="silence-icon-slash" d="M5 5l14 14" /> : null}
+    </svg>
+  );
 }
 
 export function BottomBar({
@@ -25,6 +37,7 @@ export function BottomBar({
   onKillSelected,
   onRenameSelected,
   onToggleMovementMode,
+  onToggleSilenced,
   onScatterSelected
 }: BottomBarProps): JSX.Element {
   if (selectedWorkers.length > 0) {
@@ -36,6 +49,10 @@ export function BottomBar({
           ? "Wander"
           : "Hold"
         : "Mixed";
+    const allSilenced = selectedWorkers.every((worker) => worker.silenced);
+    const anySilenced = selectedWorkers.some((worker) => worker.silenced);
+    const silenceState = allSilenced ? "on" : anySilenced ? "mixed" : "off";
+    const silenceLabel = allSilenced ? "Unsilence selected characters" : "Silence selected characters";
     const displayLabel =
       selectedWorkers.length === 1
         ? (selectedWorkers[0]?.displayName ?? selectedWorkers[0]?.name ?? "Selected")
@@ -57,6 +74,15 @@ export function BottomBar({
 
         <button className="bar-btn" onClick={onToggleMovementMode}>
           {movementModeLabel === "Mixed" ? "Mode: Mixed" : `Mode: ${movementModeLabel}`}
+        </button>
+        <button
+          className={`bar-btn icon-btn silence-toggle ${silenceState}`}
+          onClick={onToggleSilenced}
+          title={silenceLabel}
+          aria-label={silenceLabel}
+          aria-pressed={allSilenced ? true : anySilenced ? "mixed" : false}
+        >
+          <SilenceIcon crossedOut={anySilenced} />
         </button>
         {selectedWorkers.length > 1 ? (
           <button className="bar-btn" onClick={onScatterSelected}>

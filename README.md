@@ -70,7 +70,7 @@ Arcane Agents gives each local agent a place on a shared map and keeps its real 
 - Assign any selection to groups `1–0`, select a group instantly, and cycle populated groups forwards or backwards.
 - Open a group page, move through members with `J/K` or `Tab`, and focus any member's terminal.
 - Send one rally command to every selected agent; `$NAME` expands to each agent's display name.
-- Rename an individual or a whole group, scatter grouped characters, change movement mode, respawn stopped agents, or kill selected workers.
+- Rename an individual or a whole group, silence background characters, scatter grouped characters, change movement mode, respawn stopped agents, or kill selected workers.
 
 ### Status, attention, and completion
 
@@ -80,6 +80,7 @@ Arcane Agents gives each local agent a place on a shared map and keeps its real 
 - Completed but unreviewed agents receive a `READY` badge, making finished work easy to scan.
 - Press `Space` to start a review session containing every agent currently ready or needing input. The queue keeps handled agents available for backwards navigation, appends newly ready agents, and resets after manual selection, deselection, or `Esc`.
 - Optional character voice lines and sound effects announce arrival, movement, attention, completion, and death.
+- Silenced characters remain visible and interactive but do not show automatic work activity, attention, or completion alerts.
 - Transition history, evaluation facts, flap counts, and exportable status fixtures make incorrect classifications reproducible.
 
 ### Local state and independent sessions

@@ -91,6 +91,7 @@ export class OrchestratorService {
       status: "idle",
       avatarType: this.nextAvatar(plan.avatar, currentWorkers),
       movementMode: "hold",
+      silenced: false,
       position: this.nextSpawnPosition(currentWorkers, spawnAnchorWorkers),
       tmuxRef,
       createdAt: now,
@@ -181,6 +182,15 @@ export class OrchestratorService {
 
   setMovementMode(workerId: string, movementMode: MovementMode): Worker {
     const updated = this.workers.updateMovementMode(workerId, movementMode);
+    if (!updated) {
+      throw notFoundError(`Agent '${workerId}' not found.`, "worker_not_found");
+    }
+
+    return updated;
+  }
+
+  setSilenced(workerId: string, silenced: boolean): Worker {
+    const updated = this.workers.updateSilenced(workerId, silenced);
     if (!updated) {
       throw notFoundError(`Agent '${workerId}' not found.`, "worker_not_found");
     }

@@ -234,6 +234,10 @@ function deriveActivityOverlayShimmerPhase(
 }
 
 function buildActivityOverlayTarget(worker: Worker): ActivityOverlayTarget | undefined {
+  if (worker.silenced) {
+    return undefined;
+  }
+
   if (worker.status !== "working" && worker.status !== "attention" && worker.status !== "error") {
     return undefined;
   }

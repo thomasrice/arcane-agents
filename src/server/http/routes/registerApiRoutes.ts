@@ -15,6 +15,7 @@ import {
   parseOrThrow,
   positionSchema,
   renameSchema,
+  silencedSchema,
   spawnSchema,
   statusFixtureQuerySchema
 } from "../schemas";
@@ -148,6 +149,12 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
   app.patch("/api/workers/:workerId/movement-mode", asyncRoute((req, res) => {
     const { movementMode } = parseOrThrow(movementModeSchema, req.body, "movement_mode_invalid_payload");
     const worker = orchestrator.setMovementMode(req.params.workerId, movementMode);
+    respondWorker(res, hub, worker);
+  }));
+
+  app.patch("/api/workers/:workerId/silenced", asyncRoute((req, res) => {
+    const { silenced } = parseOrThrow(silencedSchema, req.body, "silenced_invalid_payload");
+    const worker = orchestrator.setSilenced(req.params.workerId, silenced);
     respondWorker(res, hub, worker);
   }));
 

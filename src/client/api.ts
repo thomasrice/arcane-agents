@@ -79,6 +79,13 @@ export function setWorkerMovementMode(workerId: string, movementMode: "hold" | "
   });
 }
 
+export function setWorkerSilenced(workerId: string, silenced: boolean): Promise<Worker> {
+  return requestJson<Worker>(`/api/workers/${workerId}/silenced`, {
+    method: "PATCH",
+    body: JSON.stringify({ silenced })
+  });
+}
+
 export function openWorkerInTerminal(workerId: string): Promise<{ ok: true }> {
   return requestJson<{ ok: true }>(`/api/workers/${workerId}/open-terminal`, {
     method: "POST"

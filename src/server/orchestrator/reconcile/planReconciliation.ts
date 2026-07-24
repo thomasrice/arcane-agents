@@ -246,6 +246,7 @@ export function planReconciliation(input: ReconciliationInput): ReconciliationPl
       status: "idle",
       avatarType: allocateAvatar(existingForAllocation),
       movementMode: "hold",
+      silenced: false,
       position: allocatePosition(existingForAllocation),
       tmuxRef: {
         session: sessionName,

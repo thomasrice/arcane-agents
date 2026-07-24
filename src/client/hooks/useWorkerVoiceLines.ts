@@ -260,12 +260,8 @@ export function useWorkerVoiceLines({ config, workers, workersHydrated, selected
         continue;
       }
 
-      if (transitionedToAttention(previousWorker.status, worker.status)) {
-        playVoiceLine(worker, "attention");
-      }
-
-      if (transitionedToComplete(previousWorker.status, worker.status) && !isRecentlySpawned(worker)) {
-        playVoiceLine(worker, "complete");
+      for (const event of getAutomaticWorkVoiceLineEvents(previousWorker, worker)) {
+        playVoiceLine(worker, event);
       }
     }
 
@@ -367,10 +363,29 @@ function transitionedToComplete(previous: WorkerStatus, next: WorkerStatus): boo
   return previous === "working" && next === "idle";
 }
 
+export function getAutomaticWorkVoiceLineEvents(
+  previousWorker: Pick<Worker, "status">,
+  worker: Pick<Worker, "createdAt" | "silenced" | "status">,
+  nowMs = Date.now()
+): VoiceLineEvent[] {
+  if (worker.silenced) {
+    return [];
+  }
+
+  const events: VoiceLineEvent[] = [];
+  if (transitionedToAttention(previousWorker.status, worker.status)) {
+    events.push("attention");
+  }
+  if (transitionedToComplete(previousWorker.status, worker.status) && !isRecentlySpawned(worker, nowMs)) {
+    events.push("complete");
+  }
+  return events;
+}
+
 const spawnGraceMs = 10_000;
 
-function isRecentlySpawned(worker: Worker): boolean {
-  return Date.now() - new Date(worker.createdAt).getTime() < spawnGraceMs;
+function isRecentlySpawned(worker: Pick<Worker, "createdAt">, nowMs = Date.now()): boolean {
+  return nowMs - new Date(worker.createdAt).getTime() < spawnGraceMs;
 }
 
 function chooseRandomItem<T>(items: T[]): T | undefined {

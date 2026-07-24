@@ -16,6 +16,7 @@ function worker(id: string, overrides: Partial<Worker> = {}): Worker {
     status: "idle",
     avatarType: "wizard",
     movementMode: "hold",
+    silenced: false,
     position: { x: 0, y: 0 },
     tmuxRef: { session: "arcane-agents", window: id, pane: "0" },
     createdAt: "2026-07-17T00:00:00.000Z",
@@ -214,6 +215,37 @@ describe("cycleReviewSelection", () => {
     store.cycleReviewSelection(1, []);
 
     expect(useAppStore.getState().selectedWorkerIds).toEqual(["ready"]);
+    expect(useAppStore.getState().reviewSessionWorkerIds).toEqual(["ready"]);
+  });
+
+  it("does not admit silenced completion or attention workers to a review session", () => {
+    useAppStore.setState({
+      workers: [
+        worker("idle"),
+        worker("silent-complete", { silenced: true }),
+        worker("silent-attention", { silenced: true, status: "attention" })
+      ],
+      selectedWorkerIds: ["idle"]
+    });
+
+    useAppStore.getState().cycleReviewSelection(1, ["silent-complete"]);
+
+    expect(useAppStore.getState().selectedWorkerIds).toEqual(["idle"]);
+    expect(useAppStore.getState().reviewSessionWorkerIds).toBeNull();
+  });
+
+  it("prunes a character that is silenced during an active review session", () => {
+    useAppStore.setState({
+      workers: [worker("ready"), worker("attention", { status: "attention" })]
+    });
+    const store = useAppStore.getState();
+    store.cycleReviewSelection(1, ["ready"]);
+
+    useAppStore.setState({
+      workers: [worker("ready"), worker("attention", { silenced: true, status: "attention" })]
+    });
+    store.syncReviewSession(["ready"]);
+
     expect(useAppStore.getState().reviewSessionWorkerIds).toEqual(["ready"]);
   });
 

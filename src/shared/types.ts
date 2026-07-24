@@ -142,6 +142,7 @@ export interface Worker {
   activityPath?: string;
   avatarType: AvatarType;
   movementMode: MovementMode;
+  silenced: boolean;
   position: WorkerPosition;
   tmuxRef: TmuxRef;
   createdAt: string;

@@ -96,6 +96,7 @@ function makeWorker(runtime: RuntimeKind, opts: EvaluateOptions): Worker {
     activityPath: undefined,
     avatarType: "ranger",
     movementMode: "hold",
+    silenced: false,
     position: { x: 0, y: 0 },
     tmuxRef: { session: "arcane-agents", window: "worker-1", pane: "%1" },
     createdAt: new Date(FIXED_NOW_MS - workerAgeMs).toISOString(),

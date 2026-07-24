@@ -15,6 +15,7 @@ function worker(id: string): Worker {
     status: "idle",
     avatarType: "wizard",
     movementMode: "hold",
+    silenced: false,
     position: { x: 0, y: 0 },
     tmuxRef: { session: "arcane-agents", window: id, pane: "0" },
     createdAt: "2026-07-17T00:00:00.000Z",

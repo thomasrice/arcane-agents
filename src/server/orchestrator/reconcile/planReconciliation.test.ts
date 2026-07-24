@@ -26,6 +26,7 @@ function createWorker(overrides: Partial<Worker> = {}): Worker {
     status: "idle",
     avatarType: "wizard",
     movementMode: "hold",
+    silenced: false,
     position: { x: 100, y: 100 },
     tmuxRef: { session: "arcane-agents", window: "worker-1", pane: "%1" },
     createdAt: "2026-03-04T00:00:00.000Z",
@@ -111,7 +112,7 @@ describe("planReconciliation", () => {
   });
 
   it("resumes a stopped worker that is still directly live but unmanaged", () => {
-    const worker = createWorker({ status: "stopped" });
+    const worker = createWorker({ status: "stopped", silenced: true });
 
     const plan = planReconciliation(
       createInput({
@@ -124,6 +125,7 @@ describe("planReconciliation", () => {
     expect(plan.removedWorkerIds).toEqual([]);
     expect(plan.updatedWorkers).toHaveLength(1);
     expect(plan.updatedWorkers[0].status).toBe("idle");
+    expect(plan.updatedWorkers[0].silenced).toBe(true);
     expect(plan.toSave).toEqual(plan.updatedWorkers);
   });
 
@@ -149,6 +151,7 @@ describe("planReconciliation", () => {
       command: ["claude"],
       avatarType: "knight",
       position: { x: 1, y: 2 },
+      silenced: false,
       tmuxRef: { session: "arcane-agents", window: "web-claude-a1b2", pane: "%4" }
     });
     expect(plan.discoveredProjects).toEqual({});

@@ -6,6 +6,7 @@ import {
   renameWorker,
   restartWorker,
   setWorkerMovementMode,
+  setWorkerSilenced,
   spawnWorker,
   stopWorker,
   updateWorkerPosition
@@ -25,6 +26,7 @@ export interface UseWorkerActionsResult {
   submitRename: (draft: string) => Promise<void>;
   onRenameSelected: () => void;
   onToggleMovementModeSelected: () => Promise<void>;
+  onToggleSilencedSelected: () => Promise<void>;
   onActivateRosterIndex: (index: number) => void;
   onOpenSelectedInTerminal: () => Promise<void>;
   onPositionCommit: (workerId: string, position: { x: number; y: number }) => void;
@@ -33,6 +35,10 @@ export interface UseWorkerActionsResult {
   onRestartSelected: () => void;
   onRestartRosterActive: () => void;
   confirmPending: () => void;
+}
+
+export function getNextSelectedSilencedState(selectedWorkers: readonly Pick<Worker, "silenced">[]): boolean {
+  return !selectedWorkers.every((worker) => worker.silenced);
 }
 
 // Owns the spawn / rename / movement / kill / restart / rally flows. Unlike the
@@ -164,6 +170,29 @@ export function useWorkerActions({
     try {
       const updatedWorkers = await Promise.all(
         selectedWorkers.map((worker) => setWorkerMovementMode(worker.id, nextMode))
+      );
+      const state = useAppStore.getState();
+      for (const worker of updatedWorkers) {
+        state.upsertWorker(worker);
+      }
+    } catch (error) {
+      showError(error);
+    }
+  }, [showError]);
+
+  const onToggleSilencedSelected = useCallback(async () => {
+    const selectedWorkers = selectSelectedWorkers(useAppStore.getState());
+    if (selectedWorkers.length === 0) {
+      return;
+    }
+
+    const nextSilenced = getNextSelectedSilencedState(selectedWorkers);
+
+    try {
+      const updatedWorkers = await Promise.all(
+        selectedWorkers
+          .filter((worker) => worker.silenced !== nextSilenced)
+          .map((worker) => setWorkerSilenced(worker.id, nextSilenced))
       );
       const state = useAppStore.getState();
       for (const worker of updatedWorkers) {
@@ -336,6 +365,7 @@ export function useWorkerActions({
     submitRename,
     onRenameSelected,
     onToggleMovementModeSelected,
+    onToggleSilencedSelected,
     onActivateRosterIndex,
     onOpenSelectedInTerminal,
     onPositionCommit,

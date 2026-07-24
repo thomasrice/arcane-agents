@@ -31,6 +31,7 @@ function makeWorker(id: string, position: WorkerPosition, overrides: Partial<Wor
     status: "idle",
     avatarType: "knight",
     movementMode: "hold",
+    silenced: false,
     position,
     tmuxRef: { session: "s", window: "w", pane: "p" },
     createdAt: "2026-01-01T00:00:00.000Z",

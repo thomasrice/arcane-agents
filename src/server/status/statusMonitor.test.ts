@@ -72,6 +72,7 @@ function createWorker(workerId: string, status: Worker["status"] = "idle"): Work
     activityPath: undefined,
     avatarType: "wizard",
     movementMode: "hold",
+    silenced: false,
     position: { x: 10, y: 10 },
     tmuxRef: { session: "arcane-agents", window: workerId, pane: `%${workerId}` },
     createdAt: "2026-03-04T00:00:00.000Z",

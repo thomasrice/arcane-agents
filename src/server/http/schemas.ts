@@ -186,6 +186,10 @@ export const movementModeSchema = z.object({
   movementMode: z.enum(["hold", "wander"])
 });
 
+export const silencedSchema = z.object({
+  silenced: z.boolean()
+});
+
 // Parse `body` with `schema`, converting any ZodError into the existing AppError
 // machinery: a 400 carrying the coarse per-route `code`.
 export function parseOrThrow<Schema extends z.ZodTypeAny>(

@@ -55,6 +55,7 @@ function makeWorker(overrides: Partial<Worker> = {}): Worker {
     activityPath: "src/parser.ts",
     avatarType: "wizard",
     movementMode: "wander",
+    silenced: false,
     position: { x: 128.5, y: -42.25 },
     tmuxRef: { session: "arcane-agents", window: "pa-shell-ab12", pane: "%3" },
     createdAt: "2026-03-04T00:00:00.000Z",
@@ -87,6 +88,7 @@ describe("WorkerRepository save/load round-trip", () => {
       activityPath: "src/parser.ts",
       avatarType: "wizard",
       movementMode: "wander",
+      silenced: false,
       position: { x: 128.5, y: -42.25 },
       tmuxRef: { session: "arcane-agents", window: "pa-shell-ab12", pane: "%3" },
       createdAt: "2026-03-04T00:00:00.000Z",
@@ -302,6 +304,23 @@ describe("WorkerRepository.updateMovementMode", () => {
   });
 });
 
+describe("WorkerRepository.updateSilenced", () => {
+  it("persists silence changes without replacing the character", () => {
+    const repo = openRepo();
+    repo.saveWorker(makeWorker({ id: "wkr-silent", silenced: false }));
+
+    const updated = repo.updateSilenced("wkr-silent", true);
+
+    expect(updated).toMatchObject({ id: "wkr-silent", silenced: true });
+    expect(repo.getWorker("wkr-silent")?.silenced).toBe(true);
+  });
+
+  it("returns undefined for an unknown worker", () => {
+    const repo = openRepo();
+    expect(repo.updateSilenced("ghost", true)).toBeUndefined();
+  });
+});
+
 describe("WorkerRepository.deleteWorker", () => {
   it("removes an existing worker and reports the change", () => {
     const repo = openRepo();
@@ -409,6 +428,7 @@ describe("WorkerRepository legacy-schema migration", () => {
       avatarType: "wizard",
       // movement_mode column is NULL for legacy rows; fallback is "hold".
       movementMode: "hold",
+      silenced: false,
       position: { x: 10, y: 20 },
       tmuxRef: { session: "arcane-agents", window: "legacy-window", pane: "%0" },
       createdAt: "2025-01-01T00:00:00.000Z",
@@ -426,7 +446,8 @@ describe("WorkerRepository legacy-schema migration", () => {
         displayName: "Fresh",
         activityTool: "grep",
         activityPath: "src/x.ts",
-        movementMode: "wander"
+        movementMode: "wander",
+        silenced: true
       })
     );
 
@@ -434,7 +455,8 @@ describe("WorkerRepository legacy-schema migration", () => {
       displayName: "Fresh",
       activityTool: "grep",
       activityPath: "src/x.ts",
-      movementMode: "wander"
+      movementMode: "wander",
+      silenced: true
     });
   });
 

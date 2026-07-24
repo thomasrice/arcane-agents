@@ -105,6 +105,7 @@ function makeWorker(overrides: Partial<Worker> = {}): Worker {
     status: "idle",
     avatarType: "wizard",
     movementMode: "hold",
+    silenced: false,
     position: { x: 10, y: 10 },
     tmuxRef: { session: "sess-1", window: "win-1", pane: "%1" },
     createdAt: "2026-03-04T00:00:00.000Z",

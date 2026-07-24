@@ -46,6 +46,7 @@ function createWorker(scenario: Scenario): Worker {
     activityPath: undefined,
     avatarType: "ranger",
     movementMode: "hold",
+    silenced: false,
     position: { x: 120, y: 180 },
     tmuxRef: { session: "arcane-agents", window: "worker-1", pane: "%1" },
     createdAt: new Date(NOW - workerAgeMs).toISOString(),

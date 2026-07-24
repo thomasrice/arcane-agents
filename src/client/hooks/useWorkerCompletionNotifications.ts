@@ -10,6 +10,37 @@ interface UseWorkerCompletionNotificationsResult {
   pendingCompletionWorkerIds: string[];
 }
 
+export function reconcilePendingCompletionWorkerIds(
+  current: readonly string[],
+  workers: readonly Worker[],
+  previousStatusByWorker: ReadonlyMap<string, WorkerStatus>,
+  reviewedWorkerId: string | undefined
+): string[] {
+  const currentWorkersById = new Map(workers.map((worker) => [worker.id, worker]));
+  const next = current.filter((workerId) => {
+    const worker = currentWorkersById.get(workerId);
+    return Boolean(worker && !worker.silenced && worker.status === "idle" && workerId !== reviewedWorkerId);
+  });
+  const nextSet = new Set(next);
+
+  for (const worker of workers) {
+    if (
+      worker.silenced ||
+      worker.id === reviewedWorkerId ||
+      worker.status !== "idle" ||
+      previousStatusByWorker.get(worker.id) !== "working" ||
+      nextSet.has(worker.id)
+    ) {
+      continue;
+    }
+
+    next.push(worker.id);
+    nextSet.add(worker.id);
+  }
+
+  return next;
+}
+
 export function useWorkerCompletionNotifications({
   workers,
   reviewedWorkerId
@@ -23,48 +54,20 @@ export function useWorkerCompletionNotifications({
   }, [reviewedWorkerId]);
 
   useEffect(() => {
-    const currentWorkerIds = new Set(workers.map((worker) => worker.id));
-    const removePendingNow = new Set<string>();
-    const addPendingNow = new Set<string>();
-
-    for (const worker of workers) {
-      const previousStatus = previousStatusByWorkerRef.current.get(worker.id);
-
-      if (previousStatus === "working" && worker.status === "idle") {
-        if (worker.id === reviewedWorkerIdRef.current) {
-          continue;
-        }
-
-        addPendingNow.add(worker.id);
-      } else {
-        if (worker.status !== "idle") {
-          removePendingNow.add(worker.id);
-        }
-      }
-    }
-
-    const nextStatuses = new Map<string, WorkerStatus>();
-    for (const worker of workers) {
-      nextStatuses.set(worker.id, worker.status);
-    }
-    previousStatusByWorkerRef.current = nextStatuses;
-
+    const previousStatusByWorker = previousStatusByWorkerRef.current;
     setPendingCompletionWorkerIds((current) => {
-      const filtered = current.filter((workerId) => currentWorkerIds.has(workerId) && !removePendingNow.has(workerId));
-      const next = [...filtered];
-
-      for (const workerId of addPendingNow) {
-        if (!next.includes(workerId)) {
-          next.push(workerId);
-        }
-      }
-
-      if (next.length === current.length && next.every((workerId, index) => workerId === current[index])) {
-        return current;
-      }
-
-      return next;
+      const next = reconcilePendingCompletionWorkerIds(
+        current,
+        workers,
+        previousStatusByWorker,
+        reviewedWorkerIdRef.current
+      );
+      return next.length === current.length && next.every((workerId, index) => workerId === current[index])
+        ? current
+        : next;
     });
+
+    previousStatusByWorkerRef.current = new Map(workers.map((worker) => [worker.id, worker.status]));
   }, [workers]);
 
   useEffect(() => {

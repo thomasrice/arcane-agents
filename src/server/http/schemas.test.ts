@@ -7,6 +7,7 @@ import {
   parseOrThrow,
   positionSchema,
   renameSchema,
+  silencedSchema,
   spawnSchema
 } from "./schemas";
 
@@ -166,5 +167,18 @@ describe("movementModeSchema", () => {
   it("rejects any other movement mode", () => {
     expectParseError(movementModeSchema, { movementMode: "drift" }, "movement_mode_invalid_payload");
     expectParseError(movementModeSchema, {}, "movement_mode_invalid_payload");
+  });
+});
+
+describe("silencedSchema", () => {
+  it("accepts only an explicit boolean silence preference", () => {
+    expect(parseOrThrow(silencedSchema, { silenced: true }, "silenced_invalid_payload")).toEqual({
+      silenced: true
+    });
+    expect(parseOrThrow(silencedSchema, { silenced: false }, "silenced_invalid_payload")).toEqual({
+      silenced: false
+    });
+    expectParseError(silencedSchema, { silenced: "true" }, "silenced_invalid_payload");
+    expectParseError(silencedSchema, {}, "silenced_invalid_payload");
   });
 });

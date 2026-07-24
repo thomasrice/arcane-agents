@@ -24,6 +24,7 @@ export interface WorkerNameplate {
   label: string;
   completionKey?: string;
   attentionKey?: string;
+  silenced?: boolean;
 }
 
 /**
@@ -208,14 +209,15 @@ export function drawWorker(scene: WorkerSceneContext, worker: Worker, options: D
   }
 
   if (queueNameplate) {
-    const completionPending = scene.completionPendingWorkerIds?.has(worker.id) && worker.status === "idle";
-    const attentionPending = worker.status === "attention";
+    const completionPending = !worker.silenced && scene.completionPendingWorkerIds?.has(worker.id) && worker.status === "idle";
+    const attentionPending = !worker.silenced && worker.status === "attention";
     scene.pendingNameplates.push({
       anchorX: spriteBounds ? spriteBounds.x + spriteBounds.width / 2 : screen.x,
       topY: (spriteBounds ? spriteBounds.y + spriteBounds.height : screen.y + radius) + 4 * viewport.scale,
       label: displayLabel,
       completionKey: completionPending ? worker.id : undefined,
-      attentionKey: attentionPending ? worker.id : undefined
+      attentionKey: attentionPending ? worker.id : undefined,
+      silenced: worker.silenced
     });
   }
 }
@@ -424,7 +426,14 @@ export function drawWorkerNameplates(
     const labelHeight = 18 * scale;
     const left = nameplate.anchorX - labelWidth / 2;
 
-    if (nameplate.completionKey !== undefined) {
+    if (nameplate.silenced) {
+      context.fillStyle = "rgba(19, 29, 30, 0.76)";
+      context.fillRect(left, nameplate.topY, labelWidth, labelHeight);
+      context.fillStyle = "rgba(129, 162, 157, 0.82)";
+      context.fillRect(left, nameplate.topY, 3 * scale, labelHeight);
+      context.fillRect(left + labelWidth - 3 * scale, nameplate.topY, 3 * scale, labelHeight);
+      context.fillStyle = "#d4dfdc";
+    } else if (nameplate.completionKey !== undefined) {
       const seed = hashString(nameplate.completionKey);
       drawCompletionNameplate(context, left, nameplate.topY, labelWidth, labelHeight, nowMs, seed);
       context.fillStyle = completionPlaquePalette.textShadow;

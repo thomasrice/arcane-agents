@@ -25,6 +25,7 @@ interface WorkerRow {
   activity_path: string | null;
   avatar_type: Worker["avatarType"];
   movement_mode: MovementMode | null;
+  silenced: number;
   position_x: number;
   position_y: number;
   tmux_session: string;
@@ -63,12 +64,12 @@ export class WorkerRepository {
         `
         INSERT INTO workers (
           id, name, display_name, project_id, project_path, runtime_id, runtime_label,
-          command_json, status, activity_text, activity_tool, activity_path, avatar_type, movement_mode,
+          command_json, status, activity_text, activity_tool, activity_path, avatar_type, movement_mode, silenced,
           position_x, position_y, tmux_session, tmux_window, tmux_pane,
           created_at, updated_at
         ) VALUES (
           @id, @name, @display_name, @project_id, @project_path, @runtime_id, @runtime_label,
-          @command_json, @status, @activity_text, @activity_tool, @activity_path, @avatar_type, @movement_mode,
+          @command_json, @status, @activity_text, @activity_tool, @activity_path, @avatar_type, @movement_mode, @silenced,
           @position_x, @position_y, @tmux_session, @tmux_window, @tmux_pane,
           @created_at, @updated_at
         )
@@ -86,6 +87,7 @@ export class WorkerRepository {
           activity_path = excluded.activity_path,
           avatar_type = excluded.avatar_type,
           movement_mode = excluded.movement_mode,
+          silenced = excluded.silenced,
           position_x = excluded.position_x,
           position_y = excluded.position_y,
           tmux_session = excluded.tmux_session,
@@ -148,6 +150,22 @@ export class WorkerRepository {
     return updated;
   }
 
+  updateSilenced(workerId: string, silenced: boolean): Worker | undefined {
+    const worker = this.getWorker(workerId);
+    if (!worker) {
+      return undefined;
+    }
+
+    const updated: Worker = {
+      ...worker,
+      silenced,
+      updatedAt: new Date().toISOString()
+    };
+
+    this.saveWorker(updated);
+    return updated;
+  }
+
   deleteWorker(workerId: string): boolean {
     const result = this.db.prepare("DELETE FROM workers WHERE id = ?").run(workerId);
     return result.changes > 0;
@@ -174,6 +192,7 @@ export class WorkerRepository {
         activity_path TEXT,
         avatar_type TEXT NOT NULL,
         movement_mode TEXT,
+        silenced INTEGER NOT NULL DEFAULT 0,
         position_x REAL NOT NULL,
         position_y REAL NOT NULL,
         tmux_session TEXT NOT NULL,
@@ -191,6 +210,7 @@ export class WorkerRepository {
     this.ensureColumn("workers", "activity_path", "TEXT");
     this.ensureColumn("workers", "display_name", "TEXT");
     this.ensureColumn("workers", "movement_mode", "TEXT");
+    this.ensureColumn("workers", "silenced", "INTEGER NOT NULL DEFAULT 0");
   }
 
   private fromRow(row: WorkerRow): Worker {
@@ -209,6 +229,7 @@ export class WorkerRepository {
       activityPath: row.activity_path ?? undefined,
       avatarType: row.avatar_type,
       movementMode: row.movement_mode === "wander" ? "wander" : "hold",
+      silenced: row.silenced === 1,
       position: {
         x: row.position_x,
         y: row.position_y
@@ -239,6 +260,7 @@ export class WorkerRepository {
       activity_path: worker.activityPath ?? null,
       avatar_type: worker.avatarType,
       movement_mode: worker.movementMode,
+      silenced: worker.silenced ? 1 : 0,
       position_x: worker.position.x,
       position_y: worker.position.y,
       tmux_session: worker.tmuxRef.session,

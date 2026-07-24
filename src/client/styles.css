@@ -170,6 +170,41 @@ body.split-pane-dragging {
   padding: 7px 13px;
 }
 
+.bar-btn.icon-btn {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+}
+
+.silence-toggle svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.silence-toggle.on {
+  border-color: rgba(156, 189, 183, 0.72);
+  background: rgba(53, 68, 69, 0.98);
+  color: #d8e5e1;
+}
+
+.silence-toggle.mixed {
+  border-color: rgba(156, 189, 183, 0.48);
+  background: rgba(47, 61, 60, 0.96);
+  color: rgba(216, 229, 225, 0.78);
+}
+
+.silence-icon-slash {
+  stroke: #d9a5a0;
+  stroke-width: 2.35;
+}
+
 .selected-worker-meta {
   margin-right: auto;
   min-width: 0;

@@ -125,8 +125,9 @@ function collectReadyWorkerIds(
   return activeWorkers
     .filter(
       (worker) =>
-        worker.status === "attention" ||
-        (worker.status === "idle" && pendingCompletionWorkerIdSet.has(worker.id))
+        !worker.silenced &&
+        (worker.status === "attention" ||
+          (worker.status === "idle" && pendingCompletionWorkerIdSet.has(worker.id)))
     )
     .map((worker) => worker.id);
 }
@@ -136,8 +137,10 @@ function reconcileReviewSessionWorkerIds(
   activeWorkers: readonly Worker[],
   readyWorkerIds: readonly string[]
 ): string[] {
-  const activeWorkerIds = new Set(activeWorkers.map((worker) => worker.id));
-  const nextWorkerIds = currentWorkerIds.filter((workerId) => activeWorkerIds.has(workerId));
+  const reviewableWorkerIds = new Set(
+    activeWorkers.filter((worker) => !worker.silenced).map((worker) => worker.id)
+  );
+  const nextWorkerIds = currentWorkerIds.filter((workerId) => reviewableWorkerIds.has(workerId));
   const nextWorkerIdSet = new Set(nextWorkerIds);
   for (const workerId of readyWorkerIds) {
     if (!nextWorkerIdSet.has(workerId)) {

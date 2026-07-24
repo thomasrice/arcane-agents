@@ -80,6 +80,7 @@ export function MapColumn({
         onKillSelected={workerActions.onKillSelected}
         onRenameSelected={workerActions.onRenameSelected}
         onToggleMovementMode={() => void workerActions.onToggleMovementModeSelected()}
+        onToggleSilenced={() => void workerActions.onToggleSilencedSelected()}
         onScatterSelected={onScatterSelected}
       />
     </div>

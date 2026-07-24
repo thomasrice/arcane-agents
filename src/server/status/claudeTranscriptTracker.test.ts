@@ -61,6 +61,7 @@ function createWorker(overrides: Partial<Worker> = {}): Worker {
     activityPath: undefined,
     avatarType: "wizard",
     movementMode: "hold",
+    silenced: false,
     position: { x: 0, y: 0 },
     tmuxRef: { session: "arcane-agents", window: "worker-1", pane: "%1" },
     createdAt: "2026-03-04T00:00:00.000Z",

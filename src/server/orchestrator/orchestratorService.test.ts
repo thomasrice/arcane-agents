@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 import type { ResolvedConfig, Worker } from "../../shared/types";
 import type { WorkerRepository } from "../persistence/workerRepository";
 import type { ManagedWindow, TmuxAdapter } from "../tmux/tmuxAdapter";
@@ -55,6 +55,7 @@ function createWorker(): Worker {
     status: "idle",
     avatarType: "wizard",
     movementMode: "hold",
+    silenced: false,
     position: { x: 100, y: 100 },
     tmuxRef: { session: "arcane-agents", window: "worker-1", pane: "%1" },
     createdAt: "2026-03-04T00:00:00.000Z",
@@ -85,6 +86,7 @@ interface FakeRepository {
   store: Map<string, Worker>;
   saveWorker: ReturnType<typeof vi.fn>;
   deleteWorker: ReturnType<typeof vi.fn>;
+  updateSilenced: Mock<(workerId: string, silenced: boolean) => Worker | undefined>;
 }
 
 // Stateful in-memory stand-in for the persistence boundary: mutations land in a
@@ -100,15 +102,25 @@ function createRepository(initial: Worker[] = []): FakeRepository {
     store.set(worker.id, worker);
   });
   const deleteWorker = vi.fn((workerId: string) => store.delete(workerId));
+  const updateSilenced = vi.fn((workerId: string, silenced: boolean) => {
+    const worker = store.get(workerId);
+    if (!worker) {
+      return undefined;
+    }
+    const updated = { ...worker, silenced, updatedAt: new Date().toISOString() };
+    store.set(workerId, updated);
+    return updated;
+  });
 
   const repo = {
     listWorkers: vi.fn(() => Array.from(store.values())),
     getWorker: vi.fn((workerId: string) => store.get(workerId)),
     saveWorker,
+    updateSilenced,
     deleteWorker
   } as unknown as WorkerRepository;
 
-  return { repo, store, saveWorker, deleteWorker };
+  return { repo, store, saveWorker, deleteWorker, updateSilenced };
 }
 
 interface FakeTmuxOptions {
@@ -126,6 +138,20 @@ function createTmux(options: FakeTmuxOptions = {}): TmuxAdapter {
     windowExists: vi.fn(async () => options.windowExists ?? false)
   } as unknown as TmuxAdapter;
 }
+
+describe("OrchestratorService.setSilenced", () => {
+  it("updates the durable character preference through the repository", () => {
+    const worker = createWorker();
+    const { repo, store, updateSilenced } = createRepository([worker]);
+    const service = new OrchestratorService(createConfig(), repo, createTmux());
+
+    const updated = service.setSilenced(worker.id, true);
+
+    expect(updated.silenced).toBe(true);
+    expect(store.get(worker.id)?.silenced).toBe(true);
+    expect(updateSilenced).toHaveBeenCalledWith(worker.id, true);
+  });
+});
 
 describe("OrchestratorService.stop", () => {
   it("stops tmux before removing worker and returns removal result", async () => {
@@ -201,7 +227,7 @@ describe("OrchestratorService.stop", () => {
 
 describe("OrchestratorService.restart", () => {
   it("restarts tmux in place and preserves the worker record", async () => {
-    const worker = createWorker();
+    const worker = { ...createWorker(), silenced: true };
     const workers = {
       getWorker: vi.fn(() => worker),
       saveWorker: vi.fn()
@@ -350,6 +376,7 @@ describe("OrchestratorService.reconcileWithTmux", () => {
       command: ["claude"],
       status: "idle",
       movementMode: "hold",
+      silenced: false,
       tmuxRef: { session: "arcane-agents", window: "web-claude-a1b2", pane: "%4" }
     });
     // Adoption always allocates a fresh avatar and map position; tmux metadata

@@ -15,6 +15,7 @@ function worker(overrides: Partial<Worker> = {}): Worker {
     status: "working",
     avatarType: "wizard",
     movementMode: "hold",
+    silenced: false,
     position: { x: 0, y: 0 },
     tmuxRef: { session: "arcane-agents", window: "worker-1", pane: "0" },
     createdAt: "2026-07-22T00:00:00.000Z",
