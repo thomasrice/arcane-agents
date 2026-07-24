@@ -80,7 +80,7 @@ Arcane Agents gives each local agent a place on a shared map and keeps its real 
 - Completed but unreviewed agents receive a `READY` badge, making finished work easy to scan.
 - Press `Space` to start a review session containing every agent currently ready or needing input. The queue keeps handled agents available for backwards navigation, appends newly ready agents, and resets after manual selection, deselection, or `Esc`.
 - Optional character voice lines and sound effects announce arrival, movement, attention, completion, and death.
-- Silenced characters remain visible and interactive but do not show automatic work activity, attention, or completion alerts.
+- Silenced characters remain visible and interactive, including their current work actions, but do not enter attention/completion notification flows or play their automatic attention/completion voice lines.
 - Transition history, evaluation facts, flap counts, and exportable status fixtures make incorrect classifications reproducible.
 
 ### Local state and independent sessions

@@ -25,13 +25,15 @@ function worker(silenced: boolean): Worker {
 }
 
 describe("WorkerVisualStateTracker activity overlays", () => {
-  it("removes the automatic activity badge when a working character is silenced", () => {
+  it("keeps working actions visible when a character is silenced", () => {
     const tracker = new WorkerVisualStateTracker();
     const activeWorkerIds = new Set(["worker-1"]);
 
     expect(tracker.updateActivityOverlays([worker(false)], 1_000, activeWorkerIds)).toEqual({
       "worker-1": { text: "Editing src/client/App.tsx", shimmerPhase: undefined }
     });
-    expect(tracker.updateActivityOverlays([worker(true)], 1_100, activeWorkerIds)).toEqual({});
+    expect(tracker.updateActivityOverlays([worker(true)], 1_100, activeWorkerIds)).toEqual({
+      "worker-1": { text: "Editing src/client/App.tsx", shimmerPhase: undefined }
+    });
   });
 });
