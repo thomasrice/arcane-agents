@@ -735,6 +735,23 @@ kbd {
   color: rgba(226, 235, 210, 0.8);
 }
 
+.go-to-character-title {
+  margin: 0 0 12px;
+}
+
+.go-to-character-label {
+  display: block;
+}
+
+.go-to-character-dialog .palette-input:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.go-to-character-option {
+  width: 100%;
+}
+
 .error-toast {
   position: fixed;
   right: 14px;

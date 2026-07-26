@@ -16,8 +16,8 @@ export interface BatchSpawnItem {
   displayName: string;
 }
 
-/** Which one modal is open. The five are mutually exclusive by construction. */
-export type OpenDialog = "spawn" | "palette" | "batchSpawn" | "shortcuts" | "rename" | null;
+/** Which one modal is open. The six are mutually exclusive by construction. */
+export type OpenDialog = "spawn" | "palette" | "batchSpawn" | "shortcuts" | "rename" | "goTo" | null;
 
 export type ConfirmKind = "kill" | "restart";
 

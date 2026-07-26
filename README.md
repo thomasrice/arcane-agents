@@ -45,7 +45,7 @@ Arcane Agents gives each local agent a place on a shared map and keeps its real 
 - Select one agent, Shift-click several, or draw a marquee around a group.
 - Move selected agents with held `W/A/S/D` or the arrow keys; the camera follows near the map edge.
 - Right-click a destination to send selected agents there, right-drag to pan, and use `+` / `-` to zoom.
-- Switch agents from the map or roster, work through a stable keyboard review queue, cycle idle workers, and jump through populated control groups.
+- Switch agents from the map or roster, jump directly to a known Character by name with `G`, work through a stable keyboard review queue, cycle idle workers, and jump through populated control groups.
 - Resize the map and terminal split by dragging the divider or using keyboard controls.
 
 ### Real terminals, not simulated chat panels
@@ -227,6 +227,7 @@ The first `Space` snapshots every agent currently ready for review or needing in
 | `P` | Open the respawn confirmation. |
 | `K` | Open the kill confirmation for selected agents. |
 | `Shift+K` | Kill the highlighted roster agent after confirmation. |
+| `G` | Search Character names and jump to a matching terminal. |
 | `/` | Open the command palette. |
 | `?` | Toggle the keyboard shortcut reference. |
 | `Esc` | Close an overlay or dialog, then clear selection. |

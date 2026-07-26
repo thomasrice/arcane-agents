@@ -1,9 +1,10 @@
 import { useShallow } from "zustand/react/shallow";
 import type { UseWorkerActionsResult } from "../hooks/useWorkerActions";
 import { useAppStore } from "../state/appStore";
-import { selectConfirmWorkers, selectRenameTargetWorkers } from "../state/selectors";
+import { selectActiveWorkers, selectConfirmWorkers, selectRenameTargetWorkers } from "../state/selectors";
 import { BatchSpawnDialog } from "./BatchSpawnDialog";
 import { CommandPalette } from "./CommandPalette";
+import { GoToCharacterDialog } from "./GoToCharacterDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { RenameDialog } from "./RenameDialog";
 import { ShortcutsDialog } from "./ShortcutsDialog";
@@ -21,6 +22,7 @@ export function AppDialogs({ workerActions }: AppDialogsProps): JSX.Element {
   const openDialog = useAppStore((state) => state.openDialog);
   const pendingConfirm = useAppStore((state) => state.pendingConfirm);
   const confirmWorkers = useAppStore(useShallow(selectConfirmWorkers));
+  const activeWorkers = useAppStore(useShallow(selectActiveWorkers));
   const renameTargetWorkerIds = useAppStore(useShallow((state) => state.renameTargetWorkerIds));
   const renameTargetWorkers = useAppStore(useShallow(selectRenameTargetWorkers));
   const renameDraft = useAppStore((state) => state.renameDraft);
@@ -30,6 +32,8 @@ export function AppDialogs({ workerActions }: AppDialogsProps): JSX.Element {
     useShallow((state) => ({
       setSpawnDialogOpen: state.setSpawnDialogOpen,
       setPaletteOpen: state.setPaletteOpen,
+      setGoToDialogOpen: state.setGoToDialogOpen,
+      applySelection: state.applySelection,
       setBatchSpawnDialogOpen: state.setBatchSpawnDialogOpen,
       setShortcutsOverlayOpen: state.setShortcutsOverlayOpen,
       closeRename: state.closeRename,
@@ -66,6 +70,13 @@ export function AppDialogs({ workerActions }: AppDialogsProps): JSX.Element {
           onOpenBatchSpawn={() => actions.setBatchSpawnDialogOpen(true)}
         />
       ) : null}
+
+      <GoToCharacterDialog
+        open={openDialog === "goTo"}
+        workers={activeWorkers}
+        onClose={() => actions.setGoToDialogOpen(false)}
+        onActivate={(workerId) => actions.applySelection([workerId], { center: true })}
+      />
 
       {config ? (
         <BatchSpawnDialog

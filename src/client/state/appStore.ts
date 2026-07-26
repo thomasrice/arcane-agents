@@ -76,6 +76,7 @@ export interface AppActions {
   setOpenDialog: (dialog: OpenDialog) => void;
   setSpawnDialogOpen: (open: boolean) => void;
   setPaletteOpen: (open: boolean) => void;
+  setGoToDialogOpen: (open: boolean) => void;
   setBatchSpawnDialogOpen: (open: boolean) => void;
   setShortcutsOverlayOpen: (update: Updater<boolean>) => void;
 
@@ -331,6 +332,8 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     set((state) => ({ openDialog: open ? "spawn" : state.openDialog === "spawn" ? null : state.openDialog })),
   setPaletteOpen: (open) =>
     set((state) => ({ openDialog: open ? "palette" : state.openDialog === "palette" ? null : state.openDialog })),
+  setGoToDialogOpen: (open) =>
+    set((state) => ({ openDialog: open ? "goTo" : state.openDialog === "goTo" ? null : state.openDialog })),
   setBatchSpawnDialogOpen: (open) =>
     set((state) => ({ openDialog: open ? "batchSpawn" : state.openDialog === "batchSpawn" ? null : state.openDialog })),
   setShortcutsOverlayOpen: (update) =>

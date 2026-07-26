@@ -66,6 +66,7 @@ export interface HotkeyContext {
   setBatchSpawnDialogOpen: (open: boolean) => void;
   setShortcutsOverlayOpen: Dispatch<SetStateAction<boolean>>;
   setPaletteOpen: (open: boolean) => void;
+  setGoToDialogOpen: (open: boolean) => void;
   setSpawnDialogOpen: (open: boolean) => void;
   nudgeMapColumnRatio: (delta: number) => void;
   resetMapColumnRatio: () => void;
@@ -140,6 +141,23 @@ export const hotkeyBindings: HotkeyBinding[] = [
 
   // --- System ---
   {
+    id: "open-go-to-character",
+    scope: "global",
+    match: (event, ctx) =>
+      ctx.openDialog === null &&
+      event.key.toLowerCase() === "g" &&
+      noPlainModifiers(event) &&
+      !event.shiftKey &&
+      !isEditableTarget(event.target) &&
+      !isTerminalTarget(event.target),
+    doc: { section: "Overlays", keys: "G", description: "Go to a character by name" },
+    run: (event, ctx) => {
+      event.preventDefault();
+      ctx.setGoToDialogOpen(true);
+      return true;
+    }
+  },
+  {
     id: "summon-shortcut",
     scope: "global",
     match: (event, ctx) =>
@@ -164,6 +182,11 @@ export const hotkeyBindings: HotkeyBinding[] = [
       if (ctx.openDialog === "rename") {
         event.preventDefault();
         ctx.closeRename();
+        return true;
+      }
+      if (ctx.openDialog === "goTo") {
+        event.preventDefault();
+        ctx.setGoToDialogOpen(false);
         return true;
       }
       if (ctx.openDialog === "batchSpawn") {
@@ -478,6 +501,7 @@ export const hotkeyBindings: HotkeyBinding[] = [
     match: (event) => parseControlGroupDigit(event) !== undefined,
     run: () => true
   },
+
 
   // --- Actions (an editable target swallows everything below, as before) ---
   {

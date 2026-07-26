@@ -68,6 +68,7 @@ function buildHotkeyContext(deps: AppHotkeyDeps): HotkeyContext {
     setBatchSpawnDialogOpen: state.setBatchSpawnDialogOpen,
     setShortcutsOverlayOpen: state.setShortcutsOverlayOpen,
     setPaletteOpen: state.setPaletteOpen,
+    setGoToDialogOpen: state.setGoToDialogOpen,
     setSpawnDialogOpen: state.setSpawnDialogOpen,
     nudgeMapColumnRatio: state.nudgeMapColumnRatio,
     resetMapColumnRatio: state.resetMapColumnRatio,

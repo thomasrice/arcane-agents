@@ -58,6 +58,7 @@ function baseContext(overrides: Partial<HotkeyContext> = {}): HotkeyContext {
     setBatchSpawnDialogOpen: vi.fn(),
     setShortcutsOverlayOpen: vi.fn(),
     setPaletteOpen: vi.fn(),
+    setGoToDialogOpen: vi.fn(),
     setSpawnDialogOpen: vi.fn(),
     nudgeMapColumnRatio: vi.fn(),
     resetMapColumnRatio: vi.fn(),
@@ -340,6 +341,67 @@ describe("confirm-dialog system hotkeys", () => {
     expect(runHotkeyRegistry(keydown({ key: "x", preventDefault: vi.fn() }), letterContext)).toBe(true);
     expect(letterContext.clearConfirm).toHaveBeenCalledOnce();
     expect(letterContext.confirmPending).not.toHaveBeenCalled();
+  });
+});
+
+describe("go-to Character hotkeys", () => {
+  it("opens the search on an unmodified G", () => {
+    const context = baseContext();
+    const preventDefault = vi.fn();
+
+    expect(runHotkeyRegistry(keydown({ key: "g", preventDefault }), context)).toBe(true);
+    expect(context.setGoToDialogOpen).toHaveBeenCalledWith(true);
+    expect(preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it("reserves bare G ahead of configured summon shortcuts", () => {
+    const context = baseContext({
+      shortcutHotkeyBindings: [
+        {
+          shortcutIndex: 2,
+          hotkey: { key: "g", ctrl: false, meta: false, alt: false, shift: false }
+        }
+      ]
+    });
+
+    expect(runHotkeyRegistry(keydown({ key: "g" }), context)).toBe(true);
+    expect(context.setGoToDialogOpen).toHaveBeenCalledWith(true);
+    expect(context.runSpawn).not.toHaveBeenCalled();
+  });
+
+  it("does not steal G from editable or terminal targets", () => {
+    class TargetElement {
+      readonly isContentEditable = false;
+
+      constructor(
+        readonly tagName: string,
+        private readonly terminal: boolean
+      ) {}
+
+      closest(selector: string): TargetElement | null {
+        return selector === ".terminal-panel" && this.terminal ? this : null;
+      }
+    }
+
+    vi.stubGlobal("HTMLElement", TargetElement);
+    try {
+      for (const target of [new TargetElement("INPUT", false), new TargetElement("DIV", true)]) {
+        const context = baseContext();
+        runHotkeyRegistry(keydown({ key: "g", target: target as unknown as EventTarget }), context);
+        expect(context.setGoToDialogOpen).not.toHaveBeenCalled();
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("closes the search on Escape", () => {
+    const context = baseContext({ openDialog: "goTo" });
+    const preventDefault = vi.fn();
+
+    expect(runHotkeyRegistry(keydown({ key: "Escape", preventDefault }), context)).toBe(true);
+    expect(context.setGoToDialogOpen).toHaveBeenCalledWith(false);
+    expect(preventDefault).toHaveBeenCalledOnce();
   });
 });
 
