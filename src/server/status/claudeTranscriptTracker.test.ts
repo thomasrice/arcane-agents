@@ -6,7 +6,7 @@ import type { Worker } from "../../shared/types";
 import { ClaudeTranscriptTracker, failedSessionLookupRetryMs } from "./claudeTranscriptTracker";
 import { correlationMtimeWindowMs, correlationRequiredStreak } from "./claudeTranscript/constants";
 import { resolveTranscriptPath } from "./claudeTranscript/io";
-import { findClaudeSessionStartTimeMs } from "./claudeTranscript/process";
+import { findClaudeSessionId, findClaudeSessionStartTimeMs } from "./claudeTranscript/process";
 
 // Golden safety-net for the orchestration seams the tracker owns: transcript
 // health surfacing (ok / absent / error), the failed-session-lookup retry
@@ -25,20 +25,26 @@ vi.mock("./claudeTranscript/io", async (importOriginal) => {
 });
 
 vi.mock("./claudeTranscript/process", () => ({
+  findClaudeSessionId: vi.fn(),
   findClaudeSessionStartTimeMs: vi.fn()
 }));
 
 const resolveSpy = vi.mocked(resolveTranscriptPath);
 const sessionStartMock = vi.mocked(findClaudeSessionStartTimeMs);
+const sessionIdMock = vi.mocked(findClaudeSessionId);
 
 let projectRoot: string;
+let runtimeSessionRoot: string;
 
 beforeEach(async () => {
   vi.clearAllMocks();
   sessionStartMock.mockResolvedValue(undefined);
+  sessionIdMock.mockResolvedValue(undefined);
   // resolveSpy keeps its passthrough implementation (real resolution against the
   // temp projectRoot); individual tests override it only per-call where needed.
   projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "arcane-claude-projects-"));
+  runtimeSessionRoot = path.join(projectRoot, "runtime");
+  await fs.mkdir(runtimeSessionRoot);
 });
 
 afterEach(async () => {
@@ -71,7 +77,7 @@ function createWorker(overrides: Partial<Worker> = {}): Worker {
 }
 
 function trackerForTemp(): ClaudeTranscriptTracker {
-  return new ClaudeTranscriptTracker({ projectRoot });
+  return new ClaudeTranscriptTracker({ projectRoot, runtimeSessionRoot });
 }
 
 function line(value: unknown): string {
@@ -118,6 +124,13 @@ async function setMtime(filePath: string, mtimeMs: number): Promise<void> {
 /** The real per-project transcript directory the tracker resolves for a worker. */
 function transcriptDirFor(worker: Worker): string {
   return path.join(projectRoot, worker.projectPath.replace(/[^a-zA-Z0-9-]/g, "-"));
+}
+
+async function writeRuntimeSession(worker: Worker, sessionId: string): Promise<number> {
+  const encodedProject = path.basename(transcriptDirFor(worker));
+  const sessionDir = path.join(runtimeSessionRoot, encodedProject, sessionId);
+  await fs.mkdir(sessionDir, { recursive: true });
+  return (await fs.stat(sessionDir)).birthtimeMs;
 }
 
 async function writeTranscript(worker: Worker, name: string, records: string[]): Promise<string> {
@@ -383,6 +396,60 @@ describe("ClaudeTranscriptTracker", () => {
     const a2 = await tracker.poll(workerA, "claude");
     expect(a2.snapshot).toBeUndefined();
     expect(a2.health).toBe("absent");
+  });
+
+  it("uses Claude runtime session identity when the first prompt is delayed beside a hot foreign transcript", async () => {
+    const worker = createWorker();
+    const sessionId = "3d844167-b84a-45f1-8037-ce8f03583ada";
+    const runtimeBirthMs = await writeRuntimeSession(worker, sessionId);
+    sessionStartMock.mockResolvedValue(runtimeBirthMs);
+
+    const correctPath = await writeTranscript(worker, `${sessionId}.jsonl`, [
+      assistantText("Want me to kick that off?", new Date(runtimeBirthMs + 128_000).toISOString()),
+      systemTurnDuration(new Date(runtimeBirthMs + 128_001).toISOString())
+    ]);
+    await writeTranscript(worker, "167cfb5d-80d5-4714-a4a0-bfea42810e74.jsonl", [
+      assistantToolUse("foreign-tool", "Bash", { command: "run design-system tests" })
+    ]);
+
+    const result = await trackerForTemp().poll(worker, "claude", worker.projectPath, 4242, {
+      paneOutputChanged: true
+    });
+
+    expect(result.health).toBe("ok");
+    expect(result.snapshot?.status).toBe("idle");
+    expect(result.attachment).toEqual({
+      path: correctPath,
+      kind: "runtime-session",
+      strength: "strong"
+    });
+  });
+
+  it("uses the live Claude --resume session id before start-time or correlation guesses", async () => {
+    const worker = createWorker();
+    const sessionId = "3d844167-b84a-45f1-8037-ce8f03583ada";
+    const processStartMs = Date.now();
+    sessionStartMock.mockResolvedValue(processStartMs);
+    sessionIdMock.mockResolvedValue(sessionId);
+
+    const correctPath = await writeTranscript(worker, `${sessionId}.jsonl`, [
+      assistantText("Want me to kick that off?", isoAgo(DAY_MS)),
+      systemTurnDuration(isoAgo(DAY_MS))
+    ]);
+    await writeTranscript(worker, "foreign.jsonl", [
+      assistantToolUse("foreign-tool", "Bash", { command: "run design-system tests" }, new Date(processStartMs).toISOString())
+    ]);
+
+    const result = await trackerForTemp().poll(worker, "claude", worker.projectPath, 4242, {
+      paneOutputChanged: true
+    });
+
+    expect(result.snapshot?.status).toBe("idle");
+    expect(result.attachment).toEqual({
+      path: correctPath,
+      kind: "process-session",
+      strength: "strong"
+    });
   });
 
   // --- Activity-correlation attachment (v1.4.1) ---

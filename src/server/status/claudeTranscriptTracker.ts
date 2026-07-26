@@ -12,11 +12,12 @@ import {
   type ResolvedTranscript
 } from "./claudeTranscript/io";
 import { extractTranscriptRecords } from "./claudeTranscript/parser";
-import { findClaudeSessionStartTimeMs } from "./claudeTranscript/process";
+import { findClaudeSessionId, findClaudeSessionStartTimeMs } from "./claudeTranscript/process";
 import { buildSnapshot } from "./claudeTranscript/snapshot";
 import type {
   ClaudeStatusSnapshot,
   ClaudeTranscriptState,
+  TranscriptAttachmentKind,
   TranscriptHealth,
   TranscriptMatchStrength
 } from "./claudeTranscript/types";
@@ -24,10 +25,17 @@ import { isLikelyClaudeSession } from "./runtimes/claude";
 
 export type { ClaudeStatusSnapshot, TranscriptHealth } from "./claudeTranscript/types";
 
-/** Result of one poll: the derived snapshot (if any) plus transcript health. */
+export interface ClaudeTranscriptAttachment {
+  path: string;
+  kind: TranscriptAttachmentKind;
+  strength: TranscriptMatchStrength;
+}
+
+/** Result of one poll: the derived snapshot, health, and resolved identity. */
 export interface ClaudeTranscriptPollResult {
   snapshot: ClaudeStatusSnapshot | undefined;
   health: TranscriptHealth;
+  attachment?: ClaudeTranscriptAttachment;
 }
 
 /**
@@ -42,6 +50,8 @@ export interface ClaudeTranscriptTrackerOptions {
   /** Root directory Claude stores transcripts under (default ~/.claude/projects).
    * Overridable so tests can resolve transcripts against a temp directory. */
   projectRoot?: string;
+  /** Claude live-session temp root; overridable for deterministic tests. */
+  runtimeSessionRoot?: string;
   /** Resolve a worker's transcript root from its live Claude process environment. */
   resolveProjectRoot?: (pid: number | undefined) => Promise<string>;
 }
@@ -57,11 +67,13 @@ export interface ClaudeTranscriptPollContext {
 export class ClaudeTranscriptTracker {
   private readonly states = new Map<string, ClaudeTranscriptState>();
   private readonly projectRootOverride: string | undefined;
+  private readonly runtimeSessionRoot: string | undefined;
   private readonly resolveProjectRoot: (pid: number | undefined) => Promise<string>;
   private readonly projectRootsByWorker = new Map<string, { pid: number | undefined; path: string }>();
 
   constructor(options: ClaudeTranscriptTrackerOptions = {}) {
     this.projectRootOverride = options.projectRoot;
+    this.runtimeSessionRoot = options.runtimeSessionRoot;
     this.resolveProjectRoot = options.resolveProjectRoot ?? resolveClaudeProjectRootForProcess;
   }
 
@@ -93,7 +105,9 @@ export class ClaudeTranscriptTracker {
         state,
         paneCurrentPath,
         nowMs,
+        ...(state.claudeSessionId ? { processSessionId: state.claudeSessionId } : {}),
         projectRoot,
+        ...(this.runtimeSessionRoot ? { runtimeSessionRoot: this.runtimeSessionRoot } : {}),
         paneOutputChanged: paneContext?.paneOutputChanged ?? false,
         isPathClaimedByOtherWorker: (transcriptPath) =>
           this.findTranscriptHolder(transcriptPath, worker.id) !== undefined
@@ -127,14 +141,18 @@ export class ClaudeTranscriptTracker {
         state.busyUntilMs = 0;
       }
     } catch {
-      return { snapshot: undefined, health: "error" };
+      return { snapshot: undefined, health: "error", attachment: this.attachmentFor(state) };
     }
 
-    return { snapshot: buildSnapshot(state, Date.now()), health: "ok" };
+    return {
+      snapshot: buildSnapshot(state, Date.now()),
+      health: "ok",
+      attachment: this.attachmentFor(state)
+    };
   }
 
   /**
-   * Resolve the Claude process start time once. On success it is cached forever;
+   * Resolve the Claude process identity once. On success it is cached forever;
    * on failure the lookup is retried after `failedSessionLookupRetryMs` rather
    * than being abandoned for the worker's lifetime.
    */
@@ -146,9 +164,13 @@ export class ClaudeTranscriptTracker {
       return;
     }
 
-    const startTime = await findClaudeSessionStartTimeMs(panePid).catch(() => undefined);
+    const [startTime, sessionId] = await Promise.all([
+      findClaudeSessionStartTimeMs(panePid).catch(() => undefined),
+      findClaudeSessionId(panePid).catch(() => undefined)
+    ]);
     if (startTime !== undefined) {
       state.claudeSessionStartAtMs = startTime;
+      state.claudeSessionId = sessionId;
       state.sessionStartLookup = { status: "resolved", nextRetryAtMs: 0 };
     } else {
       state.sessionStartLookup = { status: "failed", nextRetryAtMs: nowMs + failedSessionLookupRetryMs };
@@ -197,6 +219,7 @@ export class ClaudeTranscriptTracker {
     }
     state.transcriptPath = resolved.path;
     state.transcriptMatchStrength = strength;
+    state.transcriptAttachmentKind = resolved.kind;
     return true;
   }
 
@@ -220,6 +243,7 @@ export class ClaudeTranscriptTracker {
     resetTranscriptState(state);
     state.transcriptPath = undefined;
     state.transcriptMatchStrength = undefined;
+    state.transcriptAttachmentKind = undefined;
     state.nextTranscriptLookupAtMs = nowMs + transcriptLookupRetryMs;
   }
 
@@ -232,6 +256,18 @@ export class ClaudeTranscriptTracker {
     resetTranscriptState(state);
     state.transcriptPath = undefined;
     state.transcriptMatchStrength = undefined;
+    state.transcriptAttachmentKind = undefined;
+  }
+
+  private attachmentFor(state: ClaudeTranscriptState): ClaudeTranscriptAttachment | undefined {
+    if (!state.transcriptPath || !state.transcriptAttachmentKind || !state.transcriptMatchStrength) {
+      return undefined;
+    }
+    return {
+      path: state.transcriptPath,
+      kind: state.transcriptAttachmentKind,
+      strength: state.transcriptMatchStrength
+    };
   }
 
   private async projectRootFor(

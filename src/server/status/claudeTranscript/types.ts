@@ -54,13 +54,27 @@ export interface TranscriptCorrelationState {
   lastQualifyingPollMs: number;
 }
 
+export type TranscriptResolutionKind =
+  | "existing"
+  | "runtime-session"
+  | "process-session"
+  | "session-id"
+  | "session-start"
+  | "fallback"
+  | "correlation";
+
+export type TranscriptAttachmentKind = Exclude<TranscriptResolutionKind, "existing">;
+
 export interface ClaudeTranscriptState {
   transcriptPath?: string;
   /** Strength of the current `transcriptPath` attachment; undefined when none. */
   transcriptMatchStrength?: TranscriptMatchStrength;
+  /** Positive or heuristic resolution that established the current attachment. */
+  transcriptAttachmentKind?: TranscriptAttachmentKind;
   /** Activity-correlation streak used only while unattached. */
   correlation: TranscriptCorrelationState;
   claudeSessionStartAtMs?: number;
+  claudeSessionId?: string;
   sessionStartLookup: SessionStartLookupState;
   nextTranscriptLookupAtMs: number;
   fileOffset: number;

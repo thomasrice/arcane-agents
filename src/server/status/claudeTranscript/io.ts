@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { Worker } from "../../../shared/types";
 import {
@@ -13,7 +14,13 @@ import {
   transcriptLookupRetryMs
 } from "./constants";
 import { resetCorrelationState, resetTranscriptState } from "./accumulator";
-import type { ClaudeTranscriptState, TranscriptCorrelationState } from "./types";
+import type {
+  ClaudeTranscriptState,
+  TranscriptCorrelationState,
+  TranscriptResolutionKind
+} from "./types";
+
+export const runtimeSessionMatchWindowMs = 10_000;
 
 export function findClaudeProjectRootInEnvironment(environment: Uint8Array): string | undefined {
   const configEntry = Buffer.from(environment)
@@ -43,12 +50,17 @@ export async function resolveClaudeProjectRootForProcess(pid: number | undefined
 
 interface ResolvedTranscriptPathInput {
   worker: Worker;
+  /** Exact session UUID reported by the live Claude process command line. */
+  processSessionId?: string;
   state: ClaudeTranscriptState;
   paneCurrentPath: string | undefined;
   nowMs: number;
   /** Root under which Claude stores per-project transcripts. Defaults to
    * ~/.claude/projects; overridable so tests can resolve against a temp dir. */
   projectRoot?: string;
+  /** Root under which Claude stores live per-session runtime directories.
+   * Defaults to the current user's `claude-<uid>` temp directory. */
+  runtimeSessionRoot?: string;
   /** True when the pane produced fresh output since the previous poll. Gates
    * activity correlation: only a "qualifying" (changed) poll can advance a
    * correlation streak, which is what keeps an idle pane from ever attaching. */
@@ -61,14 +73,15 @@ interface ResolvedTranscriptPathInput {
 /**
  * How a transcript path was resolved. The tracker maps these to a match strength
  * for cross-worker exclusivity:
- *   - "existing"      re-confirmed this worker's still-present attachment (no contest)
- *   - "session-id"    exact file named by the pane's --session-id flag (strong)
- *   - "session-start" first record within the session-start window (strong)
- *   - "fallback"      bounded newest-mtime guess before start time is known (weak)
- *   - "correlation"   one candidate moved in lockstep with the pane over N
- *                     consecutive qualifying polls when no identity match applied (weak)
+ *   - "existing"        re-confirmed this worker's still-present attachment
+ *   - "process-session" exact UUID from the live Claude process command line
+ *   - "runtime-session" exact UUID from Claude's process/session runtime metadata
+ *   - "session-id"      exact file named by the pane's --session-id flag
+ *   - "session-start"   first record within the session-start window
+ *   - "fallback"        bounded newest-mtime guess before start time is known
+ *   - "correlation"     one candidate moved in lockstep with the pane over N polls
  */
-export type TranscriptResolutionKind = "existing" | "session-id" | "session-start" | "fallback" | "correlation";
+export type { TranscriptResolutionKind } from "./types";
 
 export interface ResolvedTranscript {
   path: string;
@@ -80,7 +93,9 @@ export async function resolveTranscriptPath({
   state,
   paneCurrentPath,
   nowMs,
+  processSessionId,
   projectRoot = claudeProjectRoot,
+  runtimeSessionRoot = defaultClaudeRuntimeSessionRoot(),
   paneOutputChanged,
   isPathClaimedByOtherWorker
 }: ResolvedTranscriptPathInput): Promise<ResolvedTranscript | undefined> {
@@ -97,20 +112,40 @@ export async function resolveTranscriptPath({
   }
 
   const candidateDirs = buildTranscriptCandidateDirs(projectRoot, worker.projectPath, paneCurrentPath);
-  const sessionId = extractSessionId(worker.command);
-  const workerCreatedAtMs = parseWorkerCreatedAtMs(worker.createdAt);
+  const processSessionPath = processSessionId
+    ? await findTranscriptForSessionId(candidateDirs, processSessionId)
+    : undefined;
+  if (processSessionPath) {
+    state.nextTranscriptLookupAtMs = 0;
+    return { path: processSessionPath, kind: "process-session" };
+  }
 
+  const commandSessionId = extractSessionId(worker.command);
+  const commandSessionPath = commandSessionId
+    ? await findTranscriptForSessionId(candidateDirs, commandSessionId)
+    : undefined;
+  if (commandSessionPath) {
+    state.nextTranscriptLookupAtMs = 0;
+    return { path: commandSessionPath, kind: "session-id" };
+  }
+
+  const runtimeSessionId = await findRuntimeSessionId(
+    runtimeSessionRoot,
+    candidateDirs,
+    state.claudeSessionStartAtMs
+  );
+  const runtimeSessionPath = runtimeSessionId
+    ? await findTranscriptForSessionId(candidateDirs, runtimeSessionId)
+    : undefined;
+  if (runtimeSessionPath) {
+    state.nextTranscriptLookupAtMs = 0;
+    return { path: runtimeSessionPath, kind: "runtime-session" };
+  }
+
+  const workerCreatedAtMs = parseWorkerCreatedAtMs(worker.createdAt);
   for (const transcriptDir of candidateDirs) {
     if (!(await isPathToDirectory(transcriptDir))) {
       continue;
-    }
-
-    if (sessionId) {
-      const directPath = path.join(transcriptDir, `${sessionId}.jsonl`);
-      if (await isPathToFile(directPath)) {
-        state.nextTranscriptLookupAtMs = 0;
-        return { path: directPath, kind: "session-id" };
-      }
     }
 
     const match = await findMatchingTranscriptFile(
@@ -142,6 +177,70 @@ export async function resolveTranscriptPath({
   state.nextTranscriptLookupAtMs = nowMs + transcriptLookupRetryMs;
   return undefined;
 }
+function defaultClaudeRuntimeSessionRoot(): string {
+  const uid = process.getuid?.() ?? os.userInfo().uid;
+  return path.join(os.tmpdir(), `claude-${uid}`);
+}
+
+async function findTranscriptForSessionId(candidateDirs: string[], sessionId: string): Promise<string | undefined> {
+  for (const transcriptDir of candidateDirs) {
+    const directPath = path.join(transcriptDir, `${sessionId}.jsonl`);
+    if (await isPathToFile(directPath)) {
+      return directPath;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Claude creates `/tmp/claude-<uid>/<encoded-project>/<session-uuid>` as the
+ * process starts, before the user submits a first prompt. Its birth time is
+ * therefore a better process identity than the transcript's first timestamp,
+ * which can lag launch by minutes while the user reads or types.
+ */
+async function findRuntimeSessionId(
+  runtimeSessionRoot: string,
+  candidateDirs: string[],
+  claudeSessionStartAtMs: number | undefined
+): Promise<string | undefined> {
+  if (claudeSessionStartAtMs === undefined) {
+    return undefined;
+  }
+
+  let bestSessionId: string | undefined;
+  let bestDistance = Infinity;
+  const projectDirNames = new Set(candidateDirs.map((candidateDir) => path.basename(candidateDir)));
+
+  for (const projectDirName of projectDirNames) {
+    const runtimeProjectDir = path.join(runtimeSessionRoot, projectDirName);
+    let entries;
+    try {
+      entries = await fs.readdir(runtimeProjectDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      try {
+        const stats = await fs.stat(path.join(runtimeProjectDir, entry.name));
+        const distance = Math.abs(stats.birthtimeMs - claudeSessionStartAtMs);
+        if (distance <= runtimeSessionMatchWindowMs && distance < bestDistance) {
+          bestSessionId = entry.name;
+          bestDistance = distance;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return bestSessionId;
+}
+
 
 interface ActivityCorrelationInput {
   correlation: TranscriptCorrelationState;

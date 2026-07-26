@@ -5,6 +5,7 @@ import type { PaneObservation } from "./paneObservation";
 import { ClaudeTranscriptTracker, type ClaudeStatusSnapshot, type TranscriptHealth } from "./claudeTranscriptTracker";
 import { truncateWithEllipsis } from "./runtimes/terminalText";
 import { collectSignals, type WorkerSignals } from "./collectSignals";
+import type { ClaudeTranscriptAttachment } from "./claudeTranscriptTracker";
 import { decide, type StatusDecisionFacts, type StatusReason, type WorkerStatusDecision } from "./decide";
 import type { RuntimeAdapterId, RuntimeSignals } from "./runtimes/adapter";
 import type { AgentRuntimeProcess } from "./runtimes/runtimeProcess";
@@ -20,6 +21,7 @@ export interface WorkerStatusDebugSnapshot {
   previousStatus: Worker["status"];
   evaluatedAt: string;
   decision: WorkerStatusDecision;
+  transcriptAttachment?: ClaudeTranscriptAttachment;
 }
 
 export interface WorkerStatusTransitionRecord {
@@ -494,7 +496,7 @@ export class StatusMonitor {
       };
     }
 
-    this.recordStatusDebug(worker, evaluation);
+    this.recordStatusDebug(worker, evaluation, signals);
     this.traceStatusEvaluation(worker, evaluation);
     this.recordStatusEvaluationSample(worker, evaluation, decisionAtMs);
     if (signals) {
@@ -601,13 +603,18 @@ export class StatusMonitor {
     );
   }
 
-  private recordStatusDebug(worker: Worker, evaluation: WorkerStatusDecision): void {
+  private recordStatusDebug(
+    worker: Worker,
+    evaluation: WorkerStatusDecision,
+    signals: WorkerSignals | undefined
+  ): void {
     this.statusDebugByWorker.set(worker.id, {
       workerId: worker.id,
       workerName: worker.displayName ?? worker.name,
       previousStatus: worker.status,
       evaluatedAt: new Date().toISOString(),
-      decision: evaluation
+      decision: evaluation,
+      transcriptAttachment: signals?.transcriptAttachment
     });
   }
 

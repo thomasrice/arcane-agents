@@ -2,7 +2,12 @@ import type { Worker } from "../../shared/types";
 import { TmuxAdapter } from "../tmux/tmuxAdapter";
 import { parseActivity, type ParsedActivity } from "./activityParser";
 import { observePane, type PaneObservation } from "./paneObservation";
-import { ClaudeTranscriptTracker, type ClaudeStatusSnapshot, type TranscriptHealth } from "./claudeTranscriptTracker";
+import {
+  ClaudeTranscriptTracker,
+  type ClaudeStatusSnapshot,
+  type ClaudeTranscriptAttachment,
+  type TranscriptHealth
+} from "./claudeTranscriptTracker";
 import { resolveRuntimeAdapter, type RuntimeAdapter, type RuntimeSignals } from "./runtimes/adapter";
 import { resolvePaneAgentRuntimeProcess, type AgentRuntimeProcess } from "./runtimes/runtimeProcess";
 import {
@@ -28,6 +33,7 @@ export interface WorkerSignals {
   visibleOutput?: string;
   observation: PaneObservation;
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
+  transcriptAttachment?: ClaudeTranscriptAttachment;
   parsed: { activity: ParsedActivity };
   runtime: RuntimeAdapter;
   runtimeSignals: RuntimeSignals;
@@ -50,6 +56,7 @@ export interface EvaluateWorkerStatusInput {
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
   /** Optional; defaults from whether a snapshot is present (test convenience). */
   transcriptHealth?: TranscriptHealth;
+  transcriptAttachment?: ClaudeTranscriptAttachment;
   runtimeProcess: AgentRuntimeProcess | undefined;
   interactiveCommands: ReadonlySet<string>;
   runtimeFreshnessWindowMs: number | undefined;
@@ -109,6 +116,7 @@ export function buildWorkerSignals(input: EvaluateWorkerStatusInput): WorkerSign
     output: input.output,
     observation: input.observation,
     transcriptSnapshot: input.transcriptSnapshot,
+    transcriptAttachment: input.transcriptAttachment,
     visibleOutput: input.visibleOutput,
     parsed: parseActivity(input.currentCommand, input.output),
     runtime,
@@ -178,6 +186,7 @@ export async function collectSignals({
     visibleOutput,
     transcriptSnapshot: transcript.snapshot,
     transcriptHealth: transcript.health,
+    transcriptAttachment: transcript.attachment,
     runtimeProcess,
     interactiveCommands,
     runtimeFreshnessWindowMs,

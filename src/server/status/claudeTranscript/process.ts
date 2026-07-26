@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs/promises";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -11,6 +12,36 @@ export async function findClaudeSessionStartTimeMs(panePid: number): Promise<num
   }
 
   return getProcessStartTimeMs(claudePid);
+}
+
+export async function findClaudeSessionId(panePid: number): Promise<string | undefined> {
+  const claudePid = await findClaudeChildPid(panePid, 0);
+  if (!claudePid) {
+    return undefined;
+  }
+
+  try {
+    const command = (await fs.readFile(`/proc/${claudePid}/cmdline`))
+      .toString("utf8")
+      .split("\0")
+      .filter(Boolean);
+    return extractSessionId(command);
+  } catch {
+    return undefined;
+  }
+}
+
+function extractSessionId(command: string[]): string | undefined {
+  for (let index = 0; index < command.length; index += 1) {
+    const argument = command[index];
+    if (argument === "--resume" || argument === "-r" || argument === "--session-id") {
+      return command[index + 1];
+    }
+    if (argument?.startsWith("--resume=") || argument?.startsWith("--session-id=")) {
+      return argument.slice(argument.indexOf("=") + 1) || undefined;
+    }
+  }
+  return undefined;
 }
 
 async function findClaudeChildPid(parentPid: number, depth: number): Promise<number | undefined> {

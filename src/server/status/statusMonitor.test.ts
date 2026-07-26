@@ -464,7 +464,17 @@ describe("StatusMonitor", () => {
 
     // Status never changes, so no transition is captured — but a latest-inputs slot
     // is still recorded every poll.
-    collectMock.mockResolvedValue(makeSignals({ output: "CURRENT-PANE", currentCommand: "claude" }));
+    collectMock.mockResolvedValue(
+      makeSignals({
+        output: "CURRENT-PANE",
+        currentCommand: "claude",
+        transcriptAttachment: {
+          path: "/home/thomas/.claude/projects/project/session.jsonl",
+          kind: "runtime-session",
+          strength: "strong"
+        }
+      })
+    );
     decideMock.mockImplementation(() => makeEvaluation("idle"));
 
     const monitor = makeMonitor(repository, liveTmux());
@@ -484,6 +494,11 @@ describe("StatusMonitor", () => {
     }
     expect(currentView.document.fixture?.output).toBe("CURRENT-PANE");
     expect(currentView.document.fixture?.priorStatus).toBe("idle");
+    expect(monitor.getWorkerStatusDebug(worker.id)?.transcriptAttachment).toEqual({
+      path: "/home/thomas/.claude/projects/project/session.jsonl",
+      kind: "runtime-session",
+      strength: "strong"
+    });
 
     const unknown = monitor.buildStatusFixture("does-not-exist", { useCurrent: false, transitionIndex: undefined });
     expect(unknown.found).toBe(false);
