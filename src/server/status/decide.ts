@@ -1,7 +1,7 @@
 import type { Worker } from "../../shared/types";
 import type { PaneObservation } from "./paneObservation";
 import type { ParsedActivity } from "./activityParser";
-import type { ClaudeStatusSnapshot, TranscriptHealth } from "./claudeTranscriptTracker";
+import type { ClaudeStatusSnapshot, ClaudeTranscriptAttachment, TranscriptHealth } from "./claudeTranscriptTracker";
 import type { AgentRuntimeProcess, KnownAgentRuntime } from "./runtimes/runtimeProcess";
 import type { CustomStatusRuleMatch } from "./customStatusRules";
 import type { RuntimeAdapter, RuntimeAdapterId, RuntimeSignals } from "./runtimes/adapter";
@@ -87,6 +87,7 @@ interface DecisionContext {
   observation: PaneObservation;
   transcriptSnapshot: ClaudeStatusSnapshot | undefined;
   transcriptHealth: TranscriptHealth;
+  transcriptAttachment: ClaudeTranscriptAttachment | undefined;
   parsed: { activity: ParsedActivity };
   runtime: RuntimeAdapter;
   runtimeSignals: RuntimeSignals;
@@ -158,6 +159,7 @@ function toDecisionContext(worker: Worker, signals: WorkerSignals, nowMs: number
     observation: signals.observation,
     transcriptSnapshot: signals.transcriptSnapshot,
     transcriptHealth: signals.transcriptHealth,
+    transcriptAttachment: signals.transcriptAttachment,
     parsed: signals.parsed,
     runtime: signals.runtime,
     runtimeSignals: rs,
@@ -220,6 +222,7 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
   };
 
   const transcriptStatus = context.transcriptSnapshot?.status;
+  const hasTrustedTranscriptWorking = hasTrustedTranscriptWorkingSignal(context);
   if (context.customStatusRule) {
     const { ruleId, outcome } = context.customStatusRule;
     pushReason({
@@ -338,7 +341,7 @@ function deriveWorkerStatusDecision(context: DecisionContext): WorkerStatusDecis
 
 
   const parserErrorClassification = isInteractiveCommand(context) ? "none" : classifyParserError(context);
-  if (parserErrorClassification === "fatal" && transcriptStatus !== "working") {
+  if (parserErrorClassification === "fatal" && !hasTrustedTranscriptWorking) {
     pushReason({
       code: "parser-error-signal",
       message: "Recent fatal error pattern detected in terminal output.",
@@ -536,6 +539,22 @@ function finalizeDecision(
 // Working evidence
 // ---------------------------------------------------------------------------
 
+/**
+ * A strong attachment is authoritative even when the terminal is quiet. A
+ * weak activity-correlation attachment is only evidence while the same pane
+ * remains fresh; after that window, unrelated transcript writes must not wake
+ * an idle Character.
+ */
+function hasTrustedTranscriptWorkingSignal(context: DecisionContext): boolean {
+  if (context.transcriptSnapshot?.status !== "working") {
+    return false;
+  }
+  if (context.transcriptAttachment?.strength !== "weak") {
+    return true;
+  }
+  return context.outputQuietForMs <= statusFreshnessWindowMs(context.runtime, context.runtimeFreshnessWindowMs);
+}
+
 function collectWorkingEvidence(context: DecisionContext, hasRecoverableParserError: boolean): WorkingEvidence {
   const strongReasons: StatusReason[] = [];
   const weakReasons: StatusReason[] = [];
@@ -565,11 +584,11 @@ function collectWorkingEvidence(context: DecisionContext, hasRecoverableParserEr
     (Boolean(context.parsed.activity.filePath) ||
       (Boolean(context.parsed.activity.tool) && context.parsed.activity.tool !== "terminal"));
 
-  if (context.transcriptSnapshot?.status === "working") {
+  if (hasTrustedTranscriptWorkingSignal(context)) {
     strongReasons.push({ code: "transcript-working", message: "Transcript reports active work." });
-    pushMaybe(activityTextCandidates, context.transcriptSnapshot.activityText);
-    activityToolCandidates.push(context.transcriptSnapshot.activityTool);
-    pushMaybe(activityPathCandidates, context.transcriptSnapshot.activityPath);
+    pushMaybe(activityTextCandidates, context.transcriptSnapshot?.activityText);
+    activityToolCandidates.push(context.transcriptSnapshot?.activityTool);
+    pushMaybe(activityPathCandidates, context.transcriptSnapshot?.activityPath);
   }
 
   if (context.activeClaudeTask) {
@@ -756,7 +775,7 @@ function labelRuntime(runtime: KnownAgentRuntime): string {
 // ---------------------------------------------------------------------------
 
 function detectPromptDominantIdle(context: DecisionContext): StatusReason | undefined {
-  if (context.transcriptSnapshot?.status === "working" || context.activeClaudeTask) {
+  if (hasTrustedTranscriptWorkingSignal(context) || context.activeClaudeTask) {
     return undefined;
   }
 
@@ -801,7 +820,7 @@ function detectPromptDominantIdle(context: DecisionContext): StatusReason | unde
 }
 
 function detectIdleBlocker(context: DecisionContext, evidence: WorkingEvidence): IdleBlocker | undefined {
-  if (isShellCommand(context.commandLower) && context.transcriptSnapshot?.status !== "working") {
+  if (isShellCommand(context.commandLower) && !hasTrustedTranscriptWorkingSignal(context)) {
     if (hasAnyWorkingEvidence(evidence)) {
       return undefined;
     }
@@ -818,7 +837,7 @@ function detectIdleBlocker(context: DecisionContext, evidence: WorkingEvidence):
     context.isClaudeSession &&
     context.runtime.spawnGraceMs !== undefined &&
     context.workerAgeMs <= context.runtime.spawnGraceMs &&
-    context.transcriptSnapshot?.status !== "working" &&
+    !hasTrustedTranscriptWorkingSignal(context) &&
     !context.activeClaudeTask &&
     !context.hasClaudeProgressSignal
   ) {
@@ -866,7 +885,7 @@ function detectIdleBlocker(context: DecisionContext, evidence: WorkingEvidence):
   const activeWindowMs = statusFreshnessWindowMs(context.runtime, context.runtimeFreshnessWindowMs);
   if (
     context.outputQuietForMs > activeWindowMs &&
-    context.transcriptSnapshot?.status !== "working" &&
+    !hasTrustedTranscriptWorkingSignal(context) &&
     !context.hasLiveGenericProcess
   ) {
     return {

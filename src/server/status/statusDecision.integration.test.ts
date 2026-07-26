@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PromptSignature, StatusRule, Worker } from "../../shared/types";
-import type { ClaudeStatusSnapshot } from "./claudeTranscriptTracker";
+import type { ClaudeStatusSnapshot, ClaudeTranscriptAttachment } from "./claudeTranscriptTracker";
 import type { PaneObservation } from "./paneObservation";
 import type { AgentRuntimeProcess } from "./runtimes/runtimeProcess";
 import { evaluateWorkerStatus } from "./decide";
@@ -71,6 +71,7 @@ interface EvaluateOptions {
   currentCommand?: string;
   priorActivityText?: string;
   transcriptSnapshot?: ClaudeStatusSnapshot;
+  transcriptAttachment?: ClaudeTranscriptAttachment;
   runtimeProcess?: AgentRuntimeProcess;
   interactiveCommands?: ReadonlySet<string>;
   runtimeFreshnessWindowMs?: number;
@@ -128,6 +129,7 @@ function evaluate(opts: EvaluateOptions) {
     visibleOutput: opts.visibleOutput ?? (opts.promptSignatures ? opts.output : undefined),
     observation,
     transcriptSnapshot: opts.transcriptSnapshot,
+    transcriptAttachment: opts.transcriptAttachment,
     runtimeProcess: opts.runtimeProcess,
     interactiveCommands: opts.interactiveCommands ?? new Set<string>(),
     runtimeFreshnessWindowMs: opts.runtimeFreshnessWindowMs,
@@ -305,7 +307,7 @@ describe("status decision — Claude runtime", () => {
     expect(reasonCodes(result)).toContain("parser-error-signal");
   });
 
-  it("lets a busy transcript snapshot override an idle-looking pane (guards against false idle)", () => {
+  it("lets a strong busy transcript override an idle-looking pane", () => {
     // Pane shows a bare prompt and stale output, but the transcript tracker knows
     // Claude is mid-edit. Transcript-working wins.
     const output = ["Waiting…", "", "❯"].join("\n");
@@ -319,6 +321,54 @@ describe("status decision — Claude runtime", () => {
         activityText: "Editing src/app.ts",
         activityTool: "edit",
         activityPath: "src/app.ts"
+      },
+      transcriptAttachment: {
+        path: "/tmp/strong.jsonl",
+        kind: "process-session",
+        strength: "strong"
+      }
+    });
+
+    expect(result.status).toBe("working");
+    expect(reasonCodes(result)).toContain("transcript-working");
+  });
+
+  it("ignores a weakly correlated working transcript when the local pane is stale", () => {
+    const result = evaluate({
+      runtime: "claude",
+      output: ["Watching the background task.", "", "❯"].join("\n"),
+      outputQuietForMs: 600_000,
+      transcriptSnapshot: {
+        status: "working",
+        activityText: "Editing an unrelated project",
+        activityTool: "edit"
+      },
+      transcriptAttachment: {
+        path: "/tmp/foreign.jsonl",
+        kind: "correlation",
+        strength: "weak"
+      }
+    });
+
+    expect(result.status).toBe("idle");
+    expect(reasonCodes(result)).toContain("output-stale-idle");
+    expect(reasonCodes(result)).not.toContain("transcript-working");
+  });
+
+  it("uses a weakly correlated working transcript while the local pane is fresh", () => {
+    const result = evaluate({
+      runtime: "claude",
+      output: "✻ Working…",
+      outputQuietForMs: 1_000,
+      transcriptSnapshot: {
+        status: "working",
+        activityText: "Editing src/app.ts",
+        activityTool: "edit"
+      },
+      transcriptAttachment: {
+        path: "/tmp/correlated.jsonl",
+        kind: "correlation",
+        strength: "weak"
       }
     });
 
