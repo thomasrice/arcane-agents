@@ -1,6 +1,8 @@
 import type { BroadcastInputResult, Worker } from "../../shared/types";
 import {
+  audioVolumeStorageKey,
   controlGroupStorageKey,
+  defaultAudioVolume,
   defaultMapColumnRatio,
   layoutSplitStorageKey,
   maxMapColumnRatio,
@@ -125,6 +127,69 @@ export function persistMapColumnRatio(value: number): void {
 
   try {
     window.localStorage.setItem(layoutSplitStorageKey, String(clampNumber(value, minMapColumnRatio, maxMapColumnRatio)));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export interface AudioVolumeState {
+  audioVolume: number;
+  lastAudibleAudioVolume: number;
+}
+
+export function loadAudioVolumeStateFromStorage(): AudioVolumeState {
+  const fallback = {
+    audioVolume: defaultAudioVolume,
+    lastAudibleAudioVolume: defaultAudioVolume
+  };
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(audioVolumeStorageKey);
+    if (!raw) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return fallback;
+    }
+
+    const candidate = parsed as Partial<AudioVolumeState>;
+    const audioVolume =
+      typeof candidate.audioVolume === "number" && Number.isFinite(candidate.audioVolume)
+        ? clampNumber(candidate.audioVolume, 0, 1)
+        : defaultAudioVolume;
+    const lastAudibleAudioVolume =
+      typeof candidate.lastAudibleAudioVolume === "number" &&
+      Number.isFinite(candidate.lastAudibleAudioVolume) &&
+      candidate.lastAudibleAudioVolume > 0
+        ? clampNumber(candidate.lastAudibleAudioVolume, 0, 1)
+        : audioVolume > 0
+          ? audioVolume
+          : defaultAudioVolume;
+
+    return { audioVolume, lastAudibleAudioVolume };
+  } catch {
+    return fallback;
+  }
+}
+
+export function persistAudioVolumeState(audioVolume: number, lastAudibleAudioVolume: number): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      audioVolumeStorageKey,
+      JSON.stringify({
+        audioVolume: clampNumber(audioVolume, 0, 1),
+        lastAudibleAudioVolume: clampNumber(lastAudibleAudioVolume, 0, 1)
+      })
+    );
   } catch {
     // ignore storage errors
   }

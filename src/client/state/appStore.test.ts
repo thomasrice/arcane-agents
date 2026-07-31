@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Worker } from "../../shared/types";
 import { useAppStore } from "./appStore";
 import { selectActiveWorkers, selectConfirmWorkers, selectRenameTargetWorkers } from "./selectors";
@@ -41,7 +41,9 @@ beforeEach(() => {
     renameTargetWorkerIds: [],
     renameDraft: "",
     respawningWorkerIds: [],
-    controlGroups: {}
+    controlGroups: {},
+    audioVolume: 0.35,
+    lastAudibleAudioVolume: 0.35
   });
 });
 
@@ -329,5 +331,44 @@ describe("confirm flow", () => {
     // Stopped workers still resolve for confirm/rename targeting.
     expect(selectConfirmWorkers(useAppStore.getState()).map((w) => w.id)).toEqual(["b"]);
     expect(selectRenameTargetWorkers(useAppStore.getState()).map((w) => w.id)).toEqual(["a"]);
+  });
+});
+
+describe("audio volume", () => {
+  it("clamps slider changes and restores the last audible level after muting", () => {
+    const store = useAppStore.getState();
+
+    store.setAudioVolume(0.42);
+    expect(useAppStore.getState().audioVolume).toBe(0.42);
+    expect(useAppStore.getState().lastAudibleAudioVolume).toBe(0.42);
+
+    store.toggleAudioMuted();
+    expect(useAppStore.getState().audioVolume).toBe(0);
+    expect(useAppStore.getState().lastAudibleAudioVolume).toBe(0.42);
+
+    useAppStore.getState().toggleAudioMuted();
+    expect(useAppStore.getState().audioVolume).toBe(0.42);
+
+    useAppStore.getState().setAudioVolume(2);
+    expect(useAppStore.getState().audioVolume).toBe(1);
+  });
+
+  it("persists both the muted level and the level to restore", () => {
+    const setItem = vi.fn();
+    vi.stubGlobal("window", { localStorage: { setItem } });
+
+    try {
+      const store = useAppStore.getState();
+      store.setAudioVolume(0.62);
+      useAppStore.getState().toggleAudioMuted();
+
+      const serialized = setItem.mock.lastCall?.[1];
+      expect(JSON.parse(serialized)).toEqual({
+        audioVolume: 0,
+        lastAudibleAudioVolume: 0.62
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

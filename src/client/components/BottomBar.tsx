@@ -1,8 +1,11 @@
+import type { CSSProperties } from "react";
 import type { ShortcutConfig, Worker } from "../../shared/types";
 
 interface BottomBarProps {
   shortcuts: ShortcutConfig[];
   selectedWorkers: Worker[];
+  soundEnabled: boolean;
+  audioVolume: number;
   onSpawnShortcut: (shortcutIndex: number) => void;
   onOpenSpawnDialog: () => void;
   onOpenPalette: () => void;
@@ -13,6 +16,8 @@ interface BottomBarProps {
   onToggleMovementMode: () => void;
   onToggleSilenced: () => void;
   onScatterSelected: () => void;
+  onAudioVolumeChange: (value: number) => void;
+  onToggleAudioMuted: () => void;
 }
 
 function SilenceIcon({ crossedOut }: { crossedOut: boolean }): JSX.Element {
@@ -26,9 +31,71 @@ function SilenceIcon({ crossedOut }: { crossedOut: boolean }): JSX.Element {
   );
 }
 
+function VolumeIcon({ muted }: { muted: boolean }): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 10v4h3l4 3V7l-4 3H4Z" />
+      <path d="M14 9.5c1 .75 1.5 1.6 1.5 2.5s-.5 1.75-1.5 2.5" />
+      <path d="M16.5 7c1.7 1.35 2.5 3.05 2.5 5s-.8 3.65-2.5 5" />
+      {muted ? <path className="volume-icon-slash" d="M5 5l14 14" /> : null}
+    </svg>
+  );
+}
+
+interface VolumeControlProps {
+  soundEnabled: boolean;
+  audioVolume: number;
+  onAudioVolumeChange: (value: number) => void;
+  onToggleAudioMuted: () => void;
+}
+
+function VolumeControl({
+  soundEnabled,
+  audioVolume,
+  onAudioVolumeChange,
+  onToggleAudioMuted
+}: VolumeControlProps): JSX.Element {
+  const volumePercent = Math.round(audioVolume * 100);
+  const muted = audioVolume === 0;
+  const disabledTitle = "Voice lines are disabled in Arcane's configuration";
+  const muteLabel = muted ? "Unmute voice lines" : "Mute voice lines";
+  const sliderStyle = { "--volume-progress": `${volumePercent}%` } as CSSProperties;
+
+  return (
+    <div className={`volume-control${soundEnabled ? "" : " disabled"}`} title={soundEnabled ? `${volumePercent}%` : disabledTitle}>
+      <button
+        type="button"
+        className={`volume-mute-btn${muted ? " muted" : ""}`}
+        onClick={onToggleAudioMuted}
+        disabled={!soundEnabled}
+        aria-label={muteLabel}
+        aria-pressed={muted}
+        title={soundEnabled ? muteLabel : disabledTitle}
+      >
+        <VolumeIcon muted={muted} />
+      </button>
+      <input
+        className="volume-slider"
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value={volumePercent}
+        onChange={(event) => onAudioVolumeChange(Number(event.currentTarget.value) / 100)}
+        disabled={!soundEnabled}
+        aria-label="Voice line volume"
+        aria-valuetext={`${volumePercent}%`}
+        style={sliderStyle}
+      />
+    </div>
+  );
+}
+
 export function BottomBar({
   shortcuts,
   selectedWorkers,
+  soundEnabled,
+  audioVolume,
   onSpawnShortcut,
   onOpenSpawnDialog,
   onOpenPalette,
@@ -38,7 +105,9 @@ export function BottomBar({
   onRenameSelected,
   onToggleMovementMode,
   onToggleSilenced,
-  onScatterSelected
+  onScatterSelected,
+  onAudioVolumeChange,
+  onToggleAudioMuted
 }: BottomBarProps): JSX.Element {
   if (selectedWorkers.length > 0) {
     const stopped = selectedWorkers.every((worker) => worker.status === "stopped");
@@ -98,6 +167,12 @@ export function BottomBar({
         <button className="bar-btn danger" onClick={onKillSelected} disabled={stopped}>
           Kill
         </button>
+        <VolumeControl
+          soundEnabled={soundEnabled}
+          audioVolume={audioVolume}
+          onAudioVolumeChange={onAudioVolumeChange}
+          onToggleAudioMuted={onToggleAudioMuted}
+        />
       </div>
     );
   }
@@ -117,6 +192,12 @@ export function BottomBar({
       <button className="bar-btn subtle" onClick={onOpenPalette}>
         /
       </button>
+      <VolumeControl
+        soundEnabled={soundEnabled}
+        audioVolume={audioVolume}
+        onAudioVolumeChange={onAudioVolumeChange}
+        onToggleAudioMuted={onToggleAudioMuted}
+      />
     </div>
   );
 }

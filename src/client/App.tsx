@@ -36,6 +36,7 @@ export default function App(): JSX.Element {
   const rosterActiveIndex = useAppStore((state) => state.rosterActiveIndex);
   const selectedGroupActiveIndex = useAppStore((state) => state.selectedGroupActiveIndex);
   const mapColumnRatio = useAppStore((state) => state.mapColumnRatio);
+  const audioVolume = useAppStore((state) => state.audioVolume);
   const syncReviewSession = useAppStore((state) => state.syncReviewSession);
 
   const terminalActions = useAppStore(
@@ -65,6 +66,7 @@ export default function App(): JSX.Element {
 
   const { playArrivalVoiceLine, playMoveVoiceLine } = useWorkerVoiceLines({
     config,
+    audioVolume,
     workers: voiceLineWorkers,
     workersHydrated,
     selectedWorkerIds

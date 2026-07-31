@@ -14,6 +14,7 @@ const defaultVoiceLineVariantFileNames: Record<VoiceLineVariantPrefix, string[]>
 
 interface UseWorkerVoiceLinesInput {
   config: ResolvedConfig | null;
+  audioVolume: number;
   workers: Worker[];
   workersHydrated: boolean;
   selectedWorkerIds: string[];
@@ -24,7 +25,13 @@ interface UseWorkerVoiceLinesResult {
   playMoveVoiceLine: (workerId: string) => void;
 }
 
-export function useWorkerVoiceLines({ config, workers, workersHydrated, selectedWorkerIds }: UseWorkerVoiceLinesInput): UseWorkerVoiceLinesResult {
+export function useWorkerVoiceLines({
+  config,
+  audioVolume,
+  workers,
+  workersHydrated,
+  selectedWorkerIds
+}: UseWorkerVoiceLinesInput): UseWorkerVoiceLinesResult {
   const soundEnabled = config?.audio.enableSound ?? true;
   const previousWorkersByIdRef = useRef<Map<string, Worker>>(new Map());
   const previousSelectedWorkerIdSetRef = useRef<Set<string>>(new Set());
@@ -39,10 +46,19 @@ export function useWorkerVoiceLines({ config, workers, workersHydrated, selected
   const availabilityByUrlRef = useRef<Map<string, boolean>>(new Map());
   const preloadedUrlSetRef = useRef<Set<string>>(new Set());
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioVolumeRef = useRef(audioVolume);
 
   useEffect(() => {
     workersByIdRef.current = new Map(workers.map((worker) => [worker.id, worker]));
   }, [workers]);
+
+  useEffect(() => {
+    audioVolumeRef.current = audioVolume;
+    const activeAudio = activeAudioRef.current;
+    if (activeAudio) {
+      activeAudio.volume = audioVolume;
+    }
+  }, [audioVolume]);
 
   const resolveVoiceLineUrl = useCallback((avatarType: string, event: VoiceLineEvent): string => {
     return voiceLineEventUrl(avatarType, event);
@@ -107,6 +123,7 @@ export function useWorkerVoiceLines({ config, workers, workersHydrated, selected
 
       const audio = new Audio(url);
       audio.preload = "auto";
+      audio.volume = audioVolumeRef.current;
       audio.addEventListener(
         "canplay",
         () => {

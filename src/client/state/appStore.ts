@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import type { ResolvedConfig, Worker } from "../../shared/types";
-import { defaultMapColumnRatio, maxMapColumnRatio, minMapColumnRatio } from "../app/constants";
+import { defaultAudioVolume, defaultMapColumnRatio, maxMapColumnRatio, minMapColumnRatio } from "../app/constants";
 import type { ConfirmKind, ControlGroupMap, OpenDialog, PendingConfirm } from "../app/types";
 import {
   clampNumber,
+  loadAudioVolumeStateFromStorage,
   loadControlGroupsFromStorage,
   loadMapColumnRatioFromStorage,
+  persistAudioVolumeState,
   persistControlGroups,
   persistMapColumnRatio,
   upsertWorker as upsertWorkerInList
@@ -46,6 +48,8 @@ export interface AppState {
   // Layout & control groups
   mapColumnRatio: number;
   controlGroups: ControlGroupMap;
+  audioVolume: number;
+  lastAudibleAudioVolume: number;
 }
 
 export interface AppActions {
@@ -100,6 +104,8 @@ export interface AppActions {
   nudgeMapColumnRatio: (delta: number) => void;
   resetMapColumnRatio: () => void;
   setControlGroups: (update: Updater<ControlGroupMap>) => void;
+  setAudioVolume: (value: number) => void;
+  toggleAudioMuted: () => void;
 }
 
 export type AppStore = AppState & AppActions;
@@ -116,6 +122,21 @@ function commitMapColumnRatio(current: number, next: number): Partial<AppState> 
 
   persistMapColumnRatio(clamped);
   return { mapColumnRatio: clamped };
+}
+
+function commitAudioVolume(
+  current: number,
+  lastAudible: number,
+  next: number
+): Partial<AppState> {
+  const audioVolume = clampNumber(next, 0, 1);
+  const lastAudibleAudioVolume = audioVolume > 0 ? audioVolume : lastAudible;
+  if (audioVolume === current && lastAudibleAudioVolume === lastAudible) {
+    return {};
+  }
+
+  persistAudioVolumeState(audioVolume, lastAudibleAudioVolume);
+  return { audioVolume, lastAudibleAudioVolume };
 }
 
 function collectReadyWorkerIds(
@@ -178,6 +199,8 @@ function cycleWorkerSelection(
   state.applySelection([nextWorker.id], { center: true, preserveReviewSession });
 }
 
+const initialAudioVolumeState = loadAudioVolumeStateFromStorage();
+
 export const useAppStore = create<AppStore>()((set, get) => ({
   config: null,
   workers: [],
@@ -198,6 +221,8 @@ export const useAppStore = create<AppStore>()((set, get) => ({
 
   mapColumnRatio: loadMapColumnRatioFromStorage(),
   controlGroups: loadControlGroupsFromStorage(),
+  audioVolume: initialAudioVolumeState.audioVolume,
+  lastAudibleAudioVolume: initialAudioVolumeState.lastAudibleAudioVolume,
 
   setConfig: (config) => set({ config }),
   setWorkers: (workers) => set({ workers, workersHydrated: true }),
@@ -417,5 +442,19 @@ export const useAppStore = create<AppStore>()((set, get) => ({
 
       persistControlGroups(next);
       return { controlGroups: next };
-    })
+    }),
+  setAudioVolume: (value) =>
+    set((state) => commitAudioVolume(state.audioVolume, state.lastAudibleAudioVolume, value)),
+  toggleAudioMuted: () =>
+    set((state) =>
+      commitAudioVolume(
+        state.audioVolume,
+        state.lastAudibleAudioVolume,
+        state.audioVolume > 0
+          ? 0
+          : state.lastAudibleAudioVolume > 0
+            ? state.lastAudibleAudioVolume
+            : defaultAudioVolume
+      )
+    )
 }));

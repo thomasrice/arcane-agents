@@ -1,5 +1,7 @@
 export const controlGroupStorageKey = "arcane-agents.control-groups.v1";
 export const layoutSplitStorageKey = "arcane-agents.layout-split.v1";
+export const audioVolumeStorageKey = "arcane-agents.audio-volume.v1";
+export const defaultAudioVolume = 0.35;
 export const killFadeDurationMs = 420;
 export const defaultMapColumnRatio = 0.61;
 export const mapColumnRatioStep = 0.03;

@@ -38,6 +38,7 @@ export function MapColumn({
   const selectedWorkers = useAppStore(useShallow(selectSelectedWorkers));
   const focusedSelectedWorkerId = useAppStore((state) => state.focusedSelectedWorkerId);
   const controlGroups = useAppStore(useShallow((state) => state.controlGroups));
+  const audioVolume = useAppStore((state) => state.audioVolume);
 
   const actions = useAppStore(
     useShallow((state) => ({
@@ -45,7 +46,9 @@ export function MapColumn({
       onActivateWorker: state.onActivateWorker,
       onSelectWorker: state.onSelectWorker,
       setSpawnDialogOpen: state.setSpawnDialogOpen,
-      setPaletteOpen: state.setPaletteOpen
+      setPaletteOpen: state.setPaletteOpen,
+      setAudioVolume: state.setAudioVolume,
+      toggleAudioMuted: state.toggleAudioMuted
     }))
   );
 
@@ -70,6 +73,10 @@ export function MapColumn({
       <BottomBar
         shortcuts={config?.shortcuts ?? []}
         selectedWorkers={selectedWorkers}
+        soundEnabled={config?.audio.enableSound ?? false}
+        audioVolume={audioVolume}
+        onAudioVolumeChange={actions.setAudioVolume}
+        onToggleAudioMuted={actions.toggleAudioMuted}
         onSpawnShortcut={(shortcutIndex) => {
           void workerActions.runSpawn({ shortcutIndex });
         }}
