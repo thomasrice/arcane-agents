@@ -130,7 +130,9 @@ export class OrchestratorService {
     const worker = this.requireWorker(workerId);
 
     try {
-      await this.tmux.stop(worker.tmuxRef);
+      if (await this.tmux.windowExists(worker.tmuxRef)) {
+        await this.tmux.stop(worker.tmuxRef);
+      }
       const tmuxRef = await this.tmux.spawnWorker({
         workerId: worker.id,
         windowName: worker.name,
@@ -244,19 +246,14 @@ export class OrchestratorService {
     };
   }
 
-  async reconcileWithTmux(): Promise<{ updatedWorkers: Worker[]; adoptedWorkers: Worker[]; removedWorkerIds: string[] }> {
+  async reconcileWithTmux(): Promise<{ updatedWorkers: Worker[]; adoptedWorkers: Worker[] }> {
     const persistedWorkers = this.workers.listWorkers();
 
-    if (!(await this.tmux.hasManagedSession())) {
-      return {
-        updatedWorkers: [],
-        adoptedWorkers: [],
-        removedWorkerIds: []
-      };
-    }
-
-    const liveWindows = await this.tmux.listManagedWindows();
-    const directLiveWorkerIds = await this.resolveDirectlyLiveWorkerIds(persistedWorkers, liveWindows);
+    const hasManagedSession = await this.tmux.hasManagedSession();
+    const liveWindows = hasManagedSession ? await this.tmux.listManagedWindows() : [];
+    const directLiveWorkerIds = hasManagedSession
+      ? await this.resolveDirectlyLiveWorkerIds(persistedWorkers, liveWindows)
+      : new Set<string>();
 
     const plan = planReconciliation({
       persistedWorkers,
@@ -276,13 +273,6 @@ export class OrchestratorService {
       this.workers.saveWorker(worker);
     }
 
-    const removedWorkerIds: string[] = [];
-    for (const workerId of plan.toDelete) {
-      if (this.workers.deleteWorker(workerId)) {
-        removedWorkerIds.push(workerId);
-      }
-    }
-
     if (Object.keys(plan.discoveredProjects).length > 0) {
       this.discoveredProjects = { ...this.discoveredProjects, ...plan.discoveredProjects };
       this.refreshConfigProjects();
@@ -290,8 +280,7 @@ export class OrchestratorService {
 
     return {
       updatedWorkers: plan.updatedWorkers,
-      adoptedWorkers: plan.adoptedWorkers,
-      removedWorkerIds
+      adoptedWorkers: plan.adoptedWorkers
     };
   }
 

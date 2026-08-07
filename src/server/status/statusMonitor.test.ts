@@ -260,7 +260,6 @@ describe("StatusMonitor", () => {
       tmux,
       pollIntervalMs: 1_000,
       onWorkerUpdated: () => undefined,
-      onWorkerRemoved: () => undefined,
       config: testConfig
     });
 
@@ -294,7 +293,6 @@ describe("StatusMonitor", () => {
       tmux,
       pollIntervalMs: 1_000,
       onWorkerUpdated,
-      onWorkerRemoved: () => undefined,
       config: testConfig
     });
 
@@ -336,7 +334,6 @@ describe("StatusMonitor", () => {
       } as unknown as TmuxAdapter,
       pollIntervalMs: 1_000,
       onWorkerUpdated: () => undefined,
-      onWorkerRemoved: () => undefined,
       config
     });
 
@@ -359,41 +356,41 @@ describe("StatusMonitor", () => {
     );
   });
 
-  it("keeps worker records when the configured tmux session is unavailable", async () => {
+  it("marks workers unavailable when the configured tmux session is absent", async () => {
     const worker = createWorker("worker-1", "idle");
     const repository = createRepository([worker]);
     const tmux = {
       hasManagedSession: vi.fn(async () => false),
       windowExists: vi.fn(async () => false)
     } as unknown as TmuxAdapter;
-    const onWorkerRemoved = vi.fn();
     const monitor = new StatusMonitor({
       workers: repository.repo,
       tmux,
       pollIntervalMs: 1_000,
       onWorkerUpdated: () => undefined,
-      onWorkerRemoved,
       config: testConfig
     });
 
     await monitor.pollOnce();
 
     expect(repository.workers.has(worker.id)).toBe(true);
+    expect(repository.workers.get(worker.id)).toMatchObject({
+      status: "error",
+      activityText: "Terminal unavailable",
+      activityTool: "unknown"
+    });
     expect((tmux.windowExists as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
     expect(repository.deleteWorker).not.toHaveBeenCalled();
-    expect(onWorkerRemoved).not.toHaveBeenCalled();
   });
 
   function makeMonitor(repository: TestRepository, tmux: TmuxAdapter, overrides: Partial<{
     onWorkerUpdated: (worker: Worker) => void;
-    onWorkerRemoved: (workerId: string) => void;
   }> = {}): StatusMonitor {
     return new StatusMonitor({
       workers: repository.repo,
       tmux,
       pollIntervalMs: 1_000,
       onWorkerUpdated: overrides.onWorkerUpdated ?? (() => undefined),
-      onWorkerRemoved: overrides.onWorkerRemoved ?? (() => undefined),
       config: testConfig
     });
   }
@@ -568,7 +565,7 @@ describe("StatusMonitor", () => {
     expect(samples[9].reasonCodes).toEqual(["poll-11"]);
   });
 
-  it("clears status-debugging telemetry when the worker is removed", async () => {
+  it("preserves the worker and prior debugging history when its terminal disappears", async () => {
     const worker = createWorker("worker-1", "idle");
     const repository = createRepository([worker]);
     const windowExists = vi.fn(async () => true);
@@ -577,9 +574,7 @@ describe("StatusMonitor", () => {
       windowExists
     } as unknown as TmuxAdapter;
     decideMock.mockImplementation(() => makeEvaluation("working"));
-    const onWorkerRemoved = vi.fn();
-
-    const monitor = makeMonitor(repository, tmux, { onWorkerRemoved });
+    const monitor = makeMonitor(repository, tmux);
     await monitor.pollOnce();
 
     expect(monitor.getWorkerStatusEvaluations(worker.id).length).toBeGreaterThan(0);
@@ -589,10 +584,14 @@ describe("StatusMonitor", () => {
     windowExists.mockResolvedValue(false);
     await monitor.pollOnce();
 
-    expect(onWorkerRemoved).toHaveBeenCalledWith(worker.id);
-    expect(monitor.getWorkerStatusEvaluations(worker.id)).toEqual([]);
-    expect(monitor.getWorkerStatusHistory(worker.id)).toEqual([]);
-    expect(monitor.buildStatusFixture(worker.id, { useCurrent: false, transitionIndex: undefined }).found).toBe(false);
+    expect(repository.workers.get(worker.id)).toMatchObject({
+      status: "error",
+      activityText: "Terminal unavailable",
+      activityTool: "unknown"
+    });
+    expect(monitor.getWorkerStatusEvaluations(worker.id).length).toBeGreaterThan(0);
+    expect(monitor.getWorkerStatusHistory(worker.id).length).toBeGreaterThan(0);
+    expect(monitor.buildStatusFixture(worker.id, { useCurrent: false, transitionIndex: undefined }).found).toBe(true);
   });
 
   it("counts only transitions within the last hour in the flap summary", async () => {

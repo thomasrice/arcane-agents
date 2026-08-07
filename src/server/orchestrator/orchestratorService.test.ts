@@ -235,6 +235,7 @@ describe("OrchestratorService.restart", () => {
 
     const nextTmuxRef = { session: "arcane-agents", window: "worker-1", pane: "%7" };
     const tmux = {
+      windowExists: vi.fn(async () => true),
       stop: vi.fn(async () => undefined),
       spawnWorker: vi.fn(async () => nextTmuxRef)
     } as unknown as TmuxAdapter;
@@ -268,6 +269,29 @@ describe("OrchestratorService.restart", () => {
     expect(stopCallOrder).toBeLessThan(spawnCallOrder);
   });
 
+  it("respawns a missing terminal without trying to stop it first", async () => {
+    const worker = { ...createWorker(), status: "error" as const, activityText: "Terminal unavailable" };
+    const workers = {
+      getWorker: vi.fn(() => worker),
+      saveWorker: vi.fn()
+    } as unknown as WorkerRepository;
+    const nextTmuxRef = { session: "arcane-agents", window: "worker-1", pane: "%9" };
+    const tmux = {
+      windowExists: vi.fn(async () => false),
+      stop: vi.fn(),
+      spawnWorker: vi.fn(async () => nextTmuxRef)
+    } as unknown as TmuxAdapter;
+
+    const service = new OrchestratorService(createConfig(), workers, tmux);
+    const result = await service.restart(worker.id);
+
+    expect((tmux.stop as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect((tmux.spawnWorker as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+      expect.objectContaining({ workerId: worker.id, windowName: worker.name, command: worker.command })
+    );
+    expect(result).toMatchObject({ id: worker.id, status: "idle", tmuxRef: nextTmuxRef });
+  });
+
   it("surfaces a conflict when restart fails", async () => {
     const worker = createWorker();
     const workers = {
@@ -275,6 +299,7 @@ describe("OrchestratorService.restart", () => {
       saveWorker: vi.fn()
     } as unknown as WorkerRepository;
     const tmux = {
+      windowExists: vi.fn(async () => true),
       stop: vi.fn(async () => {
         throw new Error("tmux failure");
       }),
@@ -292,12 +317,9 @@ describe("OrchestratorService.restart", () => {
 });
 
 describe("OrchestratorService.reconcileWithTmux", () => {
-  it("keeps persisted workers when the configured tmux session is unavailable", async () => {
+  it("marks persisted workers unavailable when the configured tmux session is absent", async () => {
     const worker = createWorker();
-    const workers = {
-      listWorkers: vi.fn(() => [worker]),
-      deleteWorker: vi.fn()
-    } as unknown as WorkerRepository;
+    const { repo, store, deleteWorker } = createRepository([worker]);
 
     const tmux = {
       hasManagedSession: vi.fn(async () => false),
@@ -305,25 +327,25 @@ describe("OrchestratorService.reconcileWithTmux", () => {
       windowExists: vi.fn()
     } as unknown as TmuxAdapter;
 
-    const service = new OrchestratorService(createConfig(), workers, tmux);
+    const service = new OrchestratorService(createConfig(), repo, tmux);
     const result = await service.reconcileWithTmux();
 
-    expect(result).toEqual({
-      updatedWorkers: [],
-      adoptedWorkers: [],
-      removedWorkerIds: []
+    expect(result.updatedWorkers).toHaveLength(1);
+    expect(result.updatedWorkers[0]).toMatchObject({
+      id: worker.id,
+      status: "error",
+      activityText: "Terminal unavailable"
     });
+    expect(result.adoptedWorkers).toEqual([]);
+    expect(store.get(worker.id)).toEqual(result.updatedWorkers[0]);
     expect((tmux.listManagedWindows as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
     expect((tmux.windowExists as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
-    expect((workers.deleteWorker as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(deleteWorker).not.toHaveBeenCalled();
   });
 
-  it("removes stale workers when the tmux session is available but the worker window is gone", async () => {
+  it("preserves a worker when the tmux session exists but its window is gone", async () => {
     const worker = createWorker();
-    const workers = {
-      listWorkers: vi.fn(() => [worker]),
-      deleteWorker: vi.fn(() => true)
-    } as unknown as WorkerRepository;
+    const { repo, store, deleteWorker } = createRepository([worker]);
 
     const tmux = {
       hasManagedSession: vi.fn(async () => true),
@@ -331,15 +353,17 @@ describe("OrchestratorService.reconcileWithTmux", () => {
       windowExists: vi.fn(async () => false)
     } as unknown as TmuxAdapter;
 
-    const service = new OrchestratorService(createConfig(), workers, tmux);
+    const service = new OrchestratorService(createConfig(), repo, tmux);
     const result = await service.reconcileWithTmux();
 
-    expect(result).toEqual({
-      updatedWorkers: [],
-      adoptedWorkers: [],
-      removedWorkerIds: [worker.id]
+    expect(result.updatedWorkers).toHaveLength(1);
+    expect(result.updatedWorkers[0]).toMatchObject({
+      id: worker.id,
+      status: "error",
+      activityText: "Terminal unavailable"
     });
-    expect((workers.deleteWorker as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(worker.id);
+    expect(store.get(worker.id)).toEqual(result.updatedWorkers[0]);
+    expect(deleteWorker).not.toHaveBeenCalled();
   });
 
   it("adopts a fully-tagged managed window into a persisted, config-resolved worker", async () => {
@@ -360,7 +384,6 @@ describe("OrchestratorService.reconcileWithTmux", () => {
     const result = await service.reconcileWithTmux();
 
     expect(result.updatedWorkers).toEqual([]);
-    expect(result.removedWorkerIds).toEqual([]);
     expect(result.adoptedWorkers).toHaveLength(1);
 
     const adopted = result.adoptedWorkers[0];
@@ -460,7 +483,7 @@ describe("OrchestratorService.reconcileWithTmux", () => {
     const result = await service.reconcileWithTmux();
 
     // Nothing drifted, so no write and no return-payload entries.
-    expect(result).toEqual({ updatedWorkers: [], adoptedWorkers: [], removedWorkerIds: [] });
+    expect(result).toEqual({ updatedWorkers: [], adoptedWorkers: [] });
     expect(saveWorker).not.toHaveBeenCalled();
     expect(deleteWorker).not.toHaveBeenCalled();
     // Record retained untouched.
@@ -485,7 +508,6 @@ describe("OrchestratorService.reconcileWithTmux", () => {
     const result = await service.reconcileWithTmux();
 
     expect(result.adoptedWorkers).toEqual([]);
-    expect(result.removedWorkerIds).toEqual([]);
     expect(result.updatedWorkers).toHaveLength(1);
 
     const updated = result.updatedWorkers[0];
@@ -541,7 +563,6 @@ describe("OrchestratorService.reconcileWithTmux", () => {
     const service = new OrchestratorService(createConfig(), repo, tmux);
     const result = await service.reconcileWithTmux();
 
-    expect(result.removedWorkerIds).toEqual([]);
     expect(result.updatedWorkers).toHaveLength(1);
     // stopped -> working on a live managed match.
     expect(result.updatedWorkers[0].status).toBe("working");
@@ -611,16 +632,16 @@ describe("OrchestratorService.reconcileWithTmux", () => {
     const service = new OrchestratorService(config, repo, tmux);
     const result = await service.reconcileWithTmux();
 
-    expect(result.updatedWorkers.map((w) => w.id)).toEqual(["drift-1"]);
+    expect(result.updatedWorkers.map((w) => w.id)).toEqual(["drift-1", "gone-1"]);
     expect(result.updatedWorkers[0].tmuxRef.pane).toBe("%8");
+    expect(result.updatedWorkers[1]).toMatchObject({ status: "error", activityText: "Terminal unavailable" });
 
     expect(result.adoptedWorkers.map((w) => w.id)).toEqual(["adopt-1"]);
     expect(result.adoptedWorkers[0]).toMatchObject({ projectId: "web", runtimeId: "claude" });
 
-    expect(result.removedWorkerIds).toEqual(["gone-1"]);
 
     // Final persisted state matches the contract.
-    expect(store.has("gone-1")).toBe(false);
+    expect(store.get("gone-1")).toMatchObject({ status: "error", activityText: "Terminal unavailable" });
     expect(store.get("keep-1")).toEqual(keep); // untouched
     expect(store.get("drift-1")?.tmuxRef.pane).toBe("%8");
     expect(store.get("adopt-1")).toEqual(result.adoptedWorkers[0]);

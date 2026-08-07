@@ -9,6 +9,7 @@ import type {
 import type { ManagedWindow } from "../../tmux/tmuxAdapter";
 import { slugify } from "../spawn/windowName";
 import { isSameWorkerRecord } from "./isSameWorkerRecord";
+import { withTerminalUnavailable } from "./terminalAvailability";
 
 export interface LiveWindowLookups {
   liveByWorkerId: Map<string, ManagedWindow>;
@@ -35,12 +36,10 @@ export interface ReconciliationInput {
 export interface ReconciliationPlan {
   // Effects for the service to apply against persistence/config.
   toSave: Worker[];
-  toDelete: string[];
   discoveredProjects: Record<string, ProjectConfig>;
   // Categorised outcomes for the return contract / realtime broadcast.
   updatedWorkers: Worker[];
   adoptedWorkers: Worker[];
-  removedWorkerIds: string[];
 }
 
 export function buildLiveWindowLookups(liveWindows: ManagedWindow[]): LiveWindowLookups {
@@ -63,7 +62,7 @@ export function findLiveMatch(worker: Worker, lookups: LiveWindowLookups): Manag
 
 // Pure reconciliation planner. Given the persisted workers, the live tmux
 // windows, and injected non-deterministic inputs (ids/avatars/positions/clock),
-// it decides what to save/delete/adopt and which projects were newly discovered.
+// it decides what to save/adopt and which projects were newly discovered.
 // Unlike the old in-service logic, it never mutates config: discovered projects
 // are *emitted* for the service to apply.
 export function planReconciliation(input: ReconciliationInput): ReconciliationPlan {
@@ -84,10 +83,8 @@ export function planReconciliation(input: ReconciliationInput): ReconciliationPl
   const consumedWindows = new Set<string>();
 
   const toSave: Worker[] = [];
-  const toDelete: string[] = [];
   const updatedWorkers: Worker[] = [];
   const adoptedWorkers: Worker[] = [];
-  const removedWorkerIds: string[] = [];
 
   // Growing project lookup: seeds from config, then accumulates projects the
   // planner discovers this pass so uniqueness checks (and repeat paths) see them.
@@ -176,8 +173,11 @@ export function planReconciliation(input: ReconciliationInput): ReconciliationPl
         continue;
       }
 
-      toDelete.push(worker.id);
-      removedWorkerIds.push(worker.id);
+      const unavailable = withTerminalUnavailable(worker, nowIso);
+      if (unavailable !== worker) {
+        toSave.push(unavailable);
+        updatedWorkers.push(unavailable);
+      }
       continue;
     }
 
@@ -212,10 +212,8 @@ export function planReconciliation(input: ReconciliationInput): ReconciliationPl
 
   // Repo state after the first pass, used to allocate non-overlapping avatars and
   // positions for adopted workers (mirrors the service listing the repo again).
-  const removedIdSet = new Set(removedWorkerIds);
   const savedById = new Map(toSave.map((worker) => [worker.id, worker]));
   const workersAfterFirstPass = persistedWorkers
-    .filter((worker) => !removedIdSet.has(worker.id))
     .map((worker) => savedById.get(worker.id) ?? worker);
 
   const knownWorkerIds = new Set(workersAfterFirstPass.map((worker) => worker.id));
@@ -264,10 +262,8 @@ export function planReconciliation(input: ReconciliationInput): ReconciliationPl
 
   return {
     toSave,
-    toDelete,
     discoveredProjects,
     updatedWorkers,
-    adoptedWorkers,
-    removedWorkerIds
+    adoptedWorkers
   };
 }

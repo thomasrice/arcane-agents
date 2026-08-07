@@ -65,12 +65,6 @@ export async function createServerContext(sessionName?: string): Promise<ServerC
         worker
       });
     },
-    onWorkerRemoved: (workerId) => {
-      hub.broadcast({
-        type: "worker-removed",
-        workerId
-      });
-    },
     config: baseConfig
   });
 

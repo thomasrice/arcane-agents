@@ -9,11 +9,12 @@ import type { ClaudeTranscriptAttachment } from "./claudeTranscriptTracker";
 import { decide, type StatusDecisionFacts, type StatusReason, type WorkerStatusDecision } from "./decide";
 import type { RuntimeAdapterId, RuntimeSignals } from "./runtimes/adapter";
 import type { AgentRuntimeProcess } from "./runtimes/runtimeProcess";
+import { terminalUnavailableStatus } from "../orchestrator/reconcile/terminalAvailability";
 import { compileStatusRules, type CompiledStatusRules } from "./customStatusRules";
 import { compilePromptSignatures, type CompiledPromptSignatures } from "./promptSignatures";
 
 type StatusTraceMode = "off" | "transitions" | "verbose";
-type WorkerPollOutcome = "unchanged" | "updated" | "removed" | "failed";
+type WorkerPollOutcome = "unchanged" | "updated" | "failed";
 
 export interface WorkerStatusDebugSnapshot {
   workerId: string;
@@ -138,7 +139,6 @@ export interface StatusPollTimingSnapshot {
   outcomeCounts: {
     unchanged: number;
     updated: number;
-    removed: number;
     failed: number;
   };
 }
@@ -160,7 +160,6 @@ export interface StatusMonitorOptions {
   tmux: TmuxAdapter;
   pollIntervalMs: number;
   onWorkerUpdated: (worker: Worker) => void;
-  onWorkerRemoved: (workerId: string) => void;
   config: ResolvedConfig;
 }
 
@@ -229,14 +228,12 @@ export class StatusMonitor {
   private readonly tmux: TmuxAdapter;
   private readonly pollIntervalMs: number;
   private readonly onWorkerUpdated: (worker: Worker) => void;
-  private readonly onWorkerRemoved: (workerId: string) => void;
 
   constructor(options: StatusMonitorOptions) {
     this.workers = options.workers;
     this.tmux = options.tmux;
     this.pollIntervalMs = options.pollIntervalMs;
     this.onWorkerUpdated = options.onWorkerUpdated;
-    this.onWorkerRemoved = options.onWorkerRemoved;
 
     const config = options.config;
     this.interactiveCommands = new Set(config.status.interactiveCommands.map((cmd) => cmd.toLowerCase()));
@@ -381,6 +378,10 @@ export class StatusMonitor {
       const pollStartedAtMs = Date.now();
       const currentWorkers = this.workers.listWorkers();
       if (currentWorkers.length > 0 && !(await this.tmux.hasManagedSession())) {
+        const workerTimings = await mapWithConcurrency(currentWorkers, this.workerPollConcurrency, async (worker) =>
+          this.markTerminalUnavailableWithTiming(worker)
+        );
+        this.recordPollTiming(pollStartedAtMs, currentWorkers.length, workerTimings);
         return;
       }
 
@@ -422,11 +423,7 @@ export class StatusMonitor {
       evaluatedAt: new Date().toISOString()
     };
 
-    if (outcome === "removed") {
-      this.workerTimingByWorker.delete(worker.id);
-    } else {
-      this.workerTimingByWorker.set(worker.id, snapshot);
-    }
+    this.workerTimingByWorker.set(worker.id, snapshot);
 
     return snapshot;
   }
@@ -434,11 +431,7 @@ export class StatusMonitor {
   private async updateWorkerStatus(worker: Worker): Promise<WorkerStatusUpdateOutcome> {
     const live = await this.tmux.windowExists(worker.tmuxRef);
     if (!live) {
-      this.removeWorker(worker.id);
-      return {
-        outcome: "removed",
-        nextStatus: "stopped"
-      };
+      return this.markTerminalUnavailable(worker);
     }
 
     let evaluation: WorkerStatusDecision = {
@@ -471,11 +464,7 @@ export class StatusMonitor {
       });
 
       if (!collected) {
-        this.removeWorker(worker.id);
-        return {
-          outcome: "removed",
-          nextStatus: "stopped"
-        };
+        return this.markTerminalUnavailable(worker);
       }
 
       signals = collected;
@@ -536,19 +525,41 @@ export class StatusMonitor {
     };
   }
 
-  private removeWorker(workerId: string): void {
-    const removed = this.workers.deleteWorker(workerId);
-    if (removed) {
-      this.claudeTranscript.forget(workerId);
-      this.paneObservation.delete(workerId);
-      this.statusDebugByWorker.delete(workerId);
-      this.statusTransitionHistoryByWorker.delete(workerId);
-      this.workerTimingByWorker.delete(workerId);
-      this.transitionCaptureByWorker.delete(workerId);
-      this.evaluationSampleByWorker.delete(workerId);
-      this.latestInputsByWorker.delete(workerId);
-      this.onWorkerRemoved(workerId);
+  private markTerminalUnavailable(worker: Worker): WorkerStatusUpdateOutcome {
+    this.claudeTranscript.forget(worker.id);
+    this.paneObservation.delete(worker.id);
+    this.latestInputsByWorker.delete(worker.id);
+
+    if (
+      worker.status === terminalUnavailableStatus.status &&
+      worker.activityText === terminalUnavailableStatus.activityText &&
+      worker.activityTool === terminalUnavailableStatus.activityTool &&
+      worker.activityPath === terminalUnavailableStatus.activityPath
+    ) {
+      return { outcome: "unchanged", nextStatus: worker.status };
     }
+
+    const updated = this.workers.updateStatus(worker.id, terminalUnavailableStatus);
+    if (!updated) {
+      return { outcome: "failed", nextStatus: terminalUnavailableStatus.status };
+    }
+
+    this.onWorkerUpdated(updated);
+    return { outcome: "updated", nextStatus: updated.status };
+  }
+
+  private async markTerminalUnavailableWithTiming(worker: Worker): Promise<WorkerStatusTimingSnapshot> {
+    const startedAtMs = Date.now();
+    const result = this.markTerminalUnavailable(worker);
+    return {
+      workerId: worker.id,
+      workerName: worker.displayName ?? worker.name,
+      fromStatus: worker.status,
+      toStatus: result.nextStatus,
+      outcome: result.outcome,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      evaluatedAt: new Date().toISOString()
+    };
   }
 
   private recordPollTiming(
@@ -563,7 +574,6 @@ export class StatusMonitor {
     const outcomeCounts: StatusPollTimingSnapshot["outcomeCounts"] = {
       unchanged: 0,
       updated: 0,
-      removed: 0,
       failed: 0
     };
 
@@ -599,7 +609,7 @@ export class StatusMonitor {
     console.log(
       `[arcane-agents][status] ${timestamp} poll workers=${timing.workerCount} duration=${Math.round(timing.durationMs)}ms ` +
         `avgWorker=${Math.round(timing.averageWorkerDurationMs)}ms maxWorker=${Math.round(timing.maxWorkerDurationMs)}ms ` +
-        `outcomes={updated:${timing.outcomeCounts.updated},unchanged:${timing.outcomeCounts.unchanged},removed:${timing.outcomeCounts.removed},failed:${timing.outcomeCounts.failed}}`
+        `outcomes={updated:${timing.outcomeCounts.updated},unchanged:${timing.outcomeCounts.unchanged},failed:${timing.outcomeCounts.failed}}`
     );
   }
 

@@ -70,10 +70,8 @@ describe("planReconciliation", () => {
     const plan = planReconciliation(createInput({ persistedWorkers: [worker], liveWindows: [liveWindow] }));
 
     expect(plan.toSave).toEqual([]);
-    expect(plan.toDelete).toEqual([]);
     expect(plan.updatedWorkers).toEqual([]);
     expect(plan.adoptedWorkers).toEqual([]);
-    expect(plan.removedWorkerIds).toEqual([]);
     expect(plan.discoveredProjects).toEqual({});
   });
 
@@ -95,19 +93,23 @@ describe("planReconciliation", () => {
     expect(plan.updatedWorkers[0].tmuxRef.pane).toBe("%9");
     expect(plan.toSave).toEqual(plan.updatedWorkers);
     expect(plan.adoptedWorkers).toEqual([]);
-    expect(plan.removedWorkerIds).toEqual([]);
   });
 
-  it("marks a worker with no live match for deletion", () => {
+  it("preserves a worker with no live match as terminal-unavailable", () => {
     const worker = createWorker();
 
     const plan = planReconciliation(
       createInput({ persistedWorkers: [worker], liveWindows: [], directLiveWorkerIds: new Set() })
     );
 
-    expect(plan.toDelete).toEqual([worker.id]);
-    expect(plan.removedWorkerIds).toEqual([worker.id]);
-    expect(plan.toSave).toEqual([]);
+    expect(plan.toSave).toHaveLength(1);
+    expect(plan.toSave[0]).toMatchObject({
+      id: worker.id,
+      status: "error",
+      activityText: "Terminal unavailable",
+      activityTool: "unknown"
+    });
+    expect(plan.updatedWorkers).toEqual(plan.toSave);
     expect(plan.adoptedWorkers).toEqual([]);
   });
 
@@ -122,7 +124,6 @@ describe("planReconciliation", () => {
       })
     );
 
-    expect(plan.removedWorkerIds).toEqual([]);
     expect(plan.updatedWorkers).toHaveLength(1);
     expect(plan.updatedWorkers[0].status).toBe("idle");
     expect(plan.updatedWorkers[0].silenced).toBe(true);
