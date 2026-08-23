@@ -1,6 +1,7 @@
 import http from "node:http";
 import { createHttpApp } from "./bootstrap/httpApp";
 import { isNonDefaultSession } from "./config/loadConfig";
+import { registerProcessGuards } from "./bootstrap/processGuards";
 import { createServerContext } from "./bootstrap/serverContext";
 import { registerShutdownHandlers } from "./bootstrap/shutdown";
 import { attachUpgradeHandler, createWsServers } from "./bootstrap/websocketUpgrade";
@@ -68,6 +69,8 @@ function renderStartupBanner(): string {
 }
 
 export async function bootstrap(sessionName?: string): Promise<void> {
+  registerProcessGuards();
+
   console.log(renderStartupBanner());
 
   if (isNonDefaultSession(sessionName)) {

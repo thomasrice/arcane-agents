@@ -57,7 +57,11 @@ export class TerminalBridge {
       }
       torndown = true;
       socket.off("message", onMessage);
-      terminal?.kill();
+      try {
+        terminal?.kill();
+      } catch {
+        // Already gone (the pty exiting is one of the paths into teardown).
+      }
     };
 
     const onMessage = (raw: RawData) => {
@@ -96,11 +100,29 @@ export class TerminalBridge {
             if (socket.readyState === socket.OPEN) {
               socket.close();
             }
+            // Tear down rather than only closing the socket: teardown detaches
+            // onMessage, so a frame already in flight when the pty exited
+            // cannot reach the dead handle below.
+            teardown();
           });
 
           ready = true;
         } else {
-          terminal.resize(cols, rows);
+          // The pty's fd may already be closed — stopping a worker kills its
+          // tmux window, and the browser refits the terminal column as the
+          // panel unmounts, so a resize routinely races the exit. node-pty
+          // throws EBADF synchronously here, and this runs inside a ws
+          // emitter callback, so an escaping throw kills the whole server.
+          try {
+            terminal.resize(cols, rows);
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            console.warn(`[arcane-agents] terminal bridge resize failed for ${workerId}: ${detail}`);
+            if (socket.readyState === socket.OPEN) {
+              socket.close();
+            }
+            teardown();
+          }
         }
         return;
       }

@@ -449,3 +449,53 @@ describe("TerminalBridge status nudges", () => {
     expect(onTerminalOutput).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("TerminalBridge resize against a dead pty", () => {
+  // Regression: stopping a worker kills its tmux window, so the attach pty
+  // exits and closes its fd. The browser refits the terminal column as the
+  // panel unmounts, and the in-flight resize reached node-pty's ioctl on the
+  // closed fd (EBADF). The throw escaped this ws 'message' callback and took
+  // the whole server down with it.
+  it("survives a pty resize failure and tears the connection down", () => {
+    const term = new FakePty();
+    const { socket } = connect();
+    spawnVia(socket, term, 80, 24);
+
+    term.resize.mockImplementation(() => {
+      throw new Error("ioctl(2) failed, EBADF");
+    });
+
+    expect(() => socket.emit("message", resizeFrame(100, 40))).not.toThrow();
+    expect(socket.close).toHaveBeenCalled();
+
+    // Torn down: later frames must not reach the dead handle at all.
+    socket.emit("message", resizeFrame(120, 50));
+    expect(term.resize).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops routing frames to the pty once it has exited", () => {
+    const term = new FakePty();
+    const { socket } = connect();
+    spawnVia(socket, term, 80, 24);
+
+    term.emitExit();
+
+    socket.emit("message", resizeFrame(100, 40));
+    socket.emit("message", "ls -la\r");
+
+    expect(term.resize).not.toHaveBeenCalled();
+    expect(term.write).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when killing a pty that has already exited", () => {
+    const term = new FakePty();
+    const { socket } = connect();
+    spawnVia(socket, term, 80, 24);
+
+    term.kill.mockImplementation(() => {
+      throw new Error("ESRCH");
+    });
+
+    expect(() => term.emitExit()).not.toThrow();
+  });
+});
