@@ -1,16 +1,33 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { ResolvedConfig, Worker, WorkerStatus } from "../../shared/types";
 import { fetchVoiceLineCatalog } from "../api";
-import { voiceLineEventUrl, voiceLineFileUrl } from "../assetUrls";
+import { voiceLineFileUrl } from "../assetUrls";
 
-type VoiceLineEvent = "arrive" | "move" | "attention" | "complete" | "death";
-type VoiceLineVariantPrefix = "move" | "selected";
+export type VoiceLineEvent = "arrive" | "move" | "selected" | "attention" | "complete" | "death";
 const arrivalSelectionSuppressMs = 1600;
-const voiceLineVariantPrefixes: VoiceLineVariantPrefix[] = ["move", "selected"];
-const defaultVoiceLineVariantFileNames: Record<VoiceLineVariantPrefix, string[]> = {
-  move: ["move.mp3", "move_variant_1.mp3", "move_variant_2.mp3", "move_variant_3.mp3"],
-  selected: ["selected.mp3", "selected_variant_1.mp3", "selected_variant_2.mp3", "selected_variant_3.mp3"]
-};
+export const voiceLineEvents: VoiceLineEvent[] = ["arrive", "move", "selected", "attention", "complete", "death"];
+const voiceLineExtension = ".mp3";
+const defaultVariantCount = 3;
+
+/**
+ * Every event supports random variants: any `<event>*.mp3` in the character's
+ * voice-lines directory is a candidate (`arrive.mp3`, `arrive_variant_2.mp3`, ...).
+ * Before the catalog is fetched, the conventional file names are assumed.
+ */
+export function defaultVoiceLineFileNames(event: VoiceLineEvent): string[] {
+  const names = [`${event}${voiceLineExtension}`];
+  for (let index = 1; index <= defaultVariantCount; index += 1) {
+    names.push(`${event}_variant_${index}${voiceLineExtension}`);
+  }
+  return names;
+}
+
+export function resolveVoiceLineFileNames(catalogFiles: string[], event: VoiceLineEvent): string[] {
+  return catalogFiles
+    .filter((file) => file.toLowerCase().endsWith(voiceLineExtension))
+    .filter((file) => file.toLowerCase().startsWith(event))
+    .sort((a, b) => a.localeCompare(b));
+}
 
 interface UseWorkerVoiceLinesInput {
   config: ResolvedConfig | null;
@@ -38,9 +55,7 @@ export function useWorkerVoiceLines({
   const workersByIdRef = useRef<Map<string, Worker>>(new Map());
   const workerTransitionInitializedRef = useRef(false);
   const selectionInitializedRef = useRef(false);
-  const voiceLineVariantUrlsByAvatarTypeRef = useRef<
-    Map<string, Record<VoiceLineVariantPrefix, string[]>>
-  >(new Map());
+  const voiceLineVariantUrlsByAvatarTypeRef = useRef<Map<string, Record<VoiceLineEvent, string[]>>>(new Map());
   const voiceLineCatalogRequestedAvatarTypeSetRef = useRef<Set<string>>(new Set());
   const suppressSelectionUntilByWorkerIdRef = useRef<Map<string, number>>(new Map());
   const availabilityByUrlRef = useRef<Map<string, boolean>>(new Map());
@@ -60,22 +75,18 @@ export function useWorkerVoiceLines({
     }
   }, [audioVolume]);
 
-  const resolveVoiceLineUrl = useCallback((avatarType: string, event: VoiceLineEvent): string => {
-    return voiceLineEventUrl(avatarType, event);
-  }, []);
-
   const resolveVoiceLineFileUrl = useCallback((avatarType: string, fileName: string): string => {
     return voiceLineFileUrl(avatarType, fileName);
   }, []);
 
   const resolveVoiceLineVariantUrls = useCallback(
-    (avatarType: string, prefix: VoiceLineVariantPrefix): string[] => {
-      const discoveredUrls = voiceLineVariantUrlsByAvatarTypeRef.current.get(avatarType)?.[prefix] ?? [];
+    (avatarType: string, event: VoiceLineEvent): string[] => {
+      const discoveredUrls = voiceLineVariantUrlsByAvatarTypeRef.current.get(avatarType)?.[event] ?? [];
       if (discoveredUrls.length > 0) {
         return discoveredUrls;
       }
 
-      return defaultVoiceLineVariantFileNames[prefix].map((fileName) => resolveVoiceLineFileUrl(avatarType, fileName));
+      return defaultVoiceLineFileNames(event).map((fileName) => resolveVoiceLineFileUrl(avatarType, fileName));
     },
     [resolveVoiceLineFileUrl]
   );
@@ -144,13 +155,6 @@ export function useWorkerVoiceLines({
     [soundEnabled]
   );
 
-  const playVoiceLine = useCallback(
-    (worker: Worker, event: VoiceLineEvent): void => {
-      playVoiceLineUrl(resolveVoiceLineUrl(worker.avatarType, event));
-    },
-    [playVoiceLineUrl, resolveVoiceLineUrl]
-  );
-
   const playRandomVoiceLine = useCallback(
     (candidateUrls: string[]): void => {
       if (!soundEnabled) {
@@ -170,18 +174,9 @@ export function useWorkerVoiceLines({
     [playVoiceLineUrl, soundEnabled]
   );
 
-  const playSelectedVoiceLine = useCallback(
-    (worker: Worker): void => {
-      const variantUrls = resolveVoiceLineVariantUrls(worker.avatarType, "selected");
-      playRandomVoiceLine(variantUrls);
-    },
-    [playRandomVoiceLine, resolveVoiceLineVariantUrls]
-  );
-
-  const playMoveVoiceLineWithVariants = useCallback(
-    (worker: Worker): void => {
-      const variantUrls = resolveVoiceLineVariantUrls(worker.avatarType, "move");
-      playRandomVoiceLine(variantUrls);
+  const playVoiceLine = useCallback(
+    (worker: Worker, event: VoiceLineEvent): void => {
+      playRandomVoiceLine(resolveVoiceLineVariantUrls(worker.avatarType, event));
     },
     [playRandomVoiceLine, resolveVoiceLineVariantUrls]
   );
@@ -190,25 +185,17 @@ export function useWorkerVoiceLines({
     async (avatarType: string): Promise<void> => {
       try {
         const { files: catalogFiles } = await fetchVoiceLineCatalog(avatarType);
-        const files = catalogFiles
-          .filter((file) => file.toLowerCase().endsWith(".mp3"))
-          .sort((a, b) => a.localeCompare(b));
-
-        const catalog: Record<VoiceLineVariantPrefix, string[]> = {
-          move: [],
-          selected: []
-        };
-
-        for (const prefix of voiceLineVariantPrefixes) {
-          catalog[prefix] = files
-            .filter((fileName) => fileName.toLowerCase().startsWith(prefix))
-            .map((fileName) => resolveVoiceLineFileUrl(avatarType, fileName));
+        const catalog = {} as Record<VoiceLineEvent, string[]>;
+        for (const event of voiceLineEvents) {
+          catalog[event] = resolveVoiceLineFileNames(catalogFiles, event).map((fileName) =>
+            resolveVoiceLineFileUrl(avatarType, fileName)
+          );
         }
 
         voiceLineVariantUrlsByAvatarTypeRef.current.set(avatarType, catalog);
 
-        for (const prefix of voiceLineVariantPrefixes) {
-          for (const url of catalog[prefix]) {
+        for (const event of voiceLineEvents) {
+          for (const url of catalog[event]) {
             preloadVoiceLine(url);
           }
         }
@@ -238,20 +225,15 @@ export function useWorkerVoiceLines({
     }
 
     const avatarTypes = Array.from(new Set(workers.map((worker) => worker.avatarType)));
-    const events: VoiceLineEvent[] = ["arrive", "attention", "complete", "death"];
 
     for (const avatarType of avatarTypes) {
-      for (const event of events) {
-        preloadVoiceLine(resolveVoiceLineUrl(avatarType, event));
-      }
-
-      for (const prefix of voiceLineVariantPrefixes) {
-        for (const url of resolveVoiceLineVariantUrls(avatarType, prefix)) {
+      for (const event of voiceLineEvents) {
+        for (const url of resolveVoiceLineVariantUrls(avatarType, event)) {
           preloadVoiceLine(url);
         }
       }
     }
-  }, [preloadVoiceLine, resolveVoiceLineUrl, resolveVoiceLineVariantUrls, soundEnabled, workers]);
+  }, [preloadVoiceLine, resolveVoiceLineVariantUrls, soundEnabled, workers]);
 
   useEffect(() => {
     if (!workersHydrated) {
@@ -326,12 +308,12 @@ export function useWorkerVoiceLines({
     if (selectedWorkerId) {
       const worker = workersByIdRef.current.get(selectedWorkerId);
       if (worker) {
-        playSelectedVoiceLine(worker);
+        playVoiceLine(worker, "selected");
       }
     }
 
     previousSelectedWorkerIdSetRef.current = currentSelectedWorkerIdSet;
-  }, [playSelectedVoiceLine, selectedWorkerIds, workersHydrated]);
+  }, [playVoiceLine, selectedWorkerIds, workersHydrated]);
 
   const playMoveVoiceLine = useCallback(
     (workerId: string) => {
@@ -340,9 +322,9 @@ export function useWorkerVoiceLines({
         return;
       }
 
-      playMoveVoiceLineWithVariants(worker);
+      playVoiceLine(worker, "move");
     },
-    [playMoveVoiceLineWithVariants]
+    [playVoiceLine]
   );
 
   const playArrivalVoiceLine = useCallback(

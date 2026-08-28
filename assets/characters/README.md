@@ -49,15 +49,17 @@ assets/characters/
         15.png
     voice-lines/              # optional
       arrive.mp3
-      move_variant_1.mp3      # optional random move variant
-      move_variant_2.mp3      # optional random move variant
-      move_variant_3.mp3      # optional random move variant
+      arrive_variant_1.mp3    # optional random variant — any event accepts <event>*.mp3
+      move_variant_1.mp3
+      move_variant_2.mp3
+      move_variant_3.mp3
       attention.mp3
       complete.mp3
       death.mp3
-      selected_variant_1.mp3  # optional random selection variant
-      selected_variant_2.mp3  # optional random selection variant
-      selected_variant_3.mp3  # optional random selection variant
+      death_variant_1.mp3
+      selected_variant_1.mp3
+      selected_variant_2.mp3
+      selected_variant_3.mp3
 ```
 
 Create one top-level folder per character type.
@@ -77,15 +79,16 @@ If these files are present, you can drop in a new folder and it becomes eligible
 
 Character packs can include optional voice clips in `voice-lines/`.
 
-- `arrive.mp3`: plays when a worker first spawns.
-- `move*.mp3`: random pick when a manual move order is issued.
-- `attention.mp3`: plays when status changes to `attention`.
-- `complete.mp3`: plays when status changes from `working` to `idle`.
-- `death.mp3`: plays when a worker is removed.
-- `selected*.mp3`: random pick when a worker becomes newly selected.
+- `arrive*.mp3`: when a worker first spawns.
+- `move*.mp3`: when a manual move order is issued.
+- `attention*.mp3`: when status changes to `attention`.
+- `complete*.mp3`: when status changes from `working` to `idle`.
+- `death*.mp3`: when a worker is removed.
+- `selected*.mp3`: when a worker becomes newly selected.
+
+Every event uses filename prefix matching and picks at random among the matches, so any `<event>*.mp3` clip in the directory is eligible — a single `arrive.mp3` or several `arrive_variant_N.mp3` both work.
 
 Selection audio only triggers on a real selection change. Clicking the currently selected worker again does not replay the selection line.
-Move and selection audio use filename prefix matching. Any `move*.mp3` or `selected*.mp3` clip in the directory is eligible.
 
 ## Runtime Behavior
 

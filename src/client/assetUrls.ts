@@ -7,11 +7,6 @@ export function characterRotationUrl(avatarType: AvatarType, direction: string):
   return `${charactersRoot}/${encodeURIComponent(avatarType)}/rotations/${direction}.png`;
 }
 
-/** URL for a character's canonical voice line for a lifecycle event (arrive, complete, ...). */
-export function voiceLineEventUrl(avatarType: AvatarType, event: string): string {
-  return `${charactersRoot}/${encodeURIComponent(avatarType)}/voice-lines/${event}.mp3`;
-}
-
 /** URL for a specific voice line file discovered in a character's voice-lines directory. */
 export function voiceLineFileUrl(avatarType: AvatarType, fileName: string): string {
   return `${charactersRoot}/${encodeURIComponent(avatarType)}/voice-lines/${encodeURIComponent(fileName)}`;
