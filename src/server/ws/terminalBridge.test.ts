@@ -183,7 +183,7 @@ describe("TerminalBridge spawn trigger", () => {
 
     const [command, args, options] = spawnMock.mock.calls[0] ?? [];
     expect(command).toBe("tmux");
-    expect(args).toEqual(buildTmuxAttachArgs("sX:wY", tmuxConfig));
+    expect(args).toEqual(buildTmuxAttachArgs("sX:wY", tmuxConfig, args[5]));
     expect(options).toMatchObject({
       name: "xterm-256color",
       cols: 80,

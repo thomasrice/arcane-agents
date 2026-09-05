@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildFriendlyTmuxDefaults,
   buildTmuxArgs,
-  buildTmuxAttachArgs,
   buildTmuxCommandPrefix
 } from "./tmuxAdapter";
 
@@ -12,16 +11,6 @@ describe("tmux argv builders", () => {
       "-L",
       "arcane-agents",
       "list-sessions"
-    ]);
-  });
-
-  it("builds attach-session commands on the managed socket", () => {
-    expect(buildTmuxAttachArgs("arcane-agents:worker-1", { socketName: "arcane-agents" })).toEqual([
-      "-L",
-      "arcane-agents",
-      "attach-session",
-      "-t",
-      "arcane-agents:worker-1"
     ]);
   });
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { ResolvedConfig, TmuxRef } from "../../shared/types";
@@ -188,33 +189,15 @@ export class TmuxAdapter {
     return windows;
   }
 
-  async openInExternalTerminal(ref: TmuxRef, workerId: string): Promise<void> {
+  async openInExternalTerminal(ref: TmuxRef, _workerId: string): Promise<void> {
     const target = this.target(ref);
     const live = await this.windowExists(ref);
     if (!live) {
       throw new Error(`Cannot open terminal: tmux target '${target}' is not available.`);
     }
 
-    const externalSession = createExternalSessionName(workerId);
-    const externalWindowTarget = `${externalSession}:${ref.window}`;
-
-    await this.runTmux(["has-session", "-t", externalSession])
-      .then(async () => {
-        await this.runTmux(["kill-session", "-t", externalSession]);
-      })
-      .catch(() => undefined);
-
-    try {
-      await this.runTmux(["new-session", "-d", "-t", ref.session, "-s", externalSession]);
-      await this.runTmux(["select-window", "-t", externalWindowTarget]);
-    } catch (error) {
-      await this.runTmux(["kill-session", "-t", externalSession]).catch(() => undefined);
-      throw error;
-    }
-
     await new Promise<void>((resolve, reject) => {
-      const tmuxCommand = buildTmuxCommandPrefix(this.config);
-      const guardCommand = `${tmuxCommand} has-session -t ${shellQuote(externalSession)} >/dev/null 2>&1 || exit 0; exec ${tmuxCommand} attach-session -t ${shellQuote(externalSession)}`;
+      const guardCommand = ["tmux", ...buildTmuxAttachArgs(target, this.config)].map(shellQuote).join(" ");
       const child = spawn(
         "xdg-terminal-exec",
         ["sh", "-lc", guardCommand],
@@ -338,12 +321,6 @@ function delay(ms: number): Promise<void> {
   });
 }
 
-function createExternalSessionName(workerId: string): string {
-  const safeId = workerId.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12) || "worker";
-  const stamp = Date.now().toString(36);
-  return `arcane-agents-ext-${safeId}-${stamp}`;
-}
-
 function normalizeOption(value: string | undefined): string | undefined {
   if (!value || value.trim().length === 0) {
     return undefined;
@@ -359,8 +336,33 @@ export function buildTmuxArgs(args: string[], options: TmuxConnectionOptions): s
   return ["-L", options.socketName, ...args];
 }
 
-export function buildTmuxAttachArgs(target: string, options: TmuxConnectionOptions): string[] {
-  return buildTmuxArgs(["attach-session", "-t", target], options);
+export function buildTmuxAttachArgs(
+  target: string,
+  options: TmuxConnectionOptions,
+  viewSession = `arcane-view-${randomUUID()}`
+): string[] {
+  // Link the live window, never move or respawn it. A view has its own selected
+  // window and cannot navigate through the other Characters' terminals.
+  const commands = [
+    ["new-session", "-d", "-s", viewSession, "-n", "placeholder"],
+    ["link-window", "-k", "-s", target, "-t", `${viewSession}:placeholder`],
+    ["set-option", "-t", viewSession, "status", "off"],
+    ["set-option", "-t", viewSession, "prefix", "None"],
+    ["set-option", "-t", viewSession, "prefix2", "None"],
+    ["set-option", "-t", viewSession, "key-table", "arcane-terminal"],
+    ["set-option", "-t", viewSession, "detach-on-destroy", "on"],
+    // Keep scrolling/selection, without inheriting desktop window/session keys.
+    ["bind-key", "-T", "arcane-terminal", "MouseDown1Pane", "send-keys", "-M"],
+    ["bind-key", "-T", "arcane-terminal", "MouseDrag1Pane", "if-shell", "-F",
+      "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"],
+    ["bind-key", "-T", "arcane-terminal", "WheelUpPane", "if-shell", "-F",
+      "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -e"],
+    ["bind-key", "-T", "arcane-terminal", "WheelDownPane", "send-keys", "-M"],
+    ["attach-session", "-t", viewSession],
+    // Set only after attaching: setting this on an unattached session kills it.
+    ["set-option", "-t", viewSession, "destroy-unattached", "on"]
+  ];
+  return buildTmuxArgs(commands.flatMap((command, index) => index ? [";", ...command] : command), options);
 }
 
 export function buildTmuxCommandPrefix(options: TmuxConnectionOptions): string {
