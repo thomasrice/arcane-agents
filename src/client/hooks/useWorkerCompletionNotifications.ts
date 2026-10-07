@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import type { Worker, WorkerStatus } from "../../shared/types";
+import { useEffect, useMemo, useRef } from "react";
+import type { Worker } from "../../shared/types";
+import { markWorkerCompletionReviewed } from "../api";
 
 interface UseWorkerCompletionNotificationsInput {
   workers: Worker[];
@@ -10,73 +11,54 @@ interface UseWorkerCompletionNotificationsResult {
   pendingCompletionWorkerIds: string[];
 }
 
-export function reconcilePendingCompletionWorkerIds(
-  current: readonly string[],
-  workers: readonly Worker[],
-  previousStatusByWorker: ReadonlyMap<string, WorkerStatus>,
-  reviewedWorkerId: string | undefined
-): string[] {
-  const currentWorkersById = new Map(workers.map((worker) => [worker.id, worker]));
-  const next = current.filter((workerId) => {
-    const worker = currentWorkersById.get(workerId);
-    return Boolean(worker && !worker.silenced && worker.status === "idle" && workerId !== reviewedWorkerId);
-  });
-  const nextSet = new Set(next);
-
-  for (const worker of workers) {
-    if (
-      worker.silenced ||
-      worker.id === reviewedWorkerId ||
-      worker.status !== "idle" ||
-      previousStatusByWorker.get(worker.id) !== "working" ||
-      nextSet.has(worker.id)
-    ) {
-      continue;
-    }
-
-    next.push(worker.id);
-    nextSet.add(worker.id);
+export function hasUnreviewedCompletion(worker: Worker): boolean {
+  if (!worker.completedAt) {
+    return false;
   }
 
-  return next;
+  return !worker.completionReviewedAt || worker.completedAt > worker.completionReviewedAt;
+}
+
+// The server records when each worker finishes and when its completion was last
+// reviewed, so pending completions survive reloads, sleep, and other browsers.
+export function selectPendingCompletionWorkerIds(
+  workers: readonly Worker[],
+  reviewedWorkerId: string | undefined
+): string[] {
+  return workers
+    .filter(
+      (worker) =>
+        !worker.silenced && worker.status === "idle" && worker.id !== reviewedWorkerId && hasUnreviewedCompletion(worker)
+    )
+    .sort((left, right) => (left.completedAt ?? "").localeCompare(right.completedAt ?? ""))
+    .map((worker) => worker.id);
 }
 
 export function useWorkerCompletionNotifications({
   workers,
   reviewedWorkerId
 }: UseWorkerCompletionNotificationsInput): UseWorkerCompletionNotificationsResult {
-  const [pendingCompletionWorkerIds, setPendingCompletionWorkerIds] = useState<string[]>([]);
-  const previousStatusByWorkerRef = useRef<Map<string, WorkerStatus>>(new Map());
-  const reviewedWorkerIdRef = useRef<string | undefined>(reviewedWorkerId);
+  const pendingCompletionWorkerIds = useMemo(
+    () => selectPendingCompletionWorkerIds(workers, reviewedWorkerId),
+    [workers, reviewedWorkerId]
+  );
+
+  const reviewedWorker = reviewedWorkerId ? workers.find((worker) => worker.id === reviewedWorkerId) : undefined;
+  const reviewedCompletionKey =
+    reviewedWorker && hasUnreviewedCompletion(reviewedWorker) ? `${reviewedWorker.id}@${reviewedWorker.completedAt}` : undefined;
+  const lastReviewRequestRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    reviewedWorkerIdRef.current = reviewedWorkerId;
-  }, [reviewedWorkerId]);
-
-  useEffect(() => {
-    const previousStatusByWorker = previousStatusByWorkerRef.current;
-    setPendingCompletionWorkerIds((current) => {
-      const next = reconcilePendingCompletionWorkerIds(
-        current,
-        workers,
-        previousStatusByWorker,
-        reviewedWorkerIdRef.current
-      );
-      return next.length === current.length && next.every((workerId, index) => workerId === current[index])
-        ? current
-        : next;
-    });
-
-    previousStatusByWorkerRef.current = new Map(workers.map((worker) => [worker.id, worker.status]));
-  }, [workers]);
-
-  useEffect(() => {
-    if (!reviewedWorkerId) {
+    if (!reviewedWorkerId || !reviewedCompletionKey || lastReviewRequestRef.current === reviewedCompletionKey) {
       return;
     }
 
-    setPendingCompletionWorkerIds((current) => current.filter((workerId) => workerId !== reviewedWorkerId));
-  }, [reviewedWorkerId]);
+    lastReviewRequestRef.current = reviewedCompletionKey;
+    // The returned worker arrives via the realtime worker-updated broadcast.
+    void markWorkerCompletionReviewed(reviewedWorkerId).catch(() => {
+      lastReviewRequestRef.current = undefined;
+    });
+  }, [reviewedWorkerId, reviewedCompletionKey]);
 
   return {
     pendingCompletionWorkerIds

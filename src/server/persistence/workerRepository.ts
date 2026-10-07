@@ -31,6 +31,8 @@ interface WorkerRow {
   tmux_session: string;
   tmux_window: string;
   tmux_pane: string;
+  completed_at: string | null;
+  completion_reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -66,12 +68,12 @@ export class WorkerRepository {
           id, name, display_name, project_id, project_path, runtime_id, runtime_label,
           command_json, status, activity_text, activity_tool, activity_path, avatar_type, movement_mode, silenced,
           position_x, position_y, tmux_session, tmux_window, tmux_pane,
-          created_at, updated_at
+          completed_at, completion_reviewed_at, created_at, updated_at
         ) VALUES (
           @id, @name, @display_name, @project_id, @project_path, @runtime_id, @runtime_label,
           @command_json, @status, @activity_text, @activity_tool, @activity_path, @avatar_type, @movement_mode, @silenced,
           @position_x, @position_y, @tmux_session, @tmux_window, @tmux_pane,
-          @created_at, @updated_at
+          @completed_at, @completion_reviewed_at, @created_at, @updated_at
         )
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
@@ -93,6 +95,8 @@ export class WorkerRepository {
           tmux_session = excluded.tmux_session,
           tmux_window = excluded.tmux_window,
           tmux_pane = excluded.tmux_pane,
+          completed_at = excluded.completed_at,
+          completion_reviewed_at = excluded.completion_reviewed_at,
           updated_at = excluded.updated_at
       `
       )
@@ -105,13 +109,19 @@ export class WorkerRepository {
       return undefined;
     }
 
+    const now = new Date().toISOString();
+    // Recorded server-side so a finished job stays "ready" until someone opens
+    // its terminal, even if no browser was watching when it finished.
+    // Silenced workers never announce completions, so none is recorded for them.
+    const completed = !worker.silenced && worker.status === "working" && update.status === "idle";
     const updated: Worker = {
       ...worker,
       status: update.status,
       activityText: update.activityText,
       activityTool: update.activityTool,
       activityPath: update.activityPath,
-      updatedAt: new Date().toISOString()
+      completedAt: completed ? now : worker.completedAt,
+      updatedAt: now
     };
 
     this.saveWorker(updated);
@@ -166,6 +176,21 @@ export class WorkerRepository {
     return updated;
   }
 
+  markCompletionReviewed(workerId: string): Worker | undefined {
+    const worker = this.getWorker(workerId);
+    if (!worker) {
+      return undefined;
+    }
+
+    const updated: Worker = {
+      ...worker,
+      completionReviewedAt: new Date().toISOString()
+    };
+
+    this.saveWorker(updated);
+    return updated;
+  }
+
   deleteWorker(workerId: string): boolean {
     const result = this.db.prepare("DELETE FROM workers WHERE id = ?").run(workerId);
     return result.changes > 0;
@@ -211,6 +236,8 @@ export class WorkerRepository {
     this.ensureColumn("workers", "display_name", "TEXT");
     this.ensureColumn("workers", "movement_mode", "TEXT");
     this.ensureColumn("workers", "silenced", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("workers", "completed_at", "TEXT");
+    this.ensureColumn("workers", "completion_reviewed_at", "TEXT");
   }
 
   private fromRow(row: WorkerRow): Worker {
@@ -239,6 +266,8 @@ export class WorkerRepository {
         window: row.tmux_window,
         pane: row.tmux_pane
       },
+      completedAt: row.completed_at ?? undefined,
+      completionReviewedAt: row.completion_reviewed_at ?? undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
@@ -266,6 +295,8 @@ export class WorkerRepository {
       tmux_session: worker.tmuxRef.session,
       tmux_window: worker.tmuxRef.window,
       tmux_pane: worker.tmuxRef.pane,
+      completed_at: worker.completedAt ?? null,
+      completion_reviewed_at: worker.completionReviewedAt ?? null,
       created_at: worker.createdAt,
       updated_at: worker.updatedAt
     };

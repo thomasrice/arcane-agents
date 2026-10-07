@@ -200,6 +200,15 @@ export class OrchestratorService {
     return updated;
   }
 
+  markCompletionReviewed(workerId: string): Worker {
+    const updated = this.workers.markCompletionReviewed(workerId);
+    if (!updated) {
+      throw notFoundError(`Agent '${workerId}' not found.`, "worker_not_found");
+    }
+
+    return updated;
+  }
+
   async openInExternalTerminal(workerId: string): Promise<void> {
     const worker = this.requireWorker(workerId);
     try {

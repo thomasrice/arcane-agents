@@ -158,6 +158,11 @@ export function registerApiRoutes(app: express.Express, { orchestrator, hub, sta
     respondWorker(res, hub, worker);
   }));
 
+  app.post("/api/workers/:workerId/completion-reviewed", asyncRoute((req, res) => {
+    const worker = orchestrator.markCompletionReviewed(req.params.workerId);
+    respondWorker(res, hub, worker);
+  }));
+
   app.post("/api/workers/:workerId/open-terminal", asyncRoute(async (req, res) => {
     await orchestrator.openInExternalTerminal(req.params.workerId);
     res.json({ ok: true });

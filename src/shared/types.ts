@@ -145,6 +145,10 @@ export interface Worker {
   silenced: boolean;
   position: WorkerPosition;
   tmuxRef: TmuxRef;
+  /** When the server last saw this worker go from working to idle. */
+  completedAt?: string;
+  /** When someone last opened this worker's terminal after a completion. */
+  completionReviewedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

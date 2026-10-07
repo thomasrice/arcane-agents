@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Worker, WorkerStatus } from "../../shared/types";
-import { reconcilePendingCompletionWorkerIds } from "./useWorkerCompletionNotifications";
+import { selectPendingCompletionWorkerIds } from "./useWorkerCompletionNotifications";
 
-function worker(id: string, status: WorkerStatus, silenced = false): Worker {
+function worker(
+  id: string,
+  status: WorkerStatus,
+  silenced = false,
+  completion: Pick<Worker, "completedAt" | "completionReviewedAt"> = {}
+): Worker {
   return {
     id,
     name: id,
@@ -18,46 +23,31 @@ function worker(id: string, status: WorkerStatus, silenced = false): Worker {
     position: { x: 0, y: 0 },
     tmuxRef: { session: "arcane-agents", window: id, pane: "%1" },
     createdAt: "2026-07-01T00:00:00.000Z",
-    updatedAt: "2026-07-01T00:00:00.000Z"
+    updatedAt: "2026-07-01T00:00:00.000Z",
+    ...completion
   };
 }
 
-describe("reconcilePendingCompletionWorkerIds", () => {
-  it("adds audible working-to-idle transitions but ignores silenced completions", () => {
-    const previous = new Map<string, WorkerStatus>([
-      ["audible", "working"],
-      ["silent", "working"]
-    ]);
+describe("selectPendingCompletionWorkerIds", () => {
+  const finished = { completedAt: "2026-07-01T02:00:00.000Z" };
 
-    const pending = reconcilePendingCompletionWorkerIds(
-      [],
-      [worker("audible", "idle"), worker("silent", "idle", true)],
-      previous,
+  it("includes unreviewed completions but ignores silenced characters", () => {
+    const pending = selectPendingCompletionWorkerIds(
+      [worker("audible", "idle", false, finished), worker("silent", "idle", true, finished)],
       undefined
     );
 
     expect(pending).toEqual(["audible"]);
   });
 
-  it("removes an already-pending completion as soon as its character is silenced", () => {
-    const pending = reconcilePendingCompletionWorkerIds(
-      ["silent"],
-      [worker("silent", "idle", true)],
-      new Map([["silent", "idle"]]),
-      undefined
-    );
+  it("drops a completion once it has been reviewed or its terminal is open", () => {
+    const reviewed = worker("reviewed", "idle", false, { ...finished, completionReviewedAt: "2026-07-01T03:00:00.000Z" });
+    const open = worker("open", "idle", false, finished);
 
-    expect(pending).toEqual([]);
+    expect(selectPendingCompletionWorkerIds([reviewed, open], "open")).toEqual([]);
   });
 
-  it("does not create a stale completion when an idle character is unsilenced", () => {
-    const pending = reconcilePendingCompletionWorkerIds(
-      [],
-      [worker("worker-1", "idle")],
-      new Map([["worker-1", "idle"]]),
-      undefined
-    );
-
-    expect(pending).toEqual([]);
+  it("does not report an idle character that has never completed work", () => {
+    expect(selectPendingCompletionWorkerIds([worker("worker-1", "idle")], undefined)).toEqual([]);
   });
 });

@@ -86,6 +86,12 @@ export function setWorkerSilenced(workerId: string, silenced: boolean): Promise<
   });
 }
 
+export function markWorkerCompletionReviewed(workerId: string): Promise<Worker> {
+  return requestJson<Worker>(`/api/workers/${workerId}/completion-reviewed`, {
+    method: "POST"
+  });
+}
+
 export function openWorkerInTerminal(workerId: string): Promise<{ ok: true }> {
   return requestJson<{ ok: true }>(`/api/workers/${workerId}/open-terminal`, {
     method: "POST"
